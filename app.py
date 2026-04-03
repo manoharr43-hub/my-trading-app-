@@ -2,13 +2,9 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# Page Configuration
-st.set_page_config(page_title="Nifty 50 SMC Scanner", layout="wide", page_icon="🎯")
+st.set_page_config(page_title="Variety Motors Pro Scanner", layout="wide")
+st.title("🎯 Nifty 50 Smart Scanner - V18")
 
-st.title("🎯 Nifty 50 SMC Pro Max - Auto Filter")
-st.caption("Variety Motors Edition - నిఫ్టీ 50 లోని బెస్ట్ స్టాక్స్ ని మాత్రమే చూపిస్తుంది")
-
-# Nifty 50 Stock List
 nifty50_stocks = [
     "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS",
     "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS",
@@ -22,63 +18,55 @@ nifty50_stocks = [
     "TITAN.NS", "ULTRACEMCO.NS", "UPL.NS", "WIPRO.NS"
 ]
 
-if st.button("🚀 Start Nifty 50 Scan"):
-    all_results = []
-    signals_only = []
+if st.button("🚀 Run Full Market Scan"):
+    signals = []
+    all_prices = []
     
     status = st.empty()
-    progress_bar = st.progress(0)
+    prog = st.progress(0)
     
     for i, symbol in enumerate(nifty50_stocks):
-        status.info(f"Scanning {symbol}... ({i+1}/50)")
+        status.info(f"Scanning {symbol}...")
         try:
             df = yf.download(symbol, period="1mo", interval="15m", progress=False)
-            
-            if df is not None and len(df) > 30:
+            if not df.empty and len(df) > 30:
                 # Indicators
                 ema9 = df['Close'].ewm(span=9, adjust=False).mean()
                 ema21 = df['Close'].ewm(span=21, adjust=False).mean()
                 vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-                vol_ma = df['Volume'].rolling(window=20).mean()
-
-                # Current Values
-                price = df['Close'].iloc[-1].item()
-                cur_ema9 = ema9.iloc[-1].item()
-                cur_ema21 = ema21.iloc[-1].item()
-                cur_vwap = vwap.iloc[-1].item()
-                cur_vol = df['Volume'].iloc[-1].item()
-                cur_vol_ma = vol_ma.iloc[-1].item()
                 
-                prev_ema9 = ema9.iloc[-2].item()
-                prev_ema21 = ema21.iloc[-2].item()
-
-                # SMC V18 Logic
-                is_vol_high = cur_vol > cur_vol_ma
-                is_buy = (prev_ema9 <= prev_ema21 and cur_ema9 > cur_ema21) and (price > cur_vwap) and is_vol_high
-                is_sell = (prev_ema9 >= prev_ema21 and cur_ema9 < cur_ema21) and (price < cur_vwap) and is_vol_high
-
-                if is_buy or is_sell:
-                    signal = "🚀 STRONG BUY" if is_buy else "🔻 STRONG SELL"
-                    signals_only.append({
-                        "Stock": symbol.replace(".NS", ""),
-                        "LTP": round(price, 2),
-                        "Signal": signal,
-                        "Volume": "High 🔥"
-                    })
-        except:
-            continue
-        progress_bar.progress((i + 1) / 50)
+                price = df['Close'].iloc[-1].item()
+                cur_ema9, cur_ema21 = ema9.iloc[-1].item(), ema21.iloc[-1].item()
+                prev_ema9, prev_ema21 = ema9.iloc[-2].item(), ema21.iloc[-2].item()
+                cur_vwap = vwap.iloc[-1].item()
+                
+                # Logic
+                is_buy = (prev_ema9 <= prev_ema21 and cur_ema9 > cur_ema21) and (price > cur_vwap)
+                is_sell = (prev_ema9 >= prev_ema21 and cur_ema9 < cur_ema21) and (price < cur_vwap)
+                
+                stock_name = symbol.replace(".NS", "")
+                
+                # Table 1: Filtered Signals
+                if is_buy: signals.append({"Stock": stock_name, "Price": round(price, 2), "Signal": "🚀 BUY"})
+                if is_sell: signals.append({"Stock": stock_name, "Price": round(price, 2), "Signal": "🔻 SELL"})
+                
+                # Table 2: All Prices
+                all_prices.append({"Stock": stock_name, "LTP": round(price, 2)})
+        except: continue
+        prog.progress((i+1)/50)
 
     status.empty()
     
-    st.subheader("🔥 Top Trading Opportunities (Filtered)")
-    if signals_only:
-        res_df = pd.DataFrame(signals_only)
-        # Displaying the filtered results
-        st.success(f"మనోహర్ గారు, 50 స్టాక్స్ లో {len(signals_only)} స్టాక్స్ మీ కండిషన్స్ కి మ్యాచ్ అయ్యాయి!")
-        st.table(res_df)
+    # Display Table 1
+    st.subheader("🔥 Best Trading Setups (SMC V18)")
+    if signals:
+        st.table(pd.DataFrame(signals))
     else:
-        st.warning("ప్రస్తుతానికి ఏ స్టాక్ కూడా మీ SMC V18 కండిషన్స్ కి మ్యాచ్ అవ్వలేదు. 'WAIT' లో ఉండండి.")
+        st.warning("ప్రస్తుతానికి పక్కా సిగ్నల్స్ ఏవీ లేవు. 'WAIT' చేయండి.")
+
+    # Display Table 2
+    st.subheader("📊 Nifty 50 - All Stock Prices")
+    st.dataframe(pd.DataFrame(all_prices)) # ఇది ఒక పెద్ద లిస్ట్ లా కనిపిస్తుంది
 
 st.markdown("---")
-st.info("💡 ఈ స్కానర్ కేవలం నిఫ్టీ 50 లోని 'Buy' లేదా 'Sell' సిగ్నల్స్ ఉన్న వాటిని మాత్రమే ఏరి చూపిస్తుంది.")
+st.caption("Developed for Manohar - Variety Motors")
