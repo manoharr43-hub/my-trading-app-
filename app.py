@@ -6,68 +6,46 @@ import pandas as pd
 st.set_page_config(page_title="Variety Motors Pro", layout="wide")
 
 # 2. Sidebar Folders
-st.sidebar.title("📁 Trading Folders")
+st.sidebar.title("Trading Folders")
 page = st.sidebar.selectbox("Select Folder", ["1. OI Strength", "2. Nifty 50", "3. Bank Nifty", "4. Fin Nifty"])
 
-# స్టాక్స్ లిస్ట్లు
-nifty50 = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "ITC.NS", "AXISBANK.NS"]
-banknifty = ["SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "HDFCBANK.NS", "ICICIBANK.NS", "PNB.NS", "FEDERALBNK.NS"]
-finnifty = ["BAJFINANCE.NS", "RECLTD.NS", "PFC.NS", "CHOLAFIN.NS", "SHRIRAMFIN.NS", "M&MFIN.NS"]
-
-# స్కానింగ్ ఫంక్షన్ (Retry Logic తో)
+# స్కానింగ్ ఫంక్షన్
 def start_scan(stock_list):
     results = []
-    status = st.empty()
-    prog = st.progress(0)
-    
-    for i, s in enumerate(stock_list):
-        status.info(f"Scanning {s}...")
+    for s in stock_list:
         try:
-            # period="1mo" వాడటం వల్ల డేటా ఖచ్చితంగా వస్తుంది
-            d = yf.download(s, period="1mo", interval="1d", progress=False)
+            d = yf.download(s, period="5d", interval="1d", progress=False)
             if not d.empty:
                 lp = round(d['Close'].iloc[-1].item(), 2)
-                ma = d['Close'].rolling(window=3).mean().iloc[-1]
-                sig, bg = ("🚀 BUY", "#d4edda") if lp > ma else ("🔻 SELL", "#f8d7da")
-                results.append({"Stock": s.replace(".NS",""), "Price": lp, "Signal": sig, "Color": bg})
+                results.append({"Stock": s.replace(".NS",""), "Price": lp})
         except: continue
-        prog.progress((i + 1) / len(stock_list))
-    
-    status.empty()
     if results:
-        df = pd.DataFrame(results)
-        st.table(df.drop(columns=['Color']).style.apply(lambda x: [f"background-color: {df.loc[x.name, 'Color']}"]*len(x), axis=1))
+        st.table(pd.DataFrame(results))
     else:
-        st.error("మార్కెట్ సర్వర్ బిజీగా ఉంది. దయచేసి 'Scan Now' మళ్ళీ నొక్కండి.")
+        st.error("No Data Found!")
 
 # పేజీలు
 if page == "1. OI Strength":
-    st.title("📊 Option Analysis")
+    st.title("Option Analysis")
     sym = st.selectbox("Select Index", ["^NSEI", "^NSEBANK"])
-    if st.button("Check OI Strength"):
+    if st.button("Check OI Now"):
         try:
             t = yf.Ticker(sym)
-            expiry = t.options[0]
-            o = t.option_chain(expiry)
+            o = t.option_chain(t.options[0])
             c, p = int(o.calls['openInterest'].sum()), int(o.puts['openInterest'].sum())
-            col1, col2 = st.columns(2)
-            col1.metric("Call OI", f"{c:,}")
-            col2.metric("Put OI", f"{p:,}")
-            if c > p: st.error("🔻 MARKET DOWN (Resistance Strong)")
-            else: st.success("🚀 MARKET UP (Support Strong)")
-        except: st.warning("ఆప్షన్స్ డేటా ప్రస్తుతం అందుబాటులో లేదు.")
+            st.write(f"Call OI: {c:,} | Put OI: {p:,}")
+        except: st.warning("Data error")
 
 elif page == "2. Nifty 50":
-    st.title("🎯 Nifty 50 Watch")
-    if st.button("Scan Nifty 50"): start_scan(nifty50)
+    st.title("Nifty 50 Watch")
+    if st.button("Scan Now"): start_scan(["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"])
 
 elif page == "3. Bank Nifty":
-    st.title("🏦 Bank Nifty Watch")
-    if st.button("Scan Bank Nifty"): start_scan(banknifty)
+    st.title("Bank Nifty Watch")
+    if st.button("Scan Now"): start_scan(["SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS"])
 
 elif page == "4. Fin Nifty":
-    st.title("💰 Fin Nifty Watch")
-    if st.button("Scan Fin Nifty"): start_scan(finnifty)
+    st.title("Fin Nifty Watch")
+    if st.button("Scan Now"): start_scan(["BAJFINANCE.NS", "PFC.NS", "RECLTD.NS"])
 
-st.markdown("---")
-st.caption("Manohar - Variety Motors, Hyderabad")
+st.caption("Manohar - Variety Motors")
