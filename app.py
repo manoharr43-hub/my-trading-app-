@@ -1,22 +1,24 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import datetime
 
-# Page Configuration
-st.set_page_config(page_title="Variety Motors Trader Pro", layout="wide")
+# 1. Page Configuration
+st.set_page_config(page_title="Variety Motors Trader Pro", layout="wide", page_icon="🚀")
 
-# Sidebar Folders
+# 2. Sidebar Navigation (Folders)
 st.sidebar.title("📁 Trading Folders")
-folder = st.sidebar.selectbox("Select Folder", ["1. Nifty 50 Scanner", "2. OI Strength (Call/Put)"])
+folder = st.sidebar.selectbox("Select Folder", ["1. Nifty 50 Scanner", "2. OI Strength & History"])
 
-# --- FOLDER 1: NIFTY 50 SCANNER ---
+# --- FOLDER 1: NIFTY 50 SCANNER (Section 1) ---
 if folder == "1. Nifty 50 Scanner":
     st.title("🎯 Nifty 50 Market Watch")
+    st.caption("SMC V18 Logic తో స్టాక్స్ ని స్కాన్ చేస్తుంది")
+    
     nifty50 = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "SBIN.NS", "ICICIBANK.NS", "TATAMOTORS.NS", "INFY.NS", "ITC.NS"]
     
     if st.button("🚀 Start Scan"):
         all_data = []
-        signals = []
         status = st.empty()
         
         for symbol in nifty50:
@@ -25,7 +27,6 @@ if folder == "1. Nifty 50 Scanner":
                 df = yf.download(symbol, period="5d", interval="15m", progress=False)
                 if not df.empty:
                     price = round(df['Close'].iloc[-1].item(), 2)
-                    # Simple Trend Logic
                     ema9 = df['Close'].ewm(span=9).mean().iloc[-1]
                     ema21 = df['Close'].ewm(span=21).mean().iloc[-1]
                     
@@ -37,14 +38,21 @@ if folder == "1. Nifty 50 Scanner":
             except: continue
         
         status.empty()
-        st.table(pd.DataFrame(all_data))
+        if all_data:
+            st.table(pd.DataFrame(all_data))
+        else:
+            st.error("డేటా లోడ్ అవ్వలేదు.")
 
-# --- FOLDER 2: OI STRENGTH ---
-elif folder == "2. OI Strength (Call/Put)":
-    st.title("📊 Option OI Strength Analysis")
+# --- FOLDER 2: OI STRENGTH & HISTORY (Section 2) ---
+elif folder == "2. OI Strength & History":
+    st.title("📊 Option OI & Historical Observation")
     st.markdown("---")
-    index_choice = st.selectbox("Select Index", ["^NSEI", "^NSEBANK"])
     
+    # Index Selection
+    index_choice = st.selectbox("Select Index/Stock", ["^NSEI", "^NSEBANK", "RELIANCE.NS", "SBIN.NS"])
+    
+    # Part A: Current OI Strength
+    st.subheader("🛡️ Live OI Strength (Call vs Put)")
     if st.button("🔍 Check OI Strength"):
         with st.spinner("Fetching Option Chain Data..."):
             try:
@@ -56,19 +64,30 @@ elif folder == "2. OI Strength (Call/Put)":
                 p_oi = int(opt.puts['openInterest'].sum())
                 
                 col1, col2 = st.columns(2)
-                col1.metric("Call OI (Resistance)", f"{c_oi:,}")
-                col2.metric("Put OI (Support)", f"{p_oi:,}")
+                col1.metric("Total Call OI (Resistance)", f"{c_oi:,}")
+                col2.metric("Total Put OI (Support)", f"{p_oi:,}")
                 
-                st.markdown("---")
                 if c_oi > p_oi:
-                    st.error("🔻 CALL SIDE OI బలంగా ఉంది (Sellers are active at Top)")
-                    st.subheader("వ్యూ: MARKET DOWN అయ్యే అవకాశం ఉంది 📉")
+                    st.error("🔻 CALL SIDE OI బలంగా ఉంది: MARKET DOWN అయ్యే అవకాశం ఉంది")
                 else:
-                    st.success("🚀 PUT SIDE OI బలంగా ఉంది (Buyers are active at Bottom)")
-                    st.subheader("వ్యూ: MARKET UP అయ్యే అవకాశం ఉంది 📈")
-                    
+                    st.success("🚀 PUT SIDE OI బలంగా ఉంది: MARKET UP అయ్యే అవకాశం ఉంది")
             except:
-                st.error("ప్రస్తుతానికి డేటా అందుబాటులో లేదు. కాసేపు ఆగి ప్రయత్నించండి.")
+                st.warning("ఈ స్టాక్/ఇండెక్స్ కి ప్రస్తుతం ఆప్షన్స్ డేటా అందుబాటులో లేదు.")
+
+    st.markdown("---")
+    
+    # Part B: Historical Observation (Calendar)
+    st.subheader("📅 పాత డేటా పరిశీలన (History)")
+    pick_date = st.date_input("ఏ తేదీ డేటా చూడాలనుకుంటున్నారు?", datetime.date.today() - datetime.timedelta(days=1))
+    
+    if st.button("📊 View Past Chart"):
+        with st.spinner("చార్ట్ లోడ్ అవుతోంది..."):
+            hist = yf.download(index_choice, start=pick_date, end=pick_date + datetime.timedelta(days=1), interval="15m")
+            if not hist.empty:
+                st.line_chart(hist['Close'])
+                st.write(f"**{pick_date}** నాటి ధరల కదలిక పైన గ్రాఫ్ లో చూడవచ్చు.")
+            else:
+                st.warning("ఆ తేదీన మార్కెట్ సెలవు కావచ్చు లేదా డేటా అందుబాటులో లేదు.")
 
 st.markdown("---")
 st.caption("Developed for Manohar - Variety Motors, Hyderabad")
