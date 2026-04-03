@@ -16,26 +16,27 @@ if st.button("🔍 Scan Now"):
     
     for symbol in stocks:
         try:
-            # Fetch data for 1 month to calculate EMA accurately
+            # Fetch data for 1 month
             df = yf.download(symbol, period="1mo", interval="15m", progress=False)
             
-            if not df.empty and len(df) > 21:
-                # Indicators Calculation
+            # Check if data is enough (Error Fix: Added more checks)
+            if df is not None and len(df) > 30:
+                # Calculate Indicators
                 ema9 = df['Close'].ewm(span=9, adjust=False).mean()
                 ema21 = df['Close'].ewm(span=21, adjust=False).mean()
                 vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
                 vol_ma = df['Volume'].rolling(window=20).mean()
 
-                # Current & Previous Values
-                price = df['Close'].iloc[-1]
-                cur_ema9 = ema9.iloc[-1]
-                cur_ema21 = ema21.iloc[-1]
-                cur_vwap = vwap.iloc[-1]
-                cur_vol = df['Volume'].iloc[-1]
-                cur_vol_ma = vol_ma.iloc[-1]
+                # Get the last valid values as single numbers (.item() ensures no ValueError)
+                price = df['Close'].iloc[-1].item()
+                cur_ema9 = ema9.iloc[-1].item()
+                cur_ema21 = ema21.iloc[-1].item()
+                cur_vwap = vwap.iloc[-1].item()
+                cur_vol = df['Volume'].iloc[-1].item()
+                cur_vol_ma = vol_ma.iloc[-1].item()
                 
-                prev_ema9 = ema9.iloc[-2]
-                prev_ema21 = ema21.iloc[-2]
+                prev_ema9 = ema9.iloc[-2].item()
+                prev_ema21 = ema21.iloc[-2].item()
 
                 # SMC V18 Logic
                 is_vol_high = cur_vol > cur_vol_ma
@@ -50,7 +51,7 @@ if st.button("🔍 Scan Now"):
                     "Stock": symbol.replace(".NS", ""),
                     "LTP": round(price, 2),
                     "Signal": signal,
-                    "Volume": "STRONG" if is_vol_high else "NORMAL"
+                    "Volume": "STRONG 💪" if is_vol_high else "NORMAL"
                 })
         except Exception as e:
             continue
@@ -59,7 +60,7 @@ if st.button("🔍 Scan Now"):
         res_df = pd.DataFrame(results)
         st.table(res_df)
     else:
-        st.error("డేటా అందుబాటులో లేదు. కాసేపు ఆగి ప్రయత్నించండి.")
+        st.error("డేటా లోడ్ అవ్వలేదు. నెట్వర్క్ ఒకసారి చెక్ చేయండి.")
 
 st.markdown("---")
-st.info("💡 గమనిక: ధర VWAP కంటే పైన ఉండి, EMA 9 పైన క్రాస్ అయితేనే BUY సిగ్నల్ వస్తుంది.")
+st.info("💡 గమనిక: మార్కెట్ క్లోజ్ అయి ఉన్నప్పుడు చివరి ట్రేడింగ్ డే డేటా కనిపిస్తుంది.")
