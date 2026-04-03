@@ -2,71 +2,46 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Variety Motors Pro Scanner", layout="wide")
-st.title("🎯 Nifty 50 Smart Scanner - V18")
+st.title("📊 Option Chain OI Strength - Variety Motors")
 
-nifty50_stocks = [
-    "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS",
-    "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS",
-    "BRITANNIA.NS", "CIPLA.NS", "COALINDIA.NS", "DIVISLAB.NS", "DRREDDY.NS",
-    "EICHERMOT.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS", "HDFCLIFE.NS",
-    "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "ICICIBANK.NS", "ITC.NS",
-    "INDUSINDBK.NS", "INFY.NS", "JSWSTEEL.NS", "KOTAKBANK.NS", "LTIM.NS",
-    "LT.NS", "M&M.NS", "MARUTI.NS", "NTPC.NS", "NESTLEIND.NS", "ONGC.NS",
-    "POWERGRID.NS", "RELIANCE.NS", "SBILIFE.NS", "SBIN.NS", "SUNPHARMA.NS",
-    "TATACONSUM.NS", "TATAMOTORS.NS", "TATASTEEL.NS", "TCS.NS", "TECHM.NS",
-    "TITAN.NS", "ULTRACEMCO.NS", "UPL.NS", "WIPRO.NS"
-]
+# Select Index
+index_choice = st.selectbox("Select Index", ["^NSEI", "^NSEBANK"])
+name = "NIFTY" if index_choice == "^NSEI" else "BANKNIFTY"
 
-if st.button("🚀 Run Full Market Scan"):
-    signals = []
-    all_prices = []
-    
-    status = st.empty()
-    prog = st.progress(0)
-    
-    for i, symbol in enumerate(nifty50_stocks):
-        status.info(f"Scanning {symbol}...")
-        try:
-            df = yf.download(symbol, period="1mo", interval="15m", progress=False)
-            if not df.empty and len(df) > 30:
-                # Indicators
-                ema9 = df['Close'].ewm(span=9, adjust=False).mean()
-                ema21 = df['Close'].ewm(span=21, adjust=False).mean()
-                vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-                
-                price = df['Close'].iloc[-1].item()
-                cur_ema9, cur_ema21 = ema9.iloc[-1].item(), ema21.iloc[-1].item()
-                prev_ema9, prev_ema21 = ema9.iloc[-2].item(), ema21.iloc[-2].item()
-                cur_vwap = vwap.iloc[-1].item()
-                
-                # Logic
-                is_buy = (prev_ema9 <= prev_ema21 and cur_ema9 > cur_ema21) and (price > cur_vwap)
-                is_sell = (prev_ema9 >= prev_ema21 and cur_ema9 < cur_ema21) and (price < cur_vwap)
-                
-                stock_name = symbol.replace(".NS", "")
-                
-                # Table 1: Filtered Signals
-                if is_buy: signals.append({"Stock": stock_name, "Price": round(price, 2), "Signal": "🚀 BUY"})
-                if is_sell: signals.append({"Stock": stock_name, "Price": round(price, 2), "Signal": "🔻 SELL"})
-                
-                # Table 2: All Prices
-                all_prices.append({"Stock": stock_name, "LTP": round(price, 2)})
-        except: continue
-        prog.progress((i+1)/50)
+if st.button("🔍 Check OI Strength"):
+    try:
+        ticker = yf.Ticker(index_choice)
+        # Get nearest expiry date
+        expiry = ticker.options[0]
+        opt_chain = ticker.option_chain(expiry)
+        
+        # 1. Calculate Call & Put OI
+        total_call_oi = opt_chain.calls['openInterest'].sum()
+        total_put_oi = opt_chain.puts['openInterest'].sum()
+        
+        # 2. Strength Calculation
+        pcr = total_put_oi / total_call_oi
+        
+        # 3. Display Logic (మీరు అడిగినట్లు)
+        st.subheader(f"📈 {name} OI Analysis (Expiry: {expiry})")
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Call OI (Resistance)", f"{int(total_call_oi)}")
+        col2.metric("Put OI (Support)", f"{int(total_put_oi)}")
+        col3.metric("PCR Ratio", round(pcr, 2))
 
-    status.empty()
-    
-    # Display Table 1
-    st.subheader("🔥 Best Trading Setups (SMC V18)")
-    if signals:
-        st.table(pd.DataFrame(signals))
-    else:
-        st.warning("ప్రస్తుతానికి పక్కా సిగ్నల్స్ ఏవీ లేవు. 'WAIT' చేయండి.")
+        # --- మీ కండిషన్ ప్రకారం సిగ్నల్ ---
+        if total_call_oi > total_put_oi:
+            st.error("🔻 CALL SIDE STRONG (OI): MARKET DOWN అయ్యే అవకాశం ఉంది (Resistance is Heavy)")
+            st.button("📉 వ్యూ: SELL ON RISE")
+        elif total_put_oi > total_call_oi:
+            st.success("🚀 PUT SIDE STRONG (OI): MARKET UP అయ్యే అవకాశం ఉంది (Support is Heavy)")
+            st.button("📈 వ్యూ: BUY ON DIPS")
+        else:
+            st.warning("⚖️ OI EQUAL: మార్కెట్ సైడ్ వేస్ (Sideways) ఉండే ఛాన్స్ ఉంది.")
 
-    # Display Table 2
-    st.subheader("📊 Nifty 50 - All Stock Prices")
-    st.dataframe(pd.DataFrame(all_prices)) # ఇది ఒక పెద్ద లిస్ట్ లా కనిపిస్తుంది
+    except Exception as e:
+        st.error("ఆప్షన్స్ డేటా ప్రస్తుతం అందుబాటులో లేదు. కాసేపటి తర్వాత ప్రయత్నించండి.")
 
 st.markdown("---")
-st.caption("Developed for Manohar - Variety Motors")
+st.info("💡 గమనిక: Call Side OI ఎక్కువగా ఉంటే మార్కెట్ పడటానికి, Put Side OI ఎక్కువగా ఉంటే మార్కెట్ పెరగడానికి అవకాశం ఉంటుంది.")
