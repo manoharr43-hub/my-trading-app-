@@ -5,10 +5,9 @@ import random
 # 1. పేజీ సెటప్
 st.set_page_config(page_title="Sai Rakshith JEE Exam Center", layout="wide")
 
-# 2. ఆటోమేటిక్ ప్రశ్నలు తెచ్చే ఫంక్షన్ (API నుండి)
-@st.cache_data(ttl=600) # 10 నిమిషాల వరకు డేటాను గుర్తుంచుకుంటుంది
+# 2. ఆటోమేటిక్ ప్రశ్నలు తెచ్చే ఫంక్షన్
+@st.cache_data(ttl=600)
 def fetch_auto_questions():
-    # ఇది ఒక ఉచిత ఇంటర్నెట్ క్విజ్ డేటాబేస్ (Science & Maths కోసం)
     url = "https://opentdb.com/api.php?amount=10&category=19&type=multiple"
     try:
         response = requests.get(url)
@@ -17,69 +16,66 @@ def fetch_auto_questions():
         
         formatted_questions = []
         for q in raw_questions:
-            opts = q['incorrect_answers'] + [q['correct_answer']]
+            # HTML కోడ్స్‌ని క్లీన్ చేయడం (ఉదా: &quot; ని " లా మార్చడం)
+            clean_q = q['question'].replace('&quot;', '"').replace('&#039;', "'")
+            opts = [opt.replace('&quot;', '"').replace('&#039;', "'") for opt in q['incorrect_answers']]
+            correct = q['correct_answer'].replace('&quot;', '"').replace('&#039;', "'")
+            
+            opts.append(correct)
             random.shuffle(opts)
             formatted_questions.append({
-                "question": q['question'],
+                "question": clean_q,
                 "options": opts,
-                "answer": q['correct_answer'],
-                "explanation": "This is an auto-generated science question for practice."
+                "answer": correct
             })
         return formatted_questions
     except:
-        # ఒకవేళ ఇంటర్నెట్ స్లోగా ఉంటే ఈ బ్యాకప్ ప్రశ్నలు కనిపిస్తాయి
         return [
-            {"question": "What is the unit of Force?", "options": ["Newton", "Joule", "Watt", "Volt"], "answer": "Newton", "explanation": "Force is measured in Newtons."},
-            {"question": "Value of sin(90)?", "options": ["0", "1", "-1", "0.5"], "answer": "1", "explanation": "Trigonometric value of sin(90) is 1."}
+            {"question": "Ideal Ammeter resistance?", "options": ["Zero", "Low", "High", "Infinite"], "answer": "Zero"},
+            {"question": "Value of sin(90)?", "options": ["0", "1", "-1", "0.5"], "answer": "1"}
         ]
 
-# 3. సైడ్ బార్ సెటప్
-st.sidebar.title("🏥 JEE AUTO-EXAM")
-st.sidebar.info("మనోహర్ గారు, ఇక్కడ ప్రశ్నలు ఆటోమేటిక్‌గా ఇంటర్నెట్ నుండి వస్తాయి.")
-
-# సబ్జెక్ట్ సెలెక్షన్ (ప్రస్తుతానికి సైన్స్/మ్యాథ్స్ కలిపి వస్తాయి)
-subject = st.sidebar.selectbox("Subject", ["Physics & Maths (Auto)", "Chemistry (Auto)"])
-
-# 4. సెషన్ స్టేట్ (ప్రశ్నలు గుర్తుంచుకోవడానికి)
+# 3. సెషన్ స్టేట్ (రీసెట్ సమస్య లేకుండా ఉండటానికి)
 if 'auto_questions' not in st.session_state:
     st.session_state.auto_questions = fetch_auto_questions()
-if 'q_idx' not in st.session_state: st.session_state.q_idx = 0
+if 'q_no' not in st.session_state: st.session_state.q_no = 0
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'done' not in st.session_state: st.session_state.done = False
 
-# 5. మెయిన్ స్క్రీన్
+# 4. మెయిన్ స్క్రీన్
 st.title("🎓 SAI RAKSHITH'S JEE PREP CENTER")
 st.markdown("---")
 
 if not st.session_state.done:
-    current_q = st.session_state.auto_questions[st.session_state.q_idx]
+    questions = st.session_state.auto_questions
+    curr = questions[st.session_state.q_no]
     
-    st.subheader(f"Question {st.session_state.q_idx + 1}:")
-    st.write(current_q['question'])
+    st.subheader(f"Question {st.session_state.q_no + 1}:")
+    st.write(curr['question'])
     
-    user_choice = st.radio("Choose Option:", current_q['options'], key=f"q_{st.session_state.q_idx}")
+    user_choice = st.radio("Choose Option:", curr['options'], key=f"q_{st.session_state.q_no}")
 
     if st.button("Submit & Next ➡️"):
-        if user_choice == current_q['answer']:
+        if user_choice == curr['answer']:
             st.session_state.score += 1
         
-        if st.session_state.q_no < len(st.session_state.auto_questions) - 1:
-            st.session_state.q_idx += 1
+        # ఇక్కడ తప్పు జరిగింది (q_no వాడాలి)
+        if st.session_state.q_no < len(questions) - 1:
+            st.session_state.q_no += 1
             st.rerun()
         else:
             st.session_state.done = True
             st.rerun()
 else:
-    # రిజల్ట్ బోర్డ్
     st.success("🎉 ఎగ్జామ్ పూర్తయింది, సాయి రక్షిత్!")
-    st.metric("మీ స్కోర్", f"{st.session_state.score} / {len(st.session_state.auto_questions)}")
+    st.metric("మీ స్కోర్ (Total Marks)", f"{st.session_state.score} / {len(st.session_state.auto_questions)}")
     
-    if st.button("కొత్త ప్రశ్నలతో మళ్ళీ రాయండి (Fetch New Questions)"):
+    if st.button("కొత్త ప్రశ్నలతో మళ్ళీ రాయండి"):
         st.session_state.auto_questions = fetch_auto_questions()
-        st.session_state.q_idx = 0
+        st.session_state.q_no = 0
         st.session_state.score = 0
         st.session_state.done = False
         st.rerun()
 
 st.divider()
-st.caption("Auto-Question Engine Powered by Manohar - Variety Motors")
+st.caption("Auto-Exam System Managed by Manohar - Variety Motors")
