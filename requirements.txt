@@ -1,3 +1,6 @@
 yfinance
 pandas
 streamlit-autorefresh
+google-generativeai
+streamlit
+requests
