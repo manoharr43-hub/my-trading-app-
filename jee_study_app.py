@@ -1,91 +1,85 @@
 import streamlit as st
-import requests
+import google.generativeai as genai
+import json
 import random
 
-# 1. పేజీ సెటప్
-st.set_page_config(page_title="Sai Rakshith JEE Exam Center", layout="wide")
+# 1. Gemini AI సెటప్
+# ఇక్కడ మీ API KEY ని పేస్ట్ చేయండి
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY" 
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-pro')
 
-# 2. ఆటోమేటిక్ ప్రశ్నలు తెచ్చే ఫంక్షన్
-@st.cache_data(ttl=600)
-def fetch_auto_questions():
-    url = "https://opentdb.com/api.php?amount=10&category=19&type=multiple"
+st.set_page_config(page_title="Sai Rakshith AI Exam Center", layout="wide")
+
+# 2. Gemini ద్వారా ప్రశ్నలు తయారు చేసే ఫంక్షన్
+def fetch_ai_questions(subject, level):
+    prompt = f"""
+    Generate 5 high-quality {level} questions for {subject}.
+    Format the output as a JSON list of objects with these keys:
+    'question', 'options' (list of 4), 'answer' (exact string from options), 'explanation'.
+    Ensure questions are unique and challenging for a 2nd year student.
+    """
     try:
-        response = requests.get(url)
-        data = response.json()
-        raw_questions = data['results']
-        
-        formatted_questions = []
-        for q in raw_questions:
-            clean_q = q['question'].replace('&quot;', '"').replace('&#039;', "'")
-            opts = [opt.replace('&quot;', '"').replace('&#039;', "'") for opt in q['incorrect_answers']]
-            correct = q['correct_answer'].replace('&quot;', '"').replace('&#039;', "'")
-            
-            opts.append(correct)
-            random.shuffle(opts)
-            formatted_questions.append({
-                "question": clean_q,
-                "options": opts,
-                "answer": correct,
-                "explanation": f"The correct answer is {correct}. Practice more to understand the logic!"
-            })
-        return formatted_questions
+        response = model.generate_content(prompt)
+        # AI ఇచ్చే టెక్స్ట్ నుండి JSON ని ఎక్స్‌ట్రాక్ట్ చేయడం
+        data = json.loads(response.text.replace('```json', '').replace('```', ''))
+        return data
     except:
-        return [{"question": "What is 5+5?", "options": ["10", "11", "9", "8"], "answer": "10", "explanation": "Simple addition: 5+5 = 10."}]
+        st.error("AI కనెక్ట్ అవ్వడంలో ఇబ్బందిగా ఉంది. దయచేసి API Key చెక్ చేయండి.")
+        return []
 
 # 3. సెషన్ స్టేట్
-if 'auto_questions' not in st.session_state:
-    st.session_state.auto_questions = fetch_auto_questions()
+if 'ai_questions' not in st.session_state: st.session_state.ai_questions = []
 if 'q_no' not in st.session_state: st.session_state.q_no = 0
 if 'score' not in st.session_state: st.session_state.score = 0
-if 'done' not in st.session_state: st.session_state.done = False
 if 'show_ans' not in st.session_state: st.session_state.show_ans = False
 
 # 4. మెయిన్ స్క్రీన్
-st.title("🎓 SAI RAKSHITH'S JEE PREP CENTER")
+st.sidebar.title("🤖 AI EXAM GENERATOR")
+sub = st.sidebar.selectbox("Subject", ["Physics", "Mathematics", "Chemistry"])
+lvl = st.sidebar.radio("Level", ["JEE Mains", "JEE Advanced"])
+
+if st.sidebar.button("Generate New AI Exam"):
+    with st.spinner("Gemini AI ప్రశ్నలను తయారు చేస్తోంది..."):
+        st.session_state.ai_questions = fetch_ai_questions(sub, lvl)
+        st.session_state.q_no = 0
+        st.session_state.score = 0
+        st.session_state.show_ans = False
+        st.rerun()
+
+st.title("🎓 SAI RAKSHITH'S AI PREP CENTER")
 st.markdown("---")
 
-if not st.session_state.done:
-    questions = st.session_state.auto_questions
+if st.session_state.ai_questions:
+    questions = st.session_state.ai_questions
     curr = questions[st.session_state.q_no]
     
     st.info(f"Question {st.session_state.q_no + 1} of {len(questions)}")
     st.subheader(curr['question'])
     
-    user_choice = st.radio("Choose Option:", curr['options'], key=f"q_{st.session_state.q_no}")
+    user_choice = st.radio("Choose Option:", curr['options'], key=f"ai_q_{st.session_state.q_no}")
 
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("✅ Check Answer"):
-            st.session_state.show_ans = True
+    if st.button("✅ Check Answer"):
+        st.session_state.show_ans = True
 
-    # ఆన్సర్ మరియు వివరణ చూపించడం
     if st.session_state.show_ans:
         if user_choice == curr['answer']:
-            st.success(f"కరెక్ట్ ఆన్సర్! 👏 \n\n **వివరణ:** {curr['explanation']}")
+            st.success(f"కరెక్ట్ ఆన్సర్! ✨ \n\n **వివరణ:** {curr['explanation']}")
         else:
-            st.error(f"తప్పు సమాధానం! సరైనది: {curr['answer']} \n\n **వివరణ:** {curr['explanation']}")
+            st.error(f"తప్పు! సరైన ఆన్సర్: {curr['answer']} \n\n **వివరణ:** {curr['explanation']}")
         
         if st.button("Next Question ➡️"):
-            if user_choice == curr['answer']:
-                st.session_state.score += 1
-            
+            if user_choice == curr['answer']: st.session_state.score += 1
             if st.session_state.q_no < len(questions) - 1:
                 st.session_state.q_no += 1
                 st.session_state.show_ans = False
                 st.rerun()
             else:
-                st.session_state.done = True
-                st.rerun()
+                st.balloons()
+                st.success(f"ప్రాక్టీస్ పూర్తయింది! స్కోర్: {st.session_state.score}/{len(questions)}")
+                st.session_state.ai_questions = [] # Reset
 else:
-    st.success(f"🎉 ఎగ్జామ్ పూర్తయింది! మీ స్కోర్: {st.session_state.score} / {len(st.session_state.auto_questions)}")
-    if st.button("కొత్త ప్రశ్నలతో మళ్ళీ రాయండి"):
-        st.session_state.auto_questions = fetch_auto_questions()
-        st.session_state.q_no = 0
-        st.session_state.score = 0
-        st.session_state.done = False
-        st.session_state.show_ans = False
-        st.rerun()
+    st.write("పక్కన ఉన్న 'Generate New AI Exam' బటన్ నొక్కి ఎగ్జామ్ స్టార్ట్ చేయండి.")
 
 st.divider()
-st.caption("Auto-Learning System Managed by Manohar - Variety Motors")
+st.caption("AI Engine Powered by Gemini - Managed by Manohar (Variety Motors)")
