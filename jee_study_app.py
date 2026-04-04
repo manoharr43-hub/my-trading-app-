@@ -11,47 +11,47 @@ if 'history' not in st.session_state:
 
 # Sidebar
 st.sidebar.header("Settings")
-year = st.sidebar.radio("Year Selection:", ["1st Year", "2nd Year"])
-subject = st.sidebar.selectbox("Subject Selection:", ["Physics", "Chemistry", "Mathematics"])
+year = st.sidebar.radio("Select Year:", ["1st Year", "2nd Year"])
+subject = st.sidebar.selectbox("Select Subject:", ["Physics", "Chemistry", "Mathematics"])
 
-# --- Detailed Question Bank ---
+# --- Detailed Question Bank (English Medium) ---
 quiz_data = {
     "1st Year": {
         "Physics": [
             {
-                "q": "What is the unit of Force?", 
+                "q": "What is the SI unit of Force?", 
                 "options": ["Joule", "Newton", "Watt", "Pascal"], 
                 "correct": "Newton",
                 "exp": """
-                **లోతైన వివరణ (Deep Explanation):**
-                * **ఫార్ములా:** Force (బలం) = mass (ద్రవ్యరాశి) × acceleration (త్వరణం) [$F = m \times a$].
-                * **వివరణ:** ఐజాక్ న్యూటన్ గౌరవార్థం ఈ యూనిట్‌కు 'న్యూటన్' అని పేరు పెట్టారు. 
-                * **ఇతర ఆప్షన్లు ఎందుకు కావు?:** - Joule అనేది Energy (శక్తి) కి యూనిట్. 
-                    - Watt అనేది Power (సామర్థ్యం) కి యూనిట్. 
-                    - Pascal అనేది Pressure (పీడనం) కి యూనిట్.
+                **DEEP EXPLANATION:**
+                * **Formula:** Force is defined as mass times acceleration ($F = m \times a$).
+                * **Reason:** The unit 'Newton' is named after Sir Isaac Newton for his laws of motion. 1 Newton is the force needed to accelerate 1 kg of mass at 1 m/s².
+                * **Other Options:**
+                    - *Joule:* Unit of Work and Energy.
+                    - *Watt:* Unit of Power ($P = W/t$).
+                    - *Pascal:* Unit of Pressure ($P = F/A$).
                 """
             },
             {
-                "q": "What is the unit of Energy?", 
-                "options": ["Newton", "Joule", "Watt", "Hertz"], 
-                "correct": "Joule",
+                "q": "Which of the following is a vector quantity?", 
+                "options": ["Speed", "Distance", "Mass", "Velocity"], 
+                "correct": "Velocity",
                 "exp": """
-                **లోతైన వివరణ (Deep Explanation):**
-                * **వివరణ:** పని చేయడానికి అవసరమైన సామర్థ్యాన్ని శక్తి (Energy) అంటారు. దీని SI యూనిట్ 'జౌల్' (Joule).
-                * **ముఖ్యమైన విషయం:** Work (పని) మరియు Energy రెండింటికీ ఒకే యూనిట్ ఉంటుంది.
+                **DEEP EXPLANATION:**
+                * **Vector Quantity:** It has both magnitude and direction.
+                * **Reason:** Velocity includes direction (e.g., 50 km/h towards North), whereas Speed only has magnitude.
                 """
             }
         ],
         "Chemistry": [
             {
-                "q": "What is the atomic mass of Carbon?", 
-                "options": ["6", "12", "14", "16"], 
-                "correct": "12",
+                "q": "What is the atomic number of Carbon?", 
+                "options": ["4", "6", "8", "12"], 
+                "correct": "6",
                 "exp": """
-                **లోతైన వివరణ (Deep Explanation):**
-                * **వివరణ:** కార్బన్ పరమాణువులో 6 ప్రోటాన్లు మరియు 6 న్యూట్రాన్లు ఉంటాయి. 
-                * **లెక్క:** Atomic Mass = Protons + Neutrons ($6 + 6 = 12$).
-                * **గమనిక:** 6 అనేది కార్బన్ యొక్క Atomic Number (పరమాణు సంఖ్య).
+                **DEEP EXPLANATION:**
+                * **Definition:** The atomic number is the total number of protons in an atom's nucleus.
+                * **Fact:** Carbon has 6 protons, so its atomic number is 6. It also has 6 electrons in a neutral state.
                 """
             }
         ]
@@ -61,49 +61,48 @@ quiz_data = {
 if 'q_no' not in st.session_state:
     st.session_state.q_no = 0
 
-current_list = quiz_data.get(year, {}).get(subject, [{"q": "No questions!", "options": ["N/A"], "correct": "N/A", "exp": "N/A"}])
+current_list = quiz_data.get(year, {}).get(subject, [{"q": "No questions yet!", "options": ["N/A"], "correct": "N/A", "exp": "N/A"}])
 
 # Question Display
 st.subheader(f"📍 {year} - {subject}")
 q_item = current_list[st.session_state.q_no % len(current_list)]
 
-st.info(f"ప్రశ్న: {q_item['q']}")
-user_choice = st.radio("సరైన ఆప్షన్ ఎంచుకోండి:", q_item['options'], key=f"deep_{st.session_state.q_no}")
+st.info(f"Question: {q_item['q']}")
+user_choice = st.radio("Choose the correct option:", q_item['options'], key=f"eng_q_{st.session_state.q_no}")
 
-if st.button('Submit Answer & Save'):
+if st.button('Submit & Save Progress'):
     now = datetime.now().strftime("%d-%m-%Y %H:%M")
     is_correct = user_choice == q_item['correct']
     status = "✅ Correct" if is_correct else "❌ Wrong"
     
-    # Save to History
     st.session_state.history.append({
         "Date": now,
         "Subject": subject,
         "Result": status,
         "Question": q_item['q'],
-        "Your Answer": user_choice,
+        "Your Choice": user_choice,
         "Correct Answer": q_item['correct']
     })
     
     if is_correct:
-        st.success("అద్భుతం బాబు! నువ్వు చెప్పింది సరైన సమాధానం. 👏")
+        st.success("Great job, Babu! Correct answer. 👏")
         st.balloons()
     else:
-        st.error(f"తప్పు బాబు! సరైన సమాధానం: {q_item['correct']}")
+        st.error(f"Incorrect. The correct answer is: {q_item['correct']}")
     
-    # Deep Explanation Box
+    # Explanation in English
     st.markdown("---")
-    st.markdown(f"### 💡 వివరణ (Explanation):")
+    st.markdown(f"### 💡 Explanation (Babu's Guide):")
     st.write(q_item['exp'])
 
-# --- History Table ---
+# --- History Log ---
 st.write("---")
-st.subheader("📊 బాబు ప్రాక్టీస్ హిస్టరీ (History Log)")
+st.subheader("📊 Practice History Log")
 if st.session_state.history:
     df = pd.DataFrame(st.session_state.history)
-    st.dataframe(df, use_container_width=True) # మొబైల్ లో కూడా నీట్ గా కనిపిస్తుంది
+    st.dataframe(df, use_container_width=True)
 else:
-    st.write("ఇంకా చదువు మొదలుపెట్టలేదు. ఆల్ ది బెస్ట్!")
+    st.write("No practice history found yet. Start your quiz now!")
 
 # Navigation
 col1, col2 = st.columns(2)
