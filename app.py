@@ -2,88 +2,89 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="Variety Motors Pro Scanner", layout="wide")
+st.set_page_config(page_title="Variety Motors Pro Sector Scanner", layout="wide")
 
-# Sidebar
-st.sidebar.title("📁 Trading Folders")
-page = st.sidebar.selectbox("Select Folder", ["1. OI Strength", "2. Nifty 50", "3. Bank Nifty", "4. Fin Nifty"])
+# --- ఎడమ వైపు సెక్టార్ ఫోల్డర్స్ (Sidebar) ---
+st.sidebar.title("📁 Sector Folders")
+sector_choice = st.sidebar.selectbox(
+    "Select Sector to Scan", 
+    [
+        "Market Overview",
+        "Nifty 50 (Top Stocks)",
+        "Banking (Nifty Bank)", 
+        "Auto (Variety Motors Special)", 
+        "IT (Software)", 
+        "Pharma (Healthcare)",
+        "Metal (Steel/Iron)",
+        "Finance (Fin Nifty)"
+    ]
+)
 
-def advanced_scan(stock_list):
+# --- స్టాక్ అనాలిసిస్ ఫంక్షన్ ---
+def run_sector_scan(stock_list):
     results = []
     status = st.empty()
     for s in stock_list:
         status.info(f"Analyzing {s}...")
         try:
             ticker = yf.Ticker(s)
-            # 20 days data to calculate Average Volume
             df = ticker.history(period="20d", interval="1d")
             if not df.empty and len(df) > 1:
                 ltp = round(df['Close'].iloc[-1], 2)
-                high = df['High'].iloc[-2]
-                low = df['Low'].iloc[-2]
-                close = df['Close'].iloc[-2]
+                prev_close = df['Close'].iloc[-2]
+                pct_change = round(((ltp - prev_close) / prev_close) * 100, 2)
                 
-                # Volume Analysis
-                current_vol = df['Volume'].iloc[-1]
-                avg_vol = df['Volume'].mean()
-                
-                # Pivot Point Calculation
+                # Pivot Levels
+                high, low, close = df['High'].iloc[-2], df['Low'].iloc[-2], df['Close'].iloc[-2]
                 pivot = (high + low + close) / 3
-                res1 = round((2 * pivot) - low, 2)   # Buy Level
-                sup1 = round((2 * pivot) - high, 2)  # Sell Level
+                buy_above = round((2 * pivot) - low, 2)
+                sell_below = round((2 * pivot) - high, 2)
                 
-                # --- Signal Logic ---
-                # ఒకవేళ ప్రైస్ రెసిస్టెన్స్ పైన ఉంటే BUY, సపోర్ట్ కింద ఉంటే SELL
-                if ltp > res1:
-                    sig = "🚀 BUY"
-                    color = "#d4edda" # Green
-                    breakout = "✅ REAL" if current_vol > avg_vol else "⚠️ FAKE (Low Vol)"
-                elif ltp < sup1:
-                    sig = "🔻 SELL"
-                    color = "#f8d7da" # Red
-                    breakout = "✅ REAL" if current_vol > avg_vol else "⚠️ FAKE (Low Vol)"
+                # Logic
+                if ltp > buy_above:
+                    sig, color = "🚀 BUY", "#d4edda"
+                elif ltp < sell_below:
+                    sig, color = "🔻 SELL", "#f8d7da"
                 else:
-                    sig = "⏳ NEUTRAL"
-                    color = "#ffffff" # White
-                    breakout = "No Breakout"
+                    sig, color = "⏳ NEUTRAL", "#ffffff"
                 
                 results.append({
                     "Stock": s.replace(".NS",""),
                     "LTP": f"{ltp:.2f}",
-                    "Buy Above": f"{res1:.2f}",
-                    "Sell Below": f"{sup1:.2f}",
-                    "Current Signal": sig,
-                    "Breakout Info": breakout,
+                    "Change %": f"{pct_change}%",
+                    "Buy Above": f"{buy_above:.2f}",
+                    "Sell Below": f"{sell_below:.2f}",
+                    "Signal": sig,
                     "Bg": color
                 })
         except: continue
-    
     status.empty()
     if results:
         df_final = pd.DataFrame(results)
-        # టేబుల్ లో సిగ్నల్ ని బట్టి కలర్ అప్లై చేయడం
         st.table(df_final.drop(columns=['Bg']).style.apply(lambda x: [f"background-color: {df_final.loc[x.name, 'Bg']}"]*len(x), axis=1))
-    else:
-        st.error("No Data Found!")
 
-# Pages
-if page == "1. OI Strength":
-    st.title("📊 Option Analysis")
-    st.info("OI డేటా సోమవారం లైవ్ లో వస్తుంది.")
+# --- సెక్టార్ వైజ్ డేటా ---
+sector_data = {
+    "Nifty 50 (Top Stocks)": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS"],
+    "Banking (Nifty Bank)": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS", "FEDERALBNK.NS", "AUBANK.NS"],
+    "Auto (Variety Motors Special)": ["HEROMOTOCO.NS", "TATAMOTORS.NS", "M&M.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS", "ASHOKLEY.NS", "TVSMOTOR.NS", "MARUTI.NS"],
+    "IT (Software)": ["TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "LTIM.NS", "COFORGE.NS"],
+    "Pharma (Healthcare)": ["SUNPHARMA.NS", "CIPLA.NS", "DRREDDY.NS", "DIVISLAB.NS", "APOLLOHOSP.NS", "TORNTPHARM.NS"],
+    "Metal (Steel/Iron)": ["TATASTEEL.NS", "JINDALSTEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", "VEDL.NS", "SAIL.NS"],
+    "Finance (Fin Nifty)": ["BAJFINANCE.NS", "BAJAJFINSV.NS", "CHOLAFIN.NS", "RECLTD.NS", "PFC.NS", "MUTHOOTFIN.NS", "SHRIRAMFIN.NS"]
+}
 
-elif page == "2. Nifty 50":
-    st.title("🎯 Nifty 50 - Buy/Sell Scanner")
-    if st.button("Scan Nifty"): 
-        advanced_scan(["RELIANCE.NS", "HDFCBANK.NS", "SBIN.NS", "ICICIBANK.NS", "INFY.NS", "TCS.NS", "ITC.NS", "AXISBANK.NS"])
+# --- మెయిన్ డిస్‌ప్లే ---
+if sector_choice == "Market Overview":
+    st.title("🌍 Market Heatmap & Overview")
+    st.write("ఎడమ వైపు ఉన్న ఫోల్డర్స్ నుండి ఏదైనా సెక్టార్‌ని సెలెక్ట్ చేసుకోండి.")
+    st.info("ఈరోజు ఏ సెక్టార్ బలంగా ఉందో చూసి, అందులోని 'BUY' స్టాక్స్‌ని పట్టుకోండి!")
 
-elif page == "3. Bank Nifty":
-    st.title("🏦 Bank Nifty - Buy/Sell Scanner")
-    if st.button("Scan Bank Nifty"): 
-        advanced_scan(["SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS", "FEDERALBNK.NS"])
+else:
+    st.title(f"🔍 Scanning {sector_choice}")
+    if st.button(f"Scan {sector_choice} Now"):
+        stocks = sector_data.get(sector_choice, [])
+        run_sector_scan(stocks)
 
-elif page == "4. Fin Nifty":
-    st.title("💰 Fin Nifty - Buy/Sell Scanner")
-    if st.button("Scan Fin Nifty"): 
-        advanced_scan(["BAJFINANCE.NS", "RECLTD.NS", "PFC.NS", "CHOLAFIN.NS", "MUTHOOTFIN.NS"])
-
-st.caption("Developed by Manohar - Variety Motors, Hyderabad")
+st.divider()
+st.caption("Developed by Manohar | Variety Motors, Hyderabad | All the best for your Trades!")
