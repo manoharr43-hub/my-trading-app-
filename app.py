@@ -3,121 +3,82 @@ import yfinance as yf
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# 1. Page Config & Auto-refresh (15 Seconds)
-st.set_page_config(page_title="Variety Motors SM Pro Scanner", layout="wide")
+# 1. Page Config
+st.set_page_config(page_title="Variety Motors SM Pro", layout="wide")
 st_autorefresh(interval=15000, limit=None, key="fizzbuzzcounter")
 
-# 2. Updated Sectors (FinNifty Added)
+# 2. Sectors
 sector_data = {
-    "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS"],
-    "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS", "AUBANK.NS"],
-    "Fin Nifty": ["BAJFINANCE.NS", "CHOLAFIN.NS", "RECLTD.NS", "PFC.NS", "HDFCBANK.NS", "ICICIBANK.NS", "MUTHOOTFIN.NS"],
+    "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS"],
+    "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS"],
+    "Fin Nifty": ["BAJFINANCE.NS", "CHOLAFIN.NS", "RECLTD.NS", "PFC.NS", "HDFCBANK.NS"],
     "Pharmacy": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "APOLLOHOSP.NS"],
-    "IT Sector": ["TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS"],
+    "IT Sector": ["TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS"],
     "Auto (Variety Motors)": ["HEROMOTOCO.NS", "TATAMOTORS.NS", "M&M.NS", "ASHOKLEY.NS", "BAJAJ-AUTO.NS"]
 }
 
 @st.cache_data(ttl=15)
 def get_data(stock_list):
     try:
-        # threads=True వాడటం వల్ల లోడింగ్ ఫాస్ట్ గా ఉంటుంది
         return yf.download(stock_list, period="5d", interval="5m", group_by='ticker', threads=True, progress=False)
     except: return None
 
-# --- 3. LH Side: Sector Scoring Roller ---
-st.markdown("### 📊 Today's Sector Scoring (LH)")
-perf_cols = st.columns(len(sector_data))
-for i, (sector, stocks) in enumerate(sector_data.items()):
-    s_data = yf.download(stocks, period="1d", interval="15m", progress=False)['Close']
+def process_stock(s, df):
+    if df.empty or len(df) < 10: return None
+    ltp = round(float(df['Close'].iloc[-1]), 2)
+    high, low, close = df['High'].iloc[-2], df['Low'].iloc[-2], df['Close'].iloc[-2]
+    pivot = (high + low + close) / 3
+    res = round((2 * pivot) - low, 2)
+    sup = round((2 * pivot) - high, 2)
+    curr_vol = df['Volume'].iloc[-1]
+    avg_vol = df['Volume'].rolling(window=10).mean().iloc[-1]
+    
+    status, bg = "⏳ Neutral", "#ffffff"
+    if ltp > res:
+        status, bg = ("⚠️ FAKE BREAKOUT", "#fff3cd") if curr_vol < avg_vol else ("🚀 BUY / CALL", "#d4edda")
+    elif ltp < sup:
+        status, bg = ("⚠️ FAKE BREAKDOWN", "#fff3cd") if curr_vol < avg_vol else ("🔻 SELL / PUT", "#f8d7da")
+    
+    return {"Stock": s.replace(".NS","").replace("^",""), "LTP": ltp, "Support": sup, "Resistance": res, "Signal": status, "Bg": bg}
+
+# --- UI Layout ---
+col_lh, col_rh = st.columns([2, 1])
+with col_lh:
+    sector_choice = st.selectbox("📁 Select Sector (LH)", list(sector_data.keys()))
+with col_rh:
+    search_q = st.text_input("🔍 Search Stock (RH Side)", "").upper()
+
+# --- 3. Search Result (Separate Column/Section) ---
+if search_q:
+    st.markdown("### 🎯 Search Result")
+    s_ticker = search_q if search_q.endswith(".NS") or search_q.startswith("^") else search_q + ".NS"
+    s_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
     if not s_data.empty:
-        change = ((s_data.iloc[-1] - s_data.iloc[0]) / s_data.iloc[0]).mean() * 100
-        color = "green" if change > 0 else "red"
-        perf_cols[i].markdown(f"**{sector}**\n<h2 style='color:{color};'>{change:.2f}%</h2>", unsafe_allow_html=True)
+        res_dict = process_stock(s_ticker, s_data)
+        if res_dict:
+            # సెర్చ్ చేసిన స్టాక్ ని విడిగా ఒక బాక్స్ లో చూపిస్తున్నాం
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Stock", res_dict['Stock'])
+            c2.metric("LTP", res_dict['LTP'])
+            c3.metric("Signal", res_dict['Signal'])
+            st.info(f"Support: {res_dict['Support']} | Resistance: {res_dict['Resistance']}")
+    else:
+        st.error("స్టాక్ పేరు సరిగ్గా టైప్ చేయండి (e.g. SBIN)")
 
 st.divider()
 
-# --- 4. Main UI Layout: LH Selector & RH Search ---
-col_lh, col_rh = st.columns([2, 1])
-
-with col_lh:
-    sector_choice = st.selectbox("📁 Select Sector / Index (LH Side)", list(sector_data.keys()))
-
-with col_rh:
-    search_stock = st.text_input("🔍 Search Any Stock / Index (RH Side)", "").upper()
-    if search_stock and not (search_stock.endswith(".NS") or search_stock.startswith("^")):
-        # NIFTY లేదా BANKNIFTY అని టైప్ చేస్తే ఆటోమేటిక్ గా సింబల్ మారుస్తుంది
-        if "BANK" in search_stock: search_stock = "^NSEBANK"
-        elif "NIFTY" in search_stock: search_stock = "^NSEI"
-        else: search_stock += ".NS"
-
-# Final list logic
-final_list = sector_data[sector_choice]
-if search_stock:
-    if search_stock not in final_list:
-        final_list = [search_stock] + final_list
-
-def run_scanner(stock_list):
-    results = []
-    data = get_data(stock_list)
-    if data is None or data.empty: 
-        st.info("డేటా లోడ్ అవుతోంది... ఆగండి.")
-        return
-
-    for s in stock_list:
-        try:
-            df = data[s] if len(stock_list) > 1 else data
-            if df.empty or len(df) < 10: continue
-            
-            # --- Rounding LTP, Support, Resistance (సున్నాల తొలగింపు) ---
-            ltp = round(float(df['Close'].iloc[-1]), 2)
-            
-            # Pivot Levels
-            high, low, close = df['High'].iloc[-2], df['Low'].iloc[-2], df['Close'].iloc[-2]
-            pivot = (high + low + close) / 3
-            res = round((2 * pivot) - low, 2)
-            sup = round((2 * pivot) - high, 2)
-
-            # Volume & Fake Breakout Logic
-            curr_vol = df['Volume'].iloc[-1]
-            avg_vol = df['Volume'].rolling(window=10).mean().iloc[-1]
-            
-            status = "⏳ Neutral"
-            bg_color = "#ffffff"
-
-            # Buy/Sell & Call/Put Logic
-            if ltp > res:
-                if curr_vol < avg_vol:
-                    status = "⚠️ FAKE BREAKOUT"
-                    bg_color = "#fff3cd" # పసుపు (Warning)
-                else:
-                    status = "🚀 BUY / CALL SIDE"
-                    bg_color = "#d4edda" # ఆకుపచ్చ (Green)
-            elif ltp < sup:
-                if curr_vol < avg_vol:
-                    status = "⚠️ FAKE BREAKDOWN"
-                    bg_color = "#fff3cd"
-                else:
-                    status = "🔻 SELL / PUT SIDE"
-                    bg_color = "#f8d7da" # ఎరుపు (Red)
-
-            results.append({
-                "Stock Name": s.replace(".NS","").replace("^",""),
-                "LTP (Price)": ltp,
-                "Support": sup,
-                "Resistance": res,
-                "OI / Market Signal": status,
-                "Bg": bg_color
-            })
-        except: continue
-
-    if results:
-        df_final = pd.DataFrame(results)
-        st.table(df_final.drop(columns=['Bg']).style.apply(
-            lambda x: [f"background-color: {df_final.loc[x.name, 'Bg']}"] * len(x), axis=1)
-            .set_properties(subset=['Support'], **{'color': 'blue', 'font-weight': 'bold'})
-            .set_properties(subset=['Resistance'], **{'color': 'red', 'font-weight': 'bold'})
-            .format({"LTP (Price)": "{:.2f}", "Support": "{:.2f}", "Resistance": "{:.2f}"})
-        )
-
+# --- 4. Main Sector Table ---
 st.title(f"⚡ Live Scanner: {sector_choice}")
-run_scanner(final_list)
+main_data = get_data(sector_data[sector_choice])
+results = []
+if main_data is not None:
+    for s in sector_data[sector_choice]:
+        row = process_stock(s, main_data[s] if len(sector_data[sector_choice]) > 1 else main_data)
+        if row: results.append(row)
+
+if results:
+    df_f = pd.DataFrame(results)
+    st.table(df_f.drop(columns=['Bg']).style.apply(lambda x: [f"background-color: {df_f.loc[x.name, 'Bg']}"]*len(x), axis=1)
+             .set_properties(subset=['Support'], **{'color': 'blue', 'font-weight': 'bold'})
+             .set_properties(subset=['Resistance'], **{'color': 'red', 'font-weight': 'bold'})
+             .format({"LTP": "{:.2f}", "Support": "{:.2f}", "Resistance": "{:.2f}"}))
