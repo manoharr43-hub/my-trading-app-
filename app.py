@@ -3,11 +3,11 @@ import yfinance as yf
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# 1. Page Config
-st.set_page_config(page_title="Variety Motors Pro Scanner", layout="wide")
+# 1. Page Configuration
+st.set_page_config(page_title="Variety Motors SM Pro", layout="wide")
 st_autorefresh(interval=15000, limit=None, key="fizzbuzzcounter")
 
-# 2. NSE All Sectors (LH Side కోసం)
+# 2. NSE All Sectors (LH Side)
 sector_data = {
     "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS"],
     "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS", "IDFCFIRSTB.NS"],
@@ -24,10 +24,9 @@ def get_live_data(stock_list):
         return yf.download(stock_list, period="5d", interval="5m", group_by='ticker', threads=True, progress=False)
     except: return None
 
-def process_single_stock(s, df):
+def process_logic(s, df):
     if df is None or df.empty: return None
     try:
-        # Multi-index check
         temp_df = df[s] if isinstance(df.columns, pd.MultiIndex) and s in df.columns.levels[0] else df
         if temp_df.empty: return None
         
@@ -36,66 +35,84 @@ def process_single_stock(s, df):
         pivot = (high + low + close) / 3
         res, sup = round((2 * pivot) - low, 2), round((2 * pivot) - high, 2)
         
-        # OI/PCR Simulation logic (Based on Price Action)
-        pcr = round(0.85, 2) if ltp < pivot else round(1.15, 2)
-        call_oi_strike = round(res + (res * 0.01), 0)
-        put_oi_strike = round(sup - (sup * 0.01), 0)
+        # Volume Analysis (Fake/Real)
+        curr_vol = temp_df['Volume'].iloc[-1]
+        avg_vol = temp_df['Volume'].rolling(window=10).mean().iloc[-1]
+        is_high_vol = curr_vol > avg_vol
         
-        status = "🚀 BUY / CALL SIDE" if ltp > res else ("🔻 SELL / PUT SIDE" if ltp < sup else "⏳ WAIT")
-        bg = "#d4edda" if ltp > res else ("#f8d7da" if ltp < sup else "#ffffff")
+        # Signal & Status
+        signal, status, bg = "⏳ WAIT", "Normal", "#ffffff"
+        if ltp > res:
+            signal = "🚀 BUY"
+            status = "✅ REAL BREAKOUT" if is_high_vol else "⚠️ FAKE BREAKOUT"
+            bg = "#d4edda" if is_high_vol else "#fff3cd"
+        elif ltp < sup:
+            signal = "🔻 SELL"
+            status = "✅ REAL BREAKDOWN" if is_high_vol else "⚠️ FAKE BREAKDOWN"
+            bg = "#f8d7da" if is_high_vol else "#fff3cd"
+
+        # OI Strikes & PCR Simulation
+        call_strike = round(res + (res * 0.005), 0)
+        put_strike = round(sup - (sup * 0.005), 0)
+        pcr = round(0.8, 2) if ltp < pivot else round(1.2, 2)
         
         return {
             "Stock": s.replace(".NS","").replace("^",""),
             "LTP": ltp, "Support": sup, "Resistance": res,
-            "Call_OI_Strike": call_oi_strike, "Put_OI_Strike": put_oi_strike,
-            "PCR": pcr, "Signal": status, "Bg": bg
+            "Call_OI": int(call_strike), "Put_OI": int(put_strike),
+            "PCR": pcr, "Signal": signal, "Status": status, "Bg": bg
         }
     except: return None
 
-# --- 3. UI: LH Selector & RH Quick Search ---
+# --- UI Header ---
 col_lh, col_rh = st.columns([1, 1])
-
 with col_lh:
-    sector_choice = st.selectbox("📁 Select NSE Sector", list(sector_data.keys()))
-
+    sector_choice = st.selectbox("📁 Select NSE Sector (LH Side)", list(sector_data.keys()))
 with col_rh:
-    search_q = st.text_input("🔍 Quick Search (NIFTY50, BANKNIFTY, etc.)", "").upper()
+    search_q = st.text_input("🔍 Quick Search (NIFTY50, BANKNIFTY, SBIN, etc.)", "").upper()
 
-# --- 4. Search Result Box (పైన విడిగా కనిపించేలా) ---
+# --- 3. Quick Search Result (మీ కండిషన్స్ ఇక్కడ ఉన్నాయి) ---
 if search_q:
     st.markdown("---")
     s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
     s_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
     
     if not s_data.empty:
-        res = process_single_stock(s_ticker, s_data)
+        res = process_logic(s_ticker, s_data)
         if res:
-            st.subheader(f"🎯 Analysis for {search_q}")
+            st.subheader(f"🎯 Analysis Result: {search_q}")
+            # విడివిడి కాలమ్స్ లో OI స్ట్రైక్స్
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("LTP", f"₹{res['LTP']}")
-            c2.metric("Signal", res['Signal'])
-            c3.metric("PCR", res['PCR'])
-            c4.metric("Market", "BULLISH" if res['PCR'] > 1 else "BEARISH")
-            
-            st.info(f"📍 Highest Call OI Strike: **{res['Call_OI_Strike']}** | Highest Put OI Strike: **{res['Put_OI_Strike']}**")
-    else:
-        st.error("స్టాక్ పేరు దొరకలేదు. ఉదాహరణకు: SBIN లేదా NIFTY50 అని టైప్ చేయండి.")
+            with c1:
+                st.metric("LTP", f"₹{res['LTP']}")
+                st.write(f"**Signal:** {res['Signal']}")
+            with c2:
+                st.metric("🟢 CALL OI STRIKE", res['Call_OI'])
+                st.write(f"**Status:** {res['Status']}")
+            with c3:
+                st.metric("🔴 PUT OI STRIKE", res['Put_OI'])
+                st.write(f"**PCR:** {res['PCR']}")
+            with c4:
+                pcr_text = "BULLISH 🚀" if res['PCR'] > 1 else "BEARISH 🔻"
+                st.metric("OVERALL STRENGTH", pcr_text)
+        else: st.warning("డేటా లోడ్ అవ్వలేదు.")
+    else: st.error("సరైన పేరు టైప్ చేయండి.")
 
-st.markdown("---")
+st.divider()
 
-# --- 5. Main Sector Table ---
-st.title(f"⚡ Live Sector Scanner: {sector_choice}")
+# --- 4. Main Sector Table (LH Sector) ---
+st.title(f"⚡ Live Scanner: {sector_choice}")
 main_data = get_live_data(sector_data[sector_choice])
 table_results = []
 
 if main_data is not None:
     for s in sector_data[sector_choice]:
-        row = process_single_stock(s, main_data)
+        row = process_logic(s, main_data)
         if row: table_results.append(row)
 
 if table_results:
     df_f = pd.DataFrame(table_results)
-    st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Signal', 'PCR']].style.apply(
+    st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Signal', 'Status', 'PCR']].style.apply(
         lambda x: [f"background-color: {df_f.loc[x.name, 'Bg']}"]*len(x), axis=1)
         .format({"LTP": "{:.2f}", "Support": "{:.2f}", "Resistance": "{:.2f}"})
     )
