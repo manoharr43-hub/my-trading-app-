@@ -3,38 +3,32 @@ import google.generativeai as genai
 import json
 import pandas as pd
 from datetime import datetime
-import time
 
 # 1. AI సెటప్
 GEMINI_API_KEY = "AIzaSyBcHJe7mUNPBsm_TcvY4_EiX3N5ly_srCw" 
 genai.configure(api_key=GEMINI_API_KEY)
+# ఇక్కడ మోడల్‌ని కొంచెం అప్‌డేట్ చేశాను వేగం కోసం
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-st.set_page_config(page_title="Sai Rakshith JEE PYQ Master", layout="centered")
+st.set_page_config(page_title="Sai Rakshith JEE Master", layout="centered")
 
-# 2. ప్రశ్నలు తెచ్చే ఫంక్షన్ (With Retry Logic)
-def fetch_all_pyq_questions(subject):
+# 2. ప్రశ్నలు తెచ్చే ఫంక్షన్ (Optimized for Speed)
+def fetch_questions_fast(subject):
+    # AI కి సింపుల్ అండ్ డైరెక్ట్ ఇన్స్ట్రక్షన్స్
     prompt = f"""
-    Role: Senior JEE Mains Expert.
-    Context: Use all uploaded Previous Year Papers (2025, 2024, etc.).
-    Task: Create 5 challenging MCQs for {subject}.
-    Detailed Requirement: Provide a VERY LONG AND DEEP step-by-step mathematical explanation for each answer.
-    Output Format: Return ONLY a raw JSON list.
-    JSON structure: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "..."}}].
-    No markdown, no talk.
+    You are a Senior JEE Mains Expert. 
+    Task: Scan the uploaded JEE Previous Year Papers (especially 2025 Jan shifts).
+    Generate 5 high-quality MCQs for {subject}.
+    Logic: Provide a VERY DETAILED LONG solution for each question.
+    Format: Return ONLY raw JSON list: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "Step 1... Step 2... Step 3..."}}].
+    Do not include any extra text or markdown.
     """
-    
-    # AI కి 3 సార్లు అవకాశం ఇస్తున్నాము (Load అవ్వడానికి)
-    for attempt in range(3):
-        try:
-            response = model.generate_content(prompt)
-            if response and response.text:
-                text = response.text.strip().replace('```json', '').replace('```', '')
-                return json.loads(text)
-        except Exception as e:
-            time.sleep(2) # 2 సెకన్లు ఆగి మళ్ళీ ట్రై చేస్తుంది
-            continue
-    return None
+    try:
+        # response_mime_type వాడటం వల్ల JSON పక్కాగా వస్తుంది
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+        return json.loads(response.text)
+    except Exception as e:
+        return []
 
 # 3. సెషన్ స్టేట్
 if 'history' not in st.session_state: st.session_state.history = []
@@ -43,24 +37,24 @@ if 'q_no' not in st.session_state: st.session_state.q_no = 0
 if 'show_ans' not in st.session_state: st.session_state.show_ans = False
 
 # 4. UI డిజైన్
-st.title("🎓 SAI RAKSHITH JEE PYQ MASTER")
-st.caption("Analyzing All Uploaded Previous Year Papers (2025 & Older)")
+st.title("🎓 SAI RAKSHITH JEE MASTER")
+st.caption("Latest PYQs with Deep Logical Solutions")
 
-menu = st.radio("మెనూ:", ["📝 Start PYQ Practice", "📜 Progress Report"], horizontal=True)
+menu = st.radio("మెనూ:", ["📝 Practice Session", "📜 Progress Report"], horizontal=True)
 
-if menu == "📝 Start PYQ Practice":
+if menu == "📝 Practice Session":
     sub = st.selectbox("సబ్జెక్ట్ ఎంచుకోండి:", ["Mathematics", "Physics", "Chemistry"])
     
-    if st.button("🚀 Analyze All PYQs & Start", use_container_width=True):
-        with st.spinner("అన్ని సంవత్సరాల పేపర్లను విశ్లేషిస్తోంది... దయచేసి 10 సెకన్లు ఆగండి."):
-            questions = fetch_all_pyq_questions(sub)
+    if st.button("🚀 Start Deep Practice", use_container_width=True):
+        with st.spinner("ఫైల్స్ విశ్లేషిస్తోంది... దయచేసి ఒక్క నిమిషం ఆగండి."):
+            questions = fetch_questions_fast(sub)
             if questions:
                 st.session_state.ai_questions = questions
                 st.session_state.q_no = 0
                 st.session_state.show_ans = False
                 st.rerun()
             else:
-                st.error("సర్వర్ బిజీగా ఉంది. దయచేసి మళ్ళీ ఒకసారి బటన్ నొక్కండి.")
+                st.warning("AI కొంచెం ఎక్కువ టైమ్ తీసుకుంటోంది. దయచేసి మళ్ళీ ఒకసారి బటన్ నొక్కండి.")
 
     if st.session_state.ai_questions:
         if st.session_state.q_no < len(st.session_state.ai_questions):
@@ -71,34 +65,7 @@ if menu == "📝 Start PYQ Practice":
             
             ans = st.radio("నీ సమాధానం:", q['options'], key=f"ans_{st.session_state.q_no}")
 
-            if st.button("🔍 Check Answer & See Detailed Solution", use_container_width=True):
+            if st.button("🔍 Check Answer & See Deep Logic", use_container_width=True):
                 st.session_state.show_ans = True
 
-            if st.session_state.show_ans:
-                if ans == q['answer']: st.success("శభాష్! సరైన సమాధానం! ✅")
-                else: st.error(f"తప్పు! సరైన సమాధానం: {q['answer']} ❌")
-                
-                with st.expander("📖 లోతైన వివరణ (Long Step-by-Step Solution):", expanded=True):
-                    st.write(q['explanation'])
-                
-                if st.button("తర్వాతి ప్రశ్న ➡️", use_container_width=True):
-                    st.session_state.q_no += 1
-                    st.session_state.show_ans = False
-                    st.rerun()
-        else:
-            st.session_state.history.append({"Date": datetime.now().strftime("%d/%m %H:%M"), "Sub": sub, "Ref": "All PYQs"})
-            st.balloons()
-            st.success("సెషన్ పూర్తి! వెరీ గుడ్ బాబు!")
-            st.session_state.ai_questions = []
-    else:
-        st.write("పైన ఉన్న బటన్ నొక్కి ప్రాక్టీస్ మొదలుపెట్టు బాబు.")
-
-else:
-    st.subheader("📜 నీ ప్రోగ్రెస్")
-    if st.session_state.history:
-        st.table(pd.DataFrame(st.session_state.history))
-    else:
-        st.info("ఇంకా ఏ పరీక్షలు రాయలేదు.")
-
-st.divider()
-st.caption("Managed by Manohar - Variety Motors | 20+ Years Industry Excellence")
+            if st.session_state.show_ans
