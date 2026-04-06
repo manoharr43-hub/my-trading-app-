@@ -3,32 +3,38 @@ import google.generativeai as genai
 import json
 import pandas as pd
 from datetime import datetime
+import time
 
 # 1. AI సెటప్
 GEMINI_API_KEY = "AIzaSyBcHJe7mUNPBsm_TcvY4_EiX3N5ly_srCw" 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-st.set_page_config(page_title="Sai Rakshith JEE Previous Years Master", layout="centered")
+st.set_page_config(page_title="Sai Rakshith JEE PYQ Master", layout="centered")
 
-# 2. అన్ని అప్‌లోడ్ చేసిన పేపర్ల నుండి ప్రశ్నలు తెచ్చే ఫంక్షన్
+# 2. ప్రశ్నలు తెచ్చే ఫంక్షన్ (With Retry Logic)
 def fetch_all_pyq_questions(subject):
     prompt = f"""
-    You are a Senior JEE Expert. I have uploaded several Previous Year Question (PYQ) papers (2025 and earlier).
-    TASK: Analyze ALL uploaded papers for {subject}.
-    1. Select 5 high-weightage MCQs based on the patterns of these previous years.
-    2. For each question, provide a VERY LONG, STEP-BY-STEP MATHEMATICAL EXPLANATION.
-    3. Include the core formula used and the logic behind every step so the student understands perfectly.
-    4. Mention which year/shift the question or pattern belongs to if possible.
-    Return ONLY a raw JSON list: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "..."}}].
-    Do not use markdown.
+    Role: Senior JEE Mains Expert.
+    Context: Use all uploaded Previous Year Papers (2025, 2024, etc.).
+    Task: Create 5 challenging MCQs for {subject}.
+    Detailed Requirement: Provide a VERY LONG AND DEEP step-by-step mathematical explanation for each answer.
+    Output Format: Return ONLY a raw JSON list.
+    JSON structure: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "..."}}].
+    No markdown, no talk.
     """
-    try:
-        response = model.generate_content(prompt)
-        text = response.text.strip().replace('```json', '').replace('```', '')
-        return json.loads(text)
-    except Exception as e:
-        return []
+    
+    # AI కి 3 సార్లు అవకాశం ఇస్తున్నాము (Load అవ్వడానికి)
+    for attempt in range(3):
+        try:
+            response = model.generate_content(prompt)
+            if response and response.text:
+                text = response.text.strip().replace('```json', '').replace('```', '')
+                return json.loads(text)
+        except Exception as e:
+            time.sleep(2) # 2 సెకన్లు ఆగి మళ్ళీ ట్రై చేస్తుంది
+            continue
+    return None
 
 # 3. సెషన్ స్టేట్
 if 'history' not in st.session_state: st.session_state.history = []
@@ -46,7 +52,7 @@ if menu == "📝 Start PYQ Practice":
     sub = st.selectbox("సబ్జెక్ట్ ఎంచుకోండి:", ["Mathematics", "Physics", "Chemistry"])
     
     if st.button("🚀 Analyze All PYQs & Start", use_container_width=True):
-        with st.spinner("అన్ని సంవత్సరాల పేపర్ల నుండి లోతైన వివరణలతో ప్రశ్నలను సిద్ధం చేస్తోంది..."):
+        with st.spinner("అన్ని సంవత్సరాల పేపర్లను విశ్లేషిస్తోంది... దయచేసి 10 సెకన్లు ఆగండి."):
             questions = fetch_all_pyq_questions(sub)
             if questions:
                 st.session_state.ai_questions = questions
@@ -54,7 +60,7 @@ if menu == "📝 Start PYQ Practice":
                 st.session_state.show_ans = False
                 st.rerun()
             else:
-                st.error("ప్రశ్నలు లోడ్ కాలేదు. దయచేసి మళ్ళీ ప్రయత్నించండి.")
+                st.error("సర్వర్ బిజీగా ఉంది. దయచేసి మళ్ళీ ఒకసారి బటన్ నొక్కండి.")
 
     if st.session_state.ai_questions:
         if st.session_state.q_no < len(st.session_state.ai_questions):
@@ -82,10 +88,10 @@ if menu == "📝 Start PYQ Practice":
         else:
             st.session_state.history.append({"Date": datetime.now().strftime("%d/%m %H:%M"), "Sub": sub, "Ref": "All PYQs"})
             st.balloons()
-            st.success("ఈ సెషన్ పూర్తి చేసావు! వెరీ గుడ్ బాబు!")
+            st.success("సెషన్ పూర్తి! వెరీ గుడ్ బాబు!")
             st.session_state.ai_questions = []
     else:
-        st.write("పైన ఉన్న బటన్ నొక్కి అన్ని సంవత్సరాల పేపర్లతో ప్రాక్టీస్ మొదలుపెట్టు బాబు.")
+        st.write("పైన ఉన్న బటన్ నొక్కి ప్రాక్టీస్ మొదలుపెట్టు బాబు.")
 
 else:
     st.subheader("📜 నీ ప్రోగ్రెస్")
@@ -95,4 +101,4 @@ else:
         st.info("ఇంకా ఏ పరీక్షలు రాయలేదు.")
 
 st.divider()
-st.caption("Managed by Manohar - Variety Motors | 20+ Years Excellence")
+st.caption("Managed by Manohar - Variety Motors | 20+ Years Industry Excellence")
