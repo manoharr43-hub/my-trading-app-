@@ -25,17 +25,16 @@ def process_stock(s, df):
     if df is None or df.empty: return None
     try:
         temp_df = df[s] if isinstance(df.columns, pd.MultiIndex) and s in df.columns.levels[0] else df
-        # LTP Rounding (సున్నాలు లేకుండా)
-        ltp = round(float(temp_df['Close'].iloc[-1]), 1)
+        # LTP ని రౌండ్ ఆఫ్ చేస్తున్నాం
+        ltp = round(float(temp_df['Close'].iloc[-1]), 2)
         high, low, close = temp_df['High'].iloc[-2], temp_df['Low'].iloc[-2], temp_df['Close'].iloc[-2]
         pivot = (high + low + close) / 3
         
-        # Call/Put Side Levels (సున్నాలు లేకుండా రౌండ్ ఆఫ్)
-        call_strikes = [round(pivot + (i * (high-low)), 1) for i in range(1, 6)]
-        put_strikes = [round(pivot - (i * (high-low)), 1) for i in range(1, 6)]
+        # Strikes ని రౌండ్ ఆఫ్ చేస్తున్నాం
+        call_strikes = [round(pivot + (i * (high-low)), 2) for i in range(1, 6)]
+        put_strikes = [round(pivot - (i * (high-low)), 2) for i in range(1, 6)]
         
-        res, sup = round(call_strikes[0], 1), round(put_strikes[0], 1)
-        
+        res, sup = round(call_strikes[0], 2), round(put_strikes[0], 2)
         strength = "BULLISH 🚀" if ltp > pivot else "BEARISH 🔻"
         bg = "#d4edda" if ltp > pivot else "#f8d7da"
         
@@ -56,7 +55,7 @@ with col_rh:
 
 # --- 3. Search Result Box ---
 if search_q:
-    st.markdown(f"### 🎯 Search Analysis for: {search_q}")
+    st.markdown(f"### 🎯 Analysis: {search_q}")
     s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
     s_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
     
@@ -66,14 +65,11 @@ if search_q:
             st.success(f"**Overall Strength: {res_dict['Strength']}**")
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("**🟢 Top 5 Call Side Strikes**")
-                for val in res_dict['Call_Strikes']:
-                    st.write(f"`{val}`")
+                st.write("**🟢 Call Side Strikes**")
+                for val in res_dict['Call_Strikes']: st.write(f"`{val:.2f}`")
             with c2:
-                st.markdown("**🔴 Top 5 Put Side Strikes**")
-                for val in res_dict['Put_Strikes']:
-                    st.write(f"`{val}`")
-        else: st.warning("డేటా లోడ్ అవ్వలేదు.")
+                st.write("**🔴 Put Side Strikes**")
+                for val in res_dict['Put_Strikes']: st.write(f"`{val:.2f}`")
     else: st.error("సరైన పేరు టైప్ చేయండి.")
 
 st.divider()
@@ -89,7 +85,8 @@ if main_data is not None:
 
 if results:
     df_f = pd.DataFrame(results)
-    # టేబుల్ లో కూడా సున్నాలు లేకుండా క్లియర్ గా చూపించడం
+    # ఎర్రర్ రాకుండా టేబుల్ ఫార్మాట్ చేస్తున్నాం
     st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Strength']].style.apply(
         lambda x: [f"background-color: {df_f.loc[x.name, 'Bg']}"]*len(x), axis=1)
-        .format({"LTP": "{:.1f}", "Support": "{1:.1f}", "Resistance": "{:.1f}"}))
+        .format({"LTP": "{:.2f}", "Support": "{:.2f}", "Resistance": "{:.2f}"})
+    )
