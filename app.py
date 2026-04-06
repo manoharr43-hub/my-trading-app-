@@ -1,13 +1,13 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta # ఇండికేటర్ల కోసం ఇది అవసరం
 from streamlit_autorefresh import st_autorefresh
 
+# 1. పేజీ సెటప్
 st.set_page_config(page_title="SMC Pro Max Scanner", layout="wide")
 st_autorefresh(interval=15000, limit=None, key="fizzbuzzcounter")
 
-# --- 1. సెక్టార్ డేటా ---
+# 2. సెక్టార్లు
 sector_data = {
     "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS"],
     "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS"],
@@ -16,7 +16,17 @@ sector_data = {
 
 @st.cache_data(ttl=15)
 def get_smc_data(stock_list):
-    return yf.download(stock_list, period="20d", interval="15m", group_by='ticker', threads=True, progress=False)
+    try:
+        return yf.download(stock_list, period="20d", interval="15m", group_by='ticker', threads=True, progress=False)
+    except: return None
+
+# RSI లెక్కించడానికి సొంత ఫార్ములా
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 def run_smc_scanner(stock_list):
     results = []
@@ -28,37 +38,34 @@ def run_smc_scanner(stock_list):
             df = data[s] if len(stock_list) > 1 else data
             if len(df) < 20: continue
             
-            # --- SMC Pro Max Calculations ---
+            # --- ఇండికేటర్ల లెక్కలు ---
             ltp = round(df['Close'].iloc[-1], 2)
-            ema9 = ta.ema(df['Close'], length=9).iloc[-1]
-            ema21 = ta.ema(df['Close'], length=21).iloc[-1]
-            ema50 = ta.ema(df['Close'], length=50).iloc[-1]
-            rsi = ta.rsi(df['Close'], length=14).iloc[-1]
-            adx = ta.adx(df['High'], df['Low'], df['Close'], length=14)['ADX_14'].iloc[-1]
+            ema9 = df['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
+            ema21 = df['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+            ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
+            rsi_val = calculate_rsi(df['Close']).iloc[-1]
             vol_ma = df['Volume'].rolling(window=20).mean().iloc[-1]
             
-            # Trend & Signal Logic
+            # Trend & Strength
             trend = "BULL" if ltp > ema50 else "BEAR"
             vol_stat = "STRNG" if df['Volume'].iloc[-1] > vol_ma else "WEAK"
-            ema_cross = "UP" if ema9 > ema21 else "DOWN"
             
-            # Strong Signal Formula (SM Pro Max)
+            # Signal Logic
             signal = "WAIT"
             bg = "#ffffff"
-            if trend == "BULL" and vol_stat == "STRNG" and rsi > 60:
+            if trend == "BULL" and rsi_val > 60:
                 signal = "🔥 STRONG BUY"
-                bg = "#d4edda" # Green
-            elif trend == "BEAR" and vol_stat == "STRNG" and rsi < 40:
+                bg = "#d4edda"
+            elif trend == "BEAR" and rsi_val < 40:
                 signal = "💥 STRONG SELL"
-                bg = "#f8d7da" # Red
+                bg = "#f8d7da"
 
             results.append({
                 "Stock": s.replace(".NS",""),
                 "Trend": trend,
                 "Vol": vol_stat,
-                "ADX": round(adx, 1),
-                "RSI": round(rsi, 0),
-                "EMA": ema_cross,
+                "RSI": round(rsi_val, 0),
+                "EMA": "UP" if ema9 > ema21 else "DOWN",
                 "LTP": ltp,
                 "Signal": signal,
                 "Bg": bg
@@ -67,7 +74,6 @@ def run_smc_scanner(stock_list):
 
     if results:
         df_f = pd.DataFrame(results)
-        # 8 Columns Dashboard Style Display
         st.table(df_f.drop(columns=['Bg']).style.apply(lambda x: [f"background-color: {df_f.loc[x.name, 'Bg']}"]*len(x), axis=1))
 
 # UI
