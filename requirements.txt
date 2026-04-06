@@ -4,4 +4,4 @@ streamlit-autorefresh
 google-generativeai
 streamlit
 requests
-pandas-ta
+pandas
