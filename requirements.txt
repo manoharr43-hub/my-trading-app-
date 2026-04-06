@@ -1,6 +1,7 @@
 yfinance
-panda
+pandas
 streamlit-autorefresh
 google-generativeai
 streamlit
 requests
+pandas-ta
