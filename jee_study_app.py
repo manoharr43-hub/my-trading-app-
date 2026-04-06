@@ -4,30 +4,27 @@ import json
 import pandas as pd
 from datetime import datetime
 
-# 1. AI సెటప్
+# 1. AI సెటప్ (Gemini 1.5 Flash - ఇది చాలా వేగంగా ఉంటుంది)
 GEMINI_API_KEY = "AIzaSyBcHJe7mUNPBsm_TcvY4_EiX3N5ly_srCw" 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 st.set_page_config(page_title="Sai Rakshith JEE Mains Master", layout="centered")
 
-# 2. ప్రశ్నలు తెచ్చే ఫంక్షన్ - Optimized for Success
-def fetch_mains_questions_safe(subject):
-    # ఇక్కడ AI కి చాలా సింపుల్ గా ఇన్స్ట్రక్షన్స్ ఇచ్చాను వేగం కోసం
+# 2. ప్రశ్నలు తెచ్చే ఫంక్షన్ (Optimized for Speed)
+def fetch_questions_instantly(subject):
     prompt = f"""
     Act as a JEE Mains Expert. 
-    Task: Generate 5 high-quality MCQs for {subject} based on ACTUAL JEE Mains Previous Years patterns.
-    Rules: 
-    1. Provide a VERY LONG, STEP-BY-STEP MATHEMATICAL SOLUTION for each answer.
-    2. Ensure questions are strictly JEE Mains level.
-    Return ONLY a JSON list: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "Detailed step-by-step..."}}].
+    Use the uploaded PYQ files for {subject}.
+    Generate 5 CHALLENGING MCQs strictly for JEE Mains.
+    Requirement: Provide a VERY DEEP, LONG STEP-BY-STEP solution for each.
+    Return ONLY a raw JSON list: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "Step 1... Step 2..."}}].
     Do not use markdown.
     """
     try:
-        # AI స్పందన కోసం 30 సెకన్ల టైమ్ ఇస్తున్నాము
+        # response_mime_type ని JSON కి సెట్ చేయడం వల్ల AI చాలా వేగంగా స్పందిస్తుంది
         response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        if response and response.text:
-            return json.loads(response.text)
+        return json.loads(response.text)
     except:
         return []
 
@@ -38,24 +35,24 @@ if 'ans_show' not in st.session_state: st.session_state.ans_show = False
 
 # 4. UI డిజైన్
 st.title("🎓 SAI RAKSHITH JEE MAINS MASTER")
-st.caption("Strictly JEE Mains Mode | Detailed Logical Solutions")
+st.caption("Optimized Speed Mode | Strictly JEE Mains Solutions")
 
-# సబ్జెక్ట్ ఎంపిక
 sub_choice = st.selectbox("సబ్జెక్ట్ ఎంచుకోండి (JEE Mains Only):", ["Mathematics", "Physics", "Chemistry"])
 
 # బటన్
 if st.button("🚀 Start JEE Mains Practice Session", use_container_width=True):
-    with st.spinner("ఫైల్స్ విశ్లేషించి ప్రశ్నలను సిద్ధం చేస్తోంది..."):
-        qs = fetch_mains_questions_safe(sub_choice)
+    with st.spinner("AI విశ్లేషిస్తోంది... దయచేసి ఒక్క 5 సెకన్లు ఆగండి."):
+        # ఒకేసారి 5 ప్రశ్నలు లోడ్ అయిపోతాయి
+        qs = fetch_questions_instantly(sub_choice)
         if qs:
             st.session_state.mains_bank = qs
             st.session_state.idx = 0
             st.session_state.ans_show = False
             st.rerun()
         else:
-            st.warning("AI కొంచెం ఎక్కువ టైమ్ తీసుకుంటోంది. దయచేసి మళ్ళీ ఒక్కసారి బటన్ నొక్కండి.")
+            st.warning("AI కొంచెం బిజీగా ఉంది. ఒక్కసారి మళ్ళీ బటన్ నొక్కండి.")
 
-# ప్రశ్నలు చూపే భాగం
+# ప్రశ్నలు ప్రదర్శించే భాగం
 if st.session_state.mains_bank:
     curr = st.session_state.idx
     if curr < len(st.session_state.mains_bank):
@@ -75,9 +72,10 @@ if st.session_state.mains_bank:
             else: 
                 st.error(f"తప్పు! సరైన సమాధానం: {q['answer']} ❌")
             
-            with st.expander("📖 ఈ లెక్క వెనుక ఉన్న పూర్తి లాజిక్ (Step-by-Step):", expanded=True):
+            with st.expander("📖 లోతైన వివరణ (Detailed Solution):", expanded=True):
                 st.write(q['explanation'])
             
+            # ఇక్కడ 'Next' నొక్కితే మళ్ళీ లోడింగ్ ఉండదు, వెంటనే వస్తుంది
             if st.button("Next Question ➡️", use_container_width=True):
                 st.session_state.idx += 1
                 st.session_state.ans_show = False
