@@ -22,11 +22,11 @@ def get_live_data(stock_list):
         return yf.download(stock_list, period="5d", interval="5m", group_by='ticker', threads=True, progress=False)
     except: return None
 
-# --- 3. Unified Logic for Table & Search ---
+# --- 3. Logic for Signal, OI Strikes & Fake Check ---
 def process_data(df, ticker=""):
     if df is None or df.empty: return None
     try:
-        # Handling MultiIndex for Table and Single Index for Search
+        # MultiIndex check for table vs single df for search
         temp_df = df[ticker] if isinstance(df.columns, pd.MultiIndex) and ticker in df.columns.levels[0] else df
         if temp_df is None or temp_df.empty or len(temp_df) < 5: return None
         
@@ -36,7 +36,7 @@ def process_data(df, ticker=""):
         pivot = (high + low + close) / 3
         res, sup = round((2 * pivot) - low, 2), round((2 * pivot) - high, 2)
         
-        # OI simulation based on Pivot levels
+        # Simulated OI Strikes
         call_oi_strike = int(res + (res * 0.005))
         put_oi_strike = int(sup - (sup * 0.005))
         pcr = round(0.85, 2) if ltp < pivot else round(1.15, 2)
@@ -68,11 +68,10 @@ with col_lh:
 with col_rh:
     search_q = st.text_input("🔍 Quick Search (RELIANCE, SBIN, NIFTY50)", "").upper().strip()
 
-# --- 5. Quick Search Result (ఇప్పుడు 5 కాలమ్స్ లో విడిగా కనిపిస్తుంది) ---
+# --- 5. Quick Search Result (Vidiga 5 Columns lo) ---
 if search_q:
     st.markdown("---")
     s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
-    # సింగిల్ స్టాక్ కోసం డేటా డౌన్లోడ్ ఫిక్స్
     s_raw = yf.download(s_ticker, period="5d", interval="5m", progress=False, auto_adjust=True)
     
     if not s_raw.empty:
@@ -87,9 +86,9 @@ if search_q:
             c5.metric("SIGNAL", res['Signal'])
             st.markdown(f"**Market Condition:** {res['Status']}")
         else:
-            st.warning("ఈ స్టాక్ డేటా ప్రాసెస్ చేయలేకపోతున్నాము.")
+            st.warning("డేటా ప్రాసెస్ చేయలేకపోతున్నాము. దయచేసి వెయిట్ చేయండి.")
     else:
-        st.error("స్టాక్ దొరకలేదు. దయచేసి పూర్తి పేరు టైప్ చేయండి.")
+        st.error("స్టాక్ దొరకలేదు. దయచేసి SBIN లేదా NIFTY50 అని టైప్ చేయండి.")
 
 st.divider()
 
