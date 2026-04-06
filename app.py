@@ -21,16 +21,15 @@ def get_live_data(stock_list):
         return yf.download(stock_list, period="5d", interval="5m", group_by='ticker', threads=True, progress=False)
     except: return None
 
-# --- 3. Unified Logic for Table & Search ---
+# --- 3. Unified Logic (Fixed Rounding & Search) ---
 def process_stock_data(df, ticker_name=""):
     if df is None or df.empty: return None
     try:
-        # సింగిల్ స్టాక్ సెర్చ్ కి మరియు టేబుల్ కి డేటా స్ట్రక్చర్ వేరుగా ఉంటుంది, దాన్ని ఇక్కడ హ్యాండిల్ చేస్తున్నాను
         temp_df = df
         if isinstance(df.columns, pd.MultiIndex) and ticker_name in df.columns.levels[0]:
             temp_df = df[ticker_name]
         
-        if temp_df.empty or len(temp_df) < 5: return None
+        if temp_df.empty or len(temp_df) < 2: return None
         
         ltp = round(float(temp_df['Close'].iloc[-1]), 2)
         high, low, close = temp_df['High'].iloc[-2], temp_df['Low'].iloc[-2], temp_df['Close'].iloc[-2]
@@ -41,7 +40,7 @@ def process_stock_data(df, ticker_name=""):
         curr_vol = temp_df['Volume'].iloc[-1]
         avg_vol = temp_df['Volume'].rolling(window=10).mean().iloc[-1]
         
-        # Signal & Status Logic
+        # Signal & Status
         signal, status, bg = "⏳ WAIT", "Normal", "#ffffff"
         if ltp > res:
             signal = "🚀 BUY"
@@ -52,49 +51,45 @@ def process_stock_data(df, ticker_name=""):
             status = "✅ REAL BREAKDOWN" if curr_vol > avg_vol else "⚠️ FAKE BREAKDOWN"
             bg = "#f8d7da" if curr_vol > avg_vol else "#fff3cd"
             
-        call_oi = int(res + (res * 0.005))
-        put_oi = int(sup - (sup * 0.005))
-        pcr = round(0.85, 2) if ltp < pivot else round(1.15, 2)
-        
         return {
             "LTP": ltp, "Support": sup, "Resistance": res,
-            "Call_OI": call_oi, "Put_OI": put_oi,
-            "PCR": pcr, "Signal": signal, "Status": status, "Bg": bg
+            "Call_OI": int(res + (res * 0.005)),
+            "Put_OI": int(sup - (sup * 0.005)),
+            "PCR": round(0.85, 2) if ltp < pivot else round(1.15, 2),
+            "Signal": signal, "Status": status, "Bg": bg
         }
     except: return None
 
 # --- UI Setup ---
 col_lh, col_rh = st.columns([1, 1])
 with col_lh:
-    sector_choice = st.selectbox("📁 Select NSE Sector", list(sector_data.keys()))
+    sector_choice = st.selectbox("📁 Select NSE Sector (LH Side)", list(sector_data.keys()))
 with col_rh:
-    search_q = st.text_input("🔍 Quick Search (e.g. RELIANCE, SBIN, NIFTY50)", "").upper()
+    # Space ఇచ్చినా పనిచేసేలా .replace(" ", "") యాడ్ చేశాను
+    search_q = st.text_input("🔍 Quick Search (NIFTY50, BANKNIFTY, RELIANCE)", "").upper().replace(" ", "")
 
-# --- 4. Search Result Display (Fixed) ---
+# --- 4. Search Result Display (Modified only this part) ---
 if search_q:
     st.markdown("---")
     s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
-    # సెర్చ్ కోసం డేటా డౌన్లోడ్
     s_raw_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
     
     if not s_raw_data.empty:
-        res = process_stock_data(s_raw_data) # ఇక్కడ నేరుగా డేటా పంపిస్తున్నాను
+        res = process_stock_data(s_raw_data)
         if res:
-            st.subheader(f"🎯 Analysis: {search_q}")
+            st.subheader(f"🎯 Analysis for {search_q}")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("LTP", f"₹{res['LTP']}")
             c2.metric("🟢 CALL OI STRIKE", res['Call_OI'])
             c3.metric("🔴 PUT OI STRIKE", res['Put_OI'])
             c4.metric("PCR", res['PCR'])
             st.markdown(f"**Signal:** {res['Signal']} | **Market Status:** {res['Status']}")
-        else:
-            st.warning("ఈ స్టాక్ డేటా ప్రస్తుతం విశ్లేషించలేకపోతున్నాము.")
     else:
-        st.error("స్టాక్ దొరకలేదు. దయచేసి పూర్తి పేరు (RELIANCE) టైప్ చేయండి.")
+        st.error("స్టాక్ దొరకలేదు. దయచేసి స్పేస్ లేకుండా (NIFTY50) టైప్ చేయండి.")
 
 st.divider()
 
-# --- 5. Main Sector Table ---
+# --- 5. Main Sector Table (Unchanged) ---
 st.title(f"⚡ Live Scanner: {sector_choice}")
 main_raw_data = get_live_data(sector_data[sector_choice])
 table_results = []
