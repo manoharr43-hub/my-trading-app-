@@ -11,13 +11,13 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 
 st.set_page_config(page_title="Sai Rakshith JEE Fast-Track", layout="centered")
 
-# 2. ప్రశ్నల బ్యాంక్ ని ముందే సిద్ధం చేసే ఫంక్షన్
-def prepare_question_bank(subject):
+# 2. ప్రశ్నలు ముందే తయారు చేసే ఫంక్షన్
+def fetch_bulk_questions(subject):
     prompt = f"""
-    Analyze all uploaded PYQs (2025 Jan shift, 2024, etc.) for {subject}.
-    Generate a set of 10 tough JEE Mains MCQs at once.
-    Each question must have a VERY DEEP, LONG STEP-BY-STEP SOLUTION.
-    Format: Return ONLY raw JSON list: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "Step 1... Step 2..."}}].
+    Analyze ALL uploaded PYQs and 2025 Jan papers for {subject}.
+    Generate 10 HIGH-QUALITY JEE Mains MCQs.
+    Provide a VERY LONG, STEP-BY-STEP logical explanation for each.
+    Return ONLY raw JSON list: [{{"question": "...", "options": ["A", "B", "C", "D"], "answer": "A", "explanation": "Step 1... Step 2..."}}].
     Do not use markdown.
     """
     try:
@@ -26,59 +26,60 @@ def prepare_question_bank(subject):
     except:
         return []
 
-# 3. సెషన్ స్టేట్ (పాత డేటాని భద్రపరచడానికి)
+# 3. సెషన్ స్టేట్ (డేటాని దాచి ఉంచడానికి)
 if 'history' not in st.session_state: st.session_state.history = []
-if 'question_bank' not in st.session_state: st.session_state.question_bank = []
-if 'current_idx' not in st.session_state: st.session_state.current_idx = 0
-if 'show_ans' not in st.session_state: st.session_state.show_ans = False
+if 'q_bank' not in st.session_state: st.session_state.q_bank = []
+if 'index' not in st.session_state: st.session_state.index = 0
+if 'ans_visible' not in st.session_state: st.session_state.ans_visible = False
 
-# 4. UI డిజైన్
+# 4. UI
 st.title("🎓 SAI RAKSHITH JEE FAST-TRACK")
-st.caption("Continuous Processing: No Waiting Time for Questions")
+st.caption("Auto-Preload Mode: Continuous Practice without Waiting")
 
-sub = st.selectbox("సబ్జెక్ట్ ఎంచుకోండి:", ["Mathematics", "Physics", "Chemistry"])
+selected_sub = st.selectbox("సబ్జెక్ట్ ఎంచుకోండి:", ["Mathematics", "Physics", "Chemistry"])
 
-# ప్రశ్నలు లోడ్ చేసే బటన్
-if st.button("🚀 Prepare Exam Paper (Fast Load)", use_container_width=True):
+# బటన్ నొక్కినప్పుడు 10 ప్రశ్నలు లోడ్ అవుతాయి
+if st.button("🚀 Prepare 10 Questions (Instant Access)", use_container_width=True):
     with st.spinner("AI ప్రశ్నలను సిద్ధం చేస్తోంది... ఒక్క నిమిషం ఆగండి."):
-        bank = prepare_question_bank(sub)
-        if bank:
-            st.session_state.question_bank = bank
-            st.session_state.current_idx = 0
-            st.session_state.show_ans = False
+        new_qs = fetch_bulk_questions(selected_sub)
+        if new_qs:
+            st.session_state.q_bank = new_qs
+            st.session_state.index = 0
+            st.session_state.ans_visible = False
             st.rerun()
 
-# బాబుకి ప్రశ్నలు చూపించే విధానం
-if st.session_state.question_bank:
-    idx = st.session_state.current_idx
-    if idx < len(st.session_state.question_bank):
-        q = st.session_state.question_bank[idx]
+# ప్రశ్నలు చూపే భాగం
+if st.session_state.q_bank:
+    idx = st.session_state.index
+    if idx < len(st.session_state.q_bank):
+        q = st.session_state.q_bank[idx]
         st.divider()
-        st.subheader(f"ప్రశ్న {idx + 1} / {len(st.session_state.question_bank)}:")
+        st.subheader(f"ప్రశ్న {idx + 1} / 10:")
         st.info(q['question'])
         
-        ans = st.radio("నీ సమాధానం:", q['options'], key=f"q_{idx}")
+        user_choice = st.radio("నీ సమాధానం:", q['options'], key=f"q_fast_{idx}")
 
-        if st.button("🔍 Check Answer & Detailed Logic", use_container_width=True):
-            st.session_state.show_ans = True
+        if st.button("🔍 Check Answer & Detailed Solution", use_container_width=True):
+            st.session_state.ans_visible = True
 
-        if st.session_state.show_ans:
-            if ans == q['answer']: st.success("శభాష్! కరెక్ట్! ✅")
+        if st.session_state.ans_visible:
+            if user_choice == q['answer']: st.success("శభాష్! కరెక్ట్! ✅")
             else: st.error(f"తప్పు! సరైన సమాధానం: {q['answer']} ❌")
             
-            with st.expander("📖 ఈ లెక్క వెనుక ఉన్న పూర్తి లాజిక్ (Deep Explanation):", expanded=True):
+            with st.expander("📖 లోతైన వివరణ (Deep Logic Solution):", expanded=True):
                 st.write(q['explanation'])
             
+            # ఇక్కడ 'Next' నొక్కినప్పుడు చాలా వేగంగా మారుతుంది
             if st.button("Next Question ➡️", use_container_width=True):
-                st.session_state.current_idx += 1
-                st.session_state.show_ans = False
+                st.session_state.index += 1
+                st.session_state.ans_visible = False
                 st.rerun()
     else:
         st.balloons()
-        st.success("ఈ సెషన్ లోని అన్ని ప్రశ్నలు పూర్తి చేసావు! వెరీ గుడ్ బాబు!")
-        st.session_state.question_bank = []
+        st.success("వెరీ గుడ్ బాబు! 10 ప్రశ్నలు పూర్తి చేసావు. మళ్ళీ బటన్ నొక్కి ఇంకో 10 ప్రశ్నలు లోడ్ చేసుకో.")
+        st.session_state.q_bank = []
 else:
-    st.write("బాబు, పైన ఉన్న బటన్ నొక్కు. AI నీ కోసం 10 ప్రశ్నలను ముందే సిద్ధం చేసి ఉంచుతుంది.")
+    st.write("బాబు, పైన ఉన్న బటన్ నొక్కు. నీ కోసం 10 ప్రశ్నలు సిద్ధంగా ఉంటాయి.")
 
 st.divider()
-st.caption("Managed by Manohar - Variety Motors | Ensuring Smooth Learning for Sai Rakshith")
+st.caption("Managed by Manohar - Variety Motors | 20+ Years Excellence")
