@@ -7,11 +7,16 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="Variety Motors SM Pro", layout="wide")
 st_autorefresh(interval=15000, limit=None, key="fizzbuzzcounter")
 
-# 2. Sector Data
+# 2. NSE All Sectors Data (మీరు అడిగిన సెక్టార్లు ఇక్కడ యాడ్ చేశాను)
 sector_data = {
-    "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS"],
-    "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS"],
-    "Auto (Variety Motors)": ["HEROMOTOCO.NS", "TATAMOTORS.NS", "M&M.NS", "ASHOKLEY.NS", "BAJAJ-AUTO.NS"]
+    "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS"],
+    "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS", "IDFCFIRSTB.NS", "AUBANK.NS"],
+    "IT Sector": ["TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "LTIM.NS", "COFORGE.NS"],
+    "Auto Sector": ["HEROMOTOCO.NS", "TATAMOTORS.NS", "M&M.NS", "BAJAJ-AUTO.NS", "TVSMOTOR.NS", "ASHOKLEY.NS", "MARUTI.NS"],
+    "Pharmacy": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "APOLLOHOSP.NS", "Auropharma.NS", "LUPIN.NS"],
+    "Metal Sector": ["TATASTEEL.NS", "JINDALSTEL.NS", "HINDALCO.NS", "JSWSTEEL.NS", "VEDL.NS", "NATIONALUM.NS"],
+    "FMCG": ["ITC.NS", "HINDUNILVR.NS", "BRITANNIA.NS", "NESTLEIND.NS", "TATACONSUM.NS", "DABUR.NS"],
+    "Energy": ["RELIANCE.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "ADANIGREEN.NS", "BPCL.NS"]
 }
 
 @st.cache_data(ttl=15)
@@ -29,43 +34,35 @@ def process_stock(s, df):
         pivot = (high + low + close) / 3
         res, sup = round((2 * pivot) - low, 2), round((2 * pivot) - high, 2)
 
-        # --- Volume Analysis for Fake/Real Check ---
+        # Volume Analysis
         curr_vol = temp_df['Volume'].iloc[-1]
         avg_vol = temp_df['Volume'].rolling(window=10).mean().iloc[-1]
         is_high_vol = curr_vol > avg_vol
 
-        # --- Buy/Sell & Fake/Real Logic ---
-        signal = "⏳ WAIT"
-        bo_type = "Normal"
-        bg = "#ffffff"
+        # Signal Logic
+        signal, bo_type, bg = "⏳ WAIT", "Normal", "#ffffff"
 
         if ltp > res:
             signal = "🚀 BUY"
             if not is_high_vol:
                 bo_type = "⚠️ FAKE BREAKOUT"
-                bg = "#fff3cd" # Yellow for Warning
+                bg = "#fff3cd"
             else:
                 bo_type = "✅ REAL BREAKOUT"
-                bg = "#d4edda" # Green for Real
+                bg = "#d4edda"
         elif ltp < sup:
             signal = "🔻 SELL"
             if not is_high_vol:
                 bo_type = "⚠️ FAKE BREAKDOWN"
-                bg = "#fff3cd" # Yellow
+                bg = "#fff3cd"
             else:
                 bo_type = "✅ REAL BREAKDOWN"
-                bg = "#f8d7da" # Red for Real
+                bg = "#f8d7da"
 
-        strength = "BULLISH 🚀" if ltp > pivot else "BEARISH 🔻"
-        
         return {
             "Stock": s.replace(".NS",""),
-            "LTP": ltp, 
-            "Support": sup, 
-            "Resistance": res,
-            "Signal": signal,
-            "Breakout Status": bo_type, # కొత్త కాలమ్
-            "Strength": strength, 
+            "LTP": ltp, "Support": sup, "Resistance": res,
+            "Signal": signal, "Breakout Status": bo_type,
             "Bg": bg
         }
     except: return None
@@ -73,9 +70,9 @@ def process_stock(s, df):
 # --- UI Layout ---
 col_lh, col_rh = st.columns([2, 1])
 with col_lh:
-    sector_choice = st.selectbox("📁 Select Sector", list(sector_data.keys()))
+    sector_choice = st.selectbox("📁 Select Sector (NSE Sectors)", list(sector_data.keys()))
 with col_rh:
-    search_q = st.text_input("🔍 Search Stock Name", "").upper()
+    search_q = st.text_input("🔍 Quick Search", "").upper()
 
 st.divider()
 
@@ -90,8 +87,7 @@ if main_data is not None:
 
 if results:
     df_f = pd.DataFrame(results)
-    # అన్ని కాలమ్స్ నీట్‌గా అమర్చాను
-    st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Signal', 'Breakout Status', 'Strength']].style.apply(
+    st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Signal', 'Breakout Status']].style.apply(
         lambda x: [f"background-color: {df_f.loc[x.name, 'Bg']}"]*len(x), axis=1)
         .format({"LTP": "{:.2f}", "Support": "{:.2f}", "Resistance": "{:.2f}"})
     )
