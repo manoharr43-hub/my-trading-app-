@@ -21,15 +21,12 @@ def get_live_data(stock_list):
         return yf.download(stock_list, period="5d", interval="5m", group_by='ticker', threads=True, progress=False)
     except: return None
 
-# --- 3. Unified Logic (Fixed Rounding & Search) ---
-def process_stock_data(df, ticker_name=""):
+# --- 3. Core Logic for Signal & OI ---
+def process_data(df, ticker=""):
     if df is None or df.empty: return None
     try:
-        temp_df = df
-        if isinstance(df.columns, pd.MultiIndex) and ticker_name in df.columns.levels[0]:
-            temp_df = df[ticker_name]
-        
-        if temp_df.empty or len(temp_df) < 2: return None
+        temp_df = df[ticker] if isinstance(df.columns, pd.MultiIndex) and ticker in df.columns.levels[0] else df
+        if temp_df.empty or len(temp_df) < 5: return None
         
         ltp = round(float(temp_df['Close'].iloc[-1]), 2)
         high, low, close = temp_df['High'].iloc[-2], temp_df['Low'].iloc[-2], temp_df['Close'].iloc[-2]
@@ -37,10 +34,15 @@ def process_stock_data(df, ticker_name=""):
         pivot = (high + low + close) / 3
         res, sup = round((2 * pivot) - low, 2), round((2 * pivot) - high, 2)
         
+        # Volume Check for Fake/Real
         curr_vol = temp_df['Volume'].iloc[-1]
         avg_vol = temp_df['Volume'].rolling(window=10).mean().iloc[-1]
         
-        # Signal & Status
+        # OI Simulation Strikes
+        call_oi_strike = int(res + (res * 0.005))
+        put_oi_strike = int(sup - (sup * 0.005))
+        pcr = round(0.85, 2) if ltp < pivot else round(1.15, 2)
+        
         signal, status, bg = "⏳ WAIT", "Normal", "#ffffff"
         if ltp > res:
             signal = "🚀 BUY"
@@ -53,53 +55,53 @@ def process_stock_data(df, ticker_name=""):
             
         return {
             "LTP": ltp, "Support": sup, "Resistance": res,
-            "Call_OI": int(res + (res * 0.005)),
-            "Put_OI": int(sup - (sup * 0.005)),
-            "PCR": round(0.85, 2) if ltp < pivot else round(1.15, 2),
-            "Signal": signal, "Status": status, "Bg": bg
+            "Call_OI": call_oi_strike, "Put_OI": put_oi_strike,
+            "PCR": pcr, "Signal": signal, "Status": status, "Bg": bg
         }
     except: return None
 
 # --- UI Setup ---
 col_lh, col_rh = st.columns([1, 1])
 with col_lh:
-    sector_choice = st.selectbox("📁 Select NSE Sector (LH Side)", list(sector_data.keys()))
+    sector_choice = st.selectbox("📁 Select NSE Sector", list(sector_data.keys()))
 with col_rh:
-    # Space ఇచ్చినా పనిచేసేలా .replace(" ", "") యాడ్ చేశాను
-    search_q = st.text_input("🔍 Quick Search (NIFTY50, BANKNIFTY, RELIANCE)", "").upper().replace(" ", "")
+    search_q = st.text_input("🔍 Quick Search (RELIANCE, SBIN, NIFTY50)", "").upper().strip()
 
-# --- 4. Search Result Display (Modified only this part) ---
+# --- 4. Search Analysis Display (5 Columns) ---
 if search_q:
     st.markdown("---")
     s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
-    s_raw_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
+    s_raw = yf.download(s_ticker, period="5d", interval="5m", progress=False)
     
-    if not s_raw_data.empty:
-        res = process_stock_data(s_raw_data)
+    if not s_raw.empty:
+        res = process_data(s_raw)
         if res:
-            st.subheader(f"🎯 Analysis for {search_q}")
-            c1, c2, c3, c4 = st.columns(4)
+            st.subheader(f"🎯 Analysis for: {search_q}")
+            # మీరు అడిగినట్లు 5 కాలమ్స్ లో డిస్ప్లే
+            c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("LTP", f"₹{res['LTP']}")
             c2.metric("🟢 CALL OI STRIKE", res['Call_OI'])
             c3.metric("🔴 PUT OI STRIKE", res['Put_OI'])
-            c4.metric("PCR", res['PCR'])
-            st.markdown(f"**Signal:** {res['Signal']} | **Market Status:** {res['Status']}")
+            c4.metric("PCR VALUE", res['PCR'])
+            c5.metric("SIGNAL", res['Signal'])
+            
+            st.info(f"**Market Condition:** {res['Status']}")
     else:
-        st.error("స్టాక్ దొరకలేదు. దయచేసి స్పేస్ లేకుండా (NIFTY50) టైప్ చేయండి.")
+        st.error("స్టాక్ దొరకలేదు. దయచేసి పూర్తి పేరు టైప్ చేయండి.")
 
 st.divider()
 
-# --- 5. Main Sector Table (Unchanged) ---
+# --- 5. Main Live Scanner Table (Unchanged) ---
 st.title(f"⚡ Live Scanner: {sector_choice}")
-main_raw_data = get_live_data(sector_data[sector_choice])
+main_raw = get_live_data(sector_data[sector_choice])
 table_results = []
 
-if main_raw_data is not None:
+if main_raw is not None:
     for s in sector_data[sector_choice]:
-        row_res = process_stock_data(main_raw_data, s)
-        if row_res:
-            row_res["Stock"] = s.replace(".NS","")
-            table_results.append(row_res)
+        row = process_data(main_raw, s)
+        if row:
+            row["Stock"] = s.replace(".NS","")
+            table_results.append(row)
 
 if table_results:
     df_f = pd.DataFrame(table_results)
