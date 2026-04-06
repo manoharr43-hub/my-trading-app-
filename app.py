@@ -7,13 +7,12 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="Variety Motors Pro Scanner", layout="wide")
 st_autorefresh(interval=15000, limit=None, key="fizzbuzzcounter")
 
-# 2. Sector Data (LH Side)
+# 2. Sector Data
 sector_data = {
     "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS"],
     "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS", "IDFCFIRSTB.NS"],
     "Auto Sector": ["HEROMOTOCO.NS", "TATAMOTORS.NS", "M&M.NS", "BAJAJ-AUTO.NS", "ASHOKLEY.NS"],
-    "Pharmacy": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "APOLLOHOSP.NS"],
-    "IT Sector": ["TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS"]
+    "Pharmacy": ["SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "APOLLOHOSP.NS"]
 }
 
 @st.cache_data(ttl=15)
@@ -22,27 +21,34 @@ def get_live_data(stock_list):
         return yf.download(stock_list, period="5d", interval="5m", group_by='ticker', threads=True, progress=False)
     except: return None
 
-# --- 3. Search Result Logic ---
-def process_stock_logic(df):
-    if df is None or df.empty or len(df) < 5: return None
+# --- 3. Unified Logic for Table & Search ---
+def process_stock_data(df, ticker_name=""):
+    if df is None or df.empty: return None
     try:
-        ltp = round(float(df['Close'].iloc[-1]), 2)
-        high, low, close = df['High'].iloc[-2], df['Low'].iloc[-2], df['Close'].iloc[-2]
+        # సింగిల్ స్టాక్ సెర్చ్ కి మరియు టేబుల్ కి డేటా స్ట్రక్చర్ వేరుగా ఉంటుంది, దాన్ని ఇక్కడ హ్యాండిల్ చేస్తున్నాను
+        temp_df = df
+        if isinstance(df.columns, pd.MultiIndex) and ticker_name in df.columns.levels[0]:
+            temp_df = df[ticker_name]
+        
+        if temp_df.empty or len(temp_df) < 5: return None
+        
+        ltp = round(float(temp_df['Close'].iloc[-1]), 2)
+        high, low, close = temp_df['High'].iloc[-2], temp_df['Low'].iloc[-2], temp_df['Close'].iloc[-2]
         
         pivot = (high + low + close) / 3
         res, sup = round((2 * pivot) - low, 2), round((2 * pivot) - high, 2)
         
-        curr_vol = df['Volume'].iloc[-1]
-        avg_vol = df['Volume'].rolling(window=10).mean().iloc[-1]
+        curr_vol = temp_df['Volume'].iloc[-1]
+        avg_vol = temp_df['Volume'].rolling(window=10).mean().iloc[-1]
         
-        # Signal & Fake Alert
-        signal = "🚀 BUY" if ltp > res else ("🔻 SELL" if ltp < sup else "⏳ WAIT")
-        status = "Normal"
-        bg = "#ffffff"
+        # Signal & Status Logic
+        signal, status, bg = "⏳ WAIT", "Normal", "#ffffff"
         if ltp > res:
+            signal = "🚀 BUY"
             status = "✅ REAL BREAKOUT" if curr_vol > avg_vol else "⚠️ FAKE BREAKOUT"
             bg = "#d4edda" if curr_vol > avg_vol else "#fff3cd"
         elif ltp < sup:
+            signal = "🔻 SELL"
             status = "✅ REAL BREAKDOWN" if curr_vol > avg_vol else "⚠️ FAKE BREAKDOWN"
             bg = "#f8d7da" if curr_vol > avg_vol else "#fff3cd"
             
@@ -62,47 +68,43 @@ col_lh, col_rh = st.columns([1, 1])
 with col_lh:
     sector_choice = st.selectbox("📁 Select NSE Sector", list(sector_data.keys()))
 with col_rh:
-    search_q = st.text_input("🔍 Quick Search (Enter Stock Name e.g. SBIN, NIFTY50)", "").upper()
+    search_q = st.text_input("🔍 Quick Search (e.g. RELIANCE, SBIN, NIFTY50)", "").upper()
 
-# --- 4. Search Result Display (Top Section) ---
+# --- 4. Search Result Display (Fixed) ---
 if search_q:
     st.markdown("---")
     s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
-    s_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
+    # సెర్చ్ కోసం డేటా డౌన్లోడ్
+    s_raw_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
     
-    if not s_data.empty:
-        res = process_stock_logic(s_data)
+    if not s_raw_data.empty:
+        res = process_stock_data(s_raw_data) # ఇక్కడ నేరుగా డేటా పంపిస్తున్నాను
         if res:
-            st.subheader(f"🎯 Analysis for: {search_q}")
+            st.subheader(f"🎯 Analysis: {search_q}")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("LTP", f"₹{res['LTP']}")
             c2.metric("🟢 CALL OI STRIKE", res['Call_OI'])
             c3.metric("🔴 PUT OI STRIKE", res['Put_OI'])
             c4.metric("PCR", res['PCR'])
-            
-            # Highlight Signal & Status
             st.markdown(f"**Signal:** {res['Signal']} | **Market Status:** {res['Status']}")
         else:
-            st.warning("ఈ స్టాక్ డేటా లోడ్ అవ్వలేదు.")
+            st.warning("ఈ స్టాక్ డేటా ప్రస్తుతం విశ్లేషించలేకపోతున్నాము.")
     else:
-        st.error("స్టాక్ పేరు దొరకలేదు. దయచేసి పేరు చెక్ చేయండి.")
+        st.error("స్టాక్ దొరకలేదు. దయచేసి పూర్తి పేరు (RELIANCE) టైప్ చేయండి.")
 
 st.divider()
 
-# --- 5. Main Sector Table (Bottom Section) ---
+# --- 5. Main Sector Table ---
 st.title(f"⚡ Live Scanner: {sector_choice}")
-main_data = get_live_data(sector_data[sector_choice])
+main_raw_data = get_live_data(sector_data[sector_choice])
 table_results = []
 
-if main_data is not None:
+if main_raw_data is not None:
     for s in sector_data[sector_choice]:
-        try:
-            df = main_data[s] if len(sector_data[sector_choice]) > 1 else main_data
-            row_data = process_stock_logic(df)
-            if row_data:
-                row_data["Stock"] = s.replace(".NS","")
-                table_results.append(row_data)
-        except: continue
+        row_res = process_stock_data(main_raw_data, s)
+        if row_res:
+            row_res["Stock"] = s.replace(".NS","")
+            table_results.append(row_res)
 
 if table_results:
     df_f = pd.DataFrame(table_results)
