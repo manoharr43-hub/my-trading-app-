@@ -11,7 +11,6 @@ st_autorefresh(interval=15000, limit=None, key="fizzbuzzcounter")
 sector_data = {
     "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS", "SBIN.NS"],
     "Bank Nifty": ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "PNB.NS"],
-    "Fin Nifty": ["BAJFINANCE.NS", "CHOLAFIN.NS", "RECLTD.NS", "PFC.NS", "MUTHOOTFIN.NS"],
     "Auto (Variety Motors)": ["HEROMOTOCO.NS", "TATAMOTORS.NS", "M&M.NS", "ASHOKLEY.NS", "BAJAJ-AUTO.NS"]
 }
 
@@ -25,52 +24,58 @@ def process_stock(s, df):
     if df is None or df.empty: return None
     try:
         temp_df = df[s] if isinstance(df.columns, pd.MultiIndex) and s in df.columns.levels[0] else df
-        # LTP ని రౌండ్ ఆఫ్ చేస్తున్నాం
         ltp = round(float(temp_df['Close'].iloc[-1]), 2)
         high, low, close = temp_df['High'].iloc[-2], temp_df['Low'].iloc[-2], temp_df['Close'].iloc[-2]
         pivot = (high + low + close) / 3
-        
-        # Strikes ని రౌండ్ ఆఫ్ చేస్తున్నాం
-        call_strikes = [round(pivot + (i * (high-low)), 2) for i in range(1, 6)]
-        put_strikes = [round(pivot - (i * (high-low)), 2) for i in range(1, 6)]
-        
-        res, sup = round(call_strikes[0], 2), round(put_strikes[0], 2)
+        res, sup = round((2 * pivot) - low, 2), round((2 * pivot) - high, 2)
+
+        # --- Volume Analysis for Fake/Real Check ---
+        curr_vol = temp_df['Volume'].iloc[-1]
+        avg_vol = temp_df['Volume'].rolling(window=10).mean().iloc[-1]
+        is_high_vol = curr_vol > avg_vol
+
+        # --- Buy/Sell & Fake/Real Logic ---
+        signal = "⏳ WAIT"
+        bo_type = "Normal"
+        bg = "#ffffff"
+
+        if ltp > res:
+            signal = "🚀 BUY"
+            if not is_high_vol:
+                bo_type = "⚠️ FAKE BREAKOUT"
+                bg = "#fff3cd" # Yellow for Warning
+            else:
+                bo_type = "✅ REAL BREAKOUT"
+                bg = "#d4edda" # Green for Real
+        elif ltp < sup:
+            signal = "🔻 SELL"
+            if not is_high_vol:
+                bo_type = "⚠️ FAKE BREAKDOWN"
+                bg = "#fff3cd" # Yellow
+            else:
+                bo_type = "✅ REAL BREAKDOWN"
+                bg = "#f8d7da" # Red for Real
+
         strength = "BULLISH 🚀" if ltp > pivot else "BEARISH 🔻"
-        bg = "#d4edda" if ltp > pivot else "#f8d7da"
         
         return {
-            "Stock": s.replace(".NS","").replace("^",""),
-            "LTP": ltp, "Support": sup, "Resistance": res,
-            "Call_Strikes": call_strikes, "Put_Strikes": put_strikes,
-            "Strength": strength, "Bg": bg
+            "Stock": s.replace(".NS",""),
+            "LTP": ltp, 
+            "Support": sup, 
+            "Resistance": res,
+            "Signal": signal,
+            "Breakout Status": bo_type, # కొత్త కాలమ్
+            "Strength": strength, 
+            "Bg": bg
         }
     except: return None
 
 # --- UI Layout ---
 col_lh, col_rh = st.columns([2, 1])
 with col_lh:
-    sector_choice = st.selectbox("📁 Select Sector (LH Side)", list(sector_data.keys()))
+    sector_choice = st.selectbox("📁 Select Sector", list(sector_data.keys()))
 with col_rh:
-    search_q = st.text_input("🔍 Search Stock / Index (e.g. NIFTY50, BANKNIFTY)", "").upper()
-
-# --- 3. Search Result Box ---
-if search_q:
-    st.markdown(f"### 🎯 Analysis: {search_q}")
-    s_ticker = "^NSEI" if "NIFTY50" in search_q else ("^NSEBANK" if "BANKNIFTY" in search_q else (search_q if search_q.endswith(".NS") else search_q + ".NS"))
-    s_data = yf.download(s_ticker, period="5d", interval="5m", progress=False)
-    
-    if not s_data.empty:
-        res_dict = process_stock(s_ticker, s_data)
-        if res_dict:
-            st.success(f"**Overall Strength: {res_dict['Strength']}**")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write("**🟢 Call Side Strikes**")
-                for val in res_dict['Call_Strikes']: st.write(f"`{val:.2f}`")
-            with c2:
-                st.write("**🔴 Put Side Strikes**")
-                for val in res_dict['Put_Strikes']: st.write(f"`{val:.2f}`")
-    else: st.error("సరైన పేరు టైప్ చేయండి.")
+    search_q = st.text_input("🔍 Search Stock Name", "").upper()
 
 st.divider()
 
@@ -85,8 +90,8 @@ if main_data is not None:
 
 if results:
     df_f = pd.DataFrame(results)
-    # ఎర్రర్ రాకుండా టేబుల్ ఫార్మాట్ చేస్తున్నాం
-    st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Strength']].style.apply(
+    # అన్ని కాలమ్స్ నీట్‌గా అమర్చాను
+    st.table(df_f[['Stock', 'LTP', 'Support', 'Resistance', 'Signal', 'Breakout Status', 'Strength']].style.apply(
         lambda x: [f"background-color: {df_f.loc[x.name, 'Bg']}"]*len(x), axis=1)
         .format({"LTP": "{:.2f}", "Support": "{:.2f}", "Resistance": "{:.2f}"})
     )
