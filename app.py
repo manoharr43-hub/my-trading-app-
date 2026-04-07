@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
@@ -9,7 +8,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
 
-# రేట్ లిమిట్ ఎర్రర్ రాకుండా ఉండటానికి రిఫ్రెష్ టైమ్‌ను 30 సెకన్లకు పెంచాను
+# Rate Limit సమస్య రాకుండా 30 సెకన్ల గ్యాప్ ఇచ్చాను
 st_autorefresh(interval=30000, key="refresh")
 
 # =============================
@@ -25,9 +24,10 @@ def rsi(series, period=14):
 # =============================
 # DATA FETCH
 # =============================
-@st.cache_data(ttl=30) # TTL పెంచడం వల్ల సర్వర్ మీద లోడ్ తగ్గుతుంది
+@st.cache_data(ttl=30)
 def get_data(stocks):
     try:
+        # Intraday కోసం కేవలం 1 Day డేటా
         return yf.download(stocks, period="1d", interval="5m", group_by="ticker", progress=False)
     except:
         return None
@@ -48,6 +48,7 @@ def analyze(df, ticker):
         vol = d['Volume']
         ltp = close.iloc[-1]
 
+        # Correct VWAP for Intraday
         d['VWAP'] = (close * vol).cumsum() / vol.cumsum()
         d['RSI'] = rsi(close)
 
@@ -94,16 +95,15 @@ if data is not None and not data.empty:
 
     if results:
         df_display = pd.DataFrame(results)
+        
         def highlight_rows(row):
             return [f'background-color: {row.Color}' for _ in row]
 
-        # వార్నింగ్ పోవడానికి ఇక్కడ width మార్చాను
-        st.dataframe(
-            df_display.drop(columns=['Color']).style.apply(highlight_rows, axis=1),
-            width=None, # Auto width
-            hide_index=True
-        )
+        # ఎర్రర్ రాకుండా ఇక్కడ మార్చాను
+        st.dataframe(df_display.drop(columns=['Color']).style.apply(highlight_rows, axis=1))
+        
+        st.caption("డేటా ప్రతి 30 సెకన్లకు ఒకసారి ఆటోమేటిక్ గా అప్‌డేట్ అవుతుంది.")
     else:
         st.info("విశ్లేషించడానికి తగినంత డేటా లేదు.")
 else:
-    st.error("Yahoo Finance నుండి డేటా రావడం లేదు. కాసేపు ఆగి మళ్ళీ ప్రయత్నించండి (Rate Limit).")
+    st.error("Yahoo Finance నుండి డేటా రావడం లేదు. కాసేపు ఆగి మళ్ళీ ప్రయత్నించండి.")
