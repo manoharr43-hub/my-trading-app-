@@ -29,29 +29,20 @@ def ema(series, span):
 # =============================
 @st.cache_data(ttl=20)
 def get_data(stocks):
-    return yf.download(
-        stocks,
-        period="5d",
-        interval="5m",
-        group_by="ticker",
-        progress=False
-    )
+    return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
 
 
 # =============================
-# INTRADAY ANALYSIS
+# ANALYSIS
 # =============================
 def analyze_intraday(df, ticker):
     try:
-        if isinstance(df.columns, pd.MultiIndex):
-            d = df[ticker].copy()
-        else:
-            d = df.copy()
+        d = df[ticker].copy() if isinstance(df.columns, pd.MultiIndex) else df.copy()
 
         if d is None or len(d) < 30:
             return None
 
-        # ✅ Only TODAY data
+        # 👉 Only today data
         d["Date"] = d.index.date
         today = d["Date"].iloc[-1]
         d = d[d["Date"] == today].copy()
@@ -66,77 +57,90 @@ def analyze_intraday(df, ticker):
 
         ltp = float(close.iloc[-1])
 
-        # ✅ VWAP (Intraday)
+        # =============================
+        # VWAP
+        # =============================
         d["VWAP"] = (close * vol).cumsum() / vol.cumsum()
 
-        # Indicators
+        # =============================
+        # RSI + EMA
+        # =============================
         d["RSI"] = rsi(close)
         d["EMA20"] = ema(close, 20)
         d["EMA50"] = ema(close, 50)
 
+        # =============================
         # ORB
-        opening_high = high.iloc[:6].max()
-        opening_low = low.iloc[:6].min()
+        # =============================
+        orb_high = high.iloc[:6].max()
+        orb_low = low.iloc[:6].min()
 
-        # Volume Spike
+        # =============================
+        # SUPPORT & RESISTANCE (Pivot)
+        # =============================
+        pivot = (high.iloc[-2] + low.iloc[-2] + close.iloc[-2]) / 3
+        resistance = (2 * pivot) - low.iloc[-2]
+        support = (2 * pivot) - high.iloc[-2]
+
+        # =============================
+        # Volume
+        # =============================
         avg_vol = vol.rolling(20).mean().iloc[-1]
         vol_spike = vol.iloc[-1] > avg_vol * 1.5
 
-        # VWAP Trend
-        vwap_trend_up = d["VWAP"].iloc[-1] > d["VWAP"].iloc[-5]
-        vwap_trend_down = d["VWAP"].iloc[-1] < d["VWAP"].iloc[-5]
-
-        # Default
+        # =============================
+        # SIGNAL
+        # =============================
         signal = "WAIT"
         color = "#ffffff"
-        entry = 0
-        target = 0
-        sl = 0
+        entry = target = sl = 0
 
-        # BUY
+        # 🔥 BUY
         if (
-            ltp > opening_high
-            and ltp > d["VWAP"].iloc[-1]
-            and d["RSI"].iloc[-1] > 55
-            and vol_spike
-            and vwap_trend_up
+            ltp > orb_high and
+            ltp > resistance and
+            ltp > d["VWAP"].iloc[-1] and
+            d["RSI"].iloc[-1] > 55 and
+            vol_spike
         ):
-            signal = "INTRADAY BUY"
+            signal = "BUY"
             color = "#d4edda"
-            entry = round(ltp, 2)
-            sl = round(d["VWAP"].iloc[-1], 2)
-            target = round(entry + (entry - sl) * 2, 2)
+            entry = ltp
+            sl = support
+            target = entry + (entry - sl) * 2
 
-        # SELL
+        # 💀 SELL
         elif (
-            ltp < opening_low
-            and ltp < d["VWAP"].iloc[-1]
-            and d["RSI"].iloc[-1] < 45
-            and vol_spike
-            and vwap_trend_down
+            ltp < orb_low and
+            ltp < support and
+            ltp < d["VWAP"].iloc[-1] and
+            d["RSI"].iloc[-1] < 45 and
+            vol_spike
         ):
-            signal = "INTRADAY SELL"
+            signal = "SELL"
             color = "#f8d7da"
-            entry = round(ltp, 2)
-            sl = round(d["VWAP"].iloc[-1], 2)
-            target = round(entry - (sl - entry) * 2, 2)
+            entry = ltp
+            sl = resistance
+            target = entry - (sl - entry) * 2
 
         return {
             "Stock": ticker.replace(".NS", ""),
             "LTP": round(ltp, 2),
+            "Support": round(support, 2),
+            "Resistance": round(resistance, 2),
             "VWAP": round(d["VWAP"].iloc[-1], 2),
             "RSI": round(d["RSI"].iloc[-1], 1),
-            "ORB High": round(opening_high, 2),
-            "ORB Low": round(opening_low, 2),
+            "ORB High": round(orb_high, 2),
+            "ORB Low": round(orb_low, 2),
             "Signal": signal,
-            "Entry": entry,
-            "Target": target,
-            "SL": sl,
-            "Volume Spike": "YES" if vol_spike else "NO",
+            "Entry": round(entry, 2),
+            "Target": round(target, 2),
+            "SL": round(sl, 2),
+            "Volume": "YES" if vol_spike else "NO",
             "Bg": color
         }
 
-    except Exception as e:
+    except:
         return None
 
 
@@ -146,33 +150,15 @@ def analyze_intraday(df, ticker):
 st.title("🚀 NSE Intraday Pro Scanner")
 
 sectors = {
-    "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS"],
-    "Auto": ["TATAMOTORS.NS", "MARUTI.NS", "M&M.NS"],
-    "Bank": ["SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS"]
+    "Nifty 50": ["RELIANCE.NS","HDFCBANK.NS","ICICIBANK.NS","TCS.NS","INFY.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"],
+    "Bank": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS"],
+    "Pharma": ["SUNPHARMA.NS","CIPLA.NS","DRREDDY.NS"],
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"]
 }
 
-col1, col2 = st.columns(2)
-
-with col1:
-    sector = st.selectbox("Select Sector", list(sectors.keys()))
-
-with col2:
-    search = st.text_input("Search Stock").upper()
-
-
-# =============================
-# SEARCH
-# =============================
-if search:
-    ticker = search + ".NS"
-    data = yf.download(ticker, period="2d", interval="5m", progress=False)
-
-    if not data.empty:
-        res = analyze_intraday({ticker: data}, ticker)
-        if res:
-            st.subheader(f"🎯 {search} Analysis")
-            st.write(res)
-
+sector = st.selectbox("Select Sector", list(sectors.keys()))
 
 # =============================
 # SCANNER
@@ -190,12 +176,19 @@ if results:
     df = pd.DataFrame(results)
 
     st.dataframe(
-        df.style.apply(
+        df.style.format({
+            "LTP": "{:.2f}",
+            "Support": "{:.2f}",
+            "Resistance": "{:.2f}",
+            "VWAP": "{:.2f}",
+            "Entry": "{:.2f}",
+            "Target": "{:.2f}",
+            "SL": "{:.2f}"
+        }).apply(
             lambda x: [f"background-color: {df.loc[x.name, 'Bg']}"] * len(x),
             axis=1
         )
     )
-
 
 # =============================
 # ALERT
@@ -203,4 +196,4 @@ if results:
 strong = [r for r in results if r["Signal"] != "WAIT"]
 
 if strong:
-    st.warning("⚡ Intraday Trade Signals Found!")
+    st.warning("⚡ Strong Intraday Signals Found!")
