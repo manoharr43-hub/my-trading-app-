@@ -6,7 +6,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="NSE Intraday Pro Scanner", layout="wide")
+st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
 st_autorefresh(interval=10000, key="refresh")
 
 # =============================
@@ -19,10 +19,8 @@ def rsi(series, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-
 def ema(series, span):
     return series.ewm(span=span, adjust=False).mean()
-
 
 # =============================
 # DATA FETCH
@@ -31,9 +29,8 @@ def ema(series, span):
 def get_data(stocks):
     return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
 
-
 # =============================
-# ANALYSIS
+# ANALYSIS FUNCTION
 # =============================
 def analyze_intraday(df, ticker):
     try:
@@ -76,48 +73,36 @@ def analyze_intraday(df, ticker):
         orb_low = low.iloc[:6].min()
 
         # =============================
-        # SUPPORT & RESISTANCE (Pivot)
+        # SUPPORT & RESISTANCE
         # =============================
         pivot = (high.iloc[-2] + low.iloc[-2] + close.iloc[-2]) / 3
         resistance = (2 * pivot) - low.iloc[-2]
         support = (2 * pivot) - high.iloc[-2]
 
         # =============================
-        # Volume
+        # VOLUME
         # =============================
         avg_vol = vol.rolling(20).mean().iloc[-1]
         vol_spike = vol.iloc[-1] > avg_vol * 1.5
 
         # =============================
-        # SIGNAL
+        # SIGNAL + COLOR
         # =============================
         signal = "WAIT"
         color = "#ffffff"
         entry = target = sl = 0
 
-        # 🔥 BUY
-        if (
-            ltp > orb_high and
-            ltp > resistance and
-            ltp > d["VWAP"].iloc[-1] and
-            d["RSI"].iloc[-1] > 55 and
-            vol_spike
-        ):
-            signal = "BUY"
-            color = "#d4edda"
+        # 🔵 BREAKOUT
+        if ltp > resistance:
+            signal = "BREAKOUT"
+            color = "#cce5ff"
             entry = ltp
             sl = support
             target = entry + (entry - sl) * 2
 
-        # 💀 SELL
-        elif (
-            ltp < orb_low and
-            ltp < support and
-            ltp < d["VWAP"].iloc[-1] and
-            d["RSI"].iloc[-1] < 45 and
-            vol_spike
-        ):
-            signal = "SELL"
+        # 🔴 BREAKDOWN
+        elif ltp < support:
+            signal = "BREAKDOWN"
             color = "#f8d7da"
             entry = ltp
             sl = resistance
@@ -143,19 +128,29 @@ def analyze_intraday(df, ticker):
     except:
         return None
 
-
 # =============================
 # UI
 # =============================
 st.title("🚀 NSE Intraday Pro Scanner")
 
+# ✅ NIFTY 500 (Top Liquid Stocks)
 sectors = {
     "Nifty 50": ["RELIANCE.NS","HDFCBANK.NS","ICICIBANK.NS","TCS.NS","INFY.NS"],
     "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"],
     "Bank": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"],
     "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS"],
     "Pharma": ["SUNPHARMA.NS","CIPLA.NS","DRREDDY.NS"],
-    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"]
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
+
+    "Nifty 500": [
+        "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
+        "ITC.NS","SBIN.NS","LT.NS","BHARTIARTL.NS","KOTAKBANK.NS",
+        "AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS","HCLTECH.NS",
+        "WIPRO.NS","TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS",
+        "SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","ULTRACEMCO.NS",
+        "POWERGRID.NS","NTPC.NS","ONGC.NS","ADANIPORTS.NS",
+        "ADANIENT.NS","BAJFINANCE.NS","BAJAJFINSV.NS","HEROMOTOCO.NS"
+    ]
 }
 
 sector = st.selectbox("Select Sector", list(sectors.keys()))
@@ -196,4 +191,4 @@ if results:
 strong = [r for r in results if r["Signal"] != "WAIT"]
 
 if strong:
-    st.warning("⚡ Strong Intraday Signals Found!")
+    st.warning("⚡ Breakout / Breakdown Signals Found!")
