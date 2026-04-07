@@ -1,104 +1,62 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-from streamlit_autorefresh import st_autorefresh
-
-# =============================
-# CONFIG
-# =============================
-st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
-
-# రేట్ లిమిట్ రాకుండా 30 సెకన్ల గ్యాప్
-st_autorefresh(interval=30000, key="refresh")
-
-# =============================
-# INDICATORS
-# =============================
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-# =============================
-# DATA FETCH
-# =============================
-@st.cache_data(ttl=30)
-def get_data(stocks):
+def analyze_intraday(df, ticker):
     try:
-        return yf.download(stocks, period="1d", interval="5m", group_by="ticker", progress=False)
-    except:
-        return None
+        d = df[ticker] if isinstance(df.columns, pd.MultiIndex) else df
+        if d is None or len(d) < 30:
+            return None
 
-# =============================
-# LOGIC
-# =============================
-def analyze(df, ticker):
-    try:
-        if isinstance(df.columns, pd.MultiIndex):
-            d = df[ticker].copy()
-        else:
-            d = df.copy()
-            
-        if len(d) < 10: return None
+        # ✅ Only TODAY data filter
+        d['Date'] = d.index.date
+        today = d['Date'].iloc[-1]
+        d = d[d['Date'] == today]
+
+        if len(d) < 20:
+            return None
 
         close = d['Close']
+        high = d['High']
+        low = d['Low']
         vol = d['Volume']
+
         ltp = close.iloc[-1]
 
+        # ✅ Intraday VWAP
         d['VWAP'] = (close * vol).cumsum() / vol.cumsum()
-        d['RSI'] = rsi(close)
 
-        avg_vol = vol.rolling(10).mean().iloc[-1]
+        # Indicators
+        d['RSI'] = rsi(close)
+        d['EMA20'] = ema(close, 20)
+        d['EMA50'] = ema(close, 50)
+
+        # =========================
+        # 🔥 Opening Range Breakout (ORB)
+        # =========================
+        opening_high = high.iloc[:6].max()   # first 30 min (5min candles)
+        opening_low = low.iloc[:6].min()
+
+        # =========================
+        # 🔥 Volume Spike
+        # =========================
+        avg_vol = vol.rolling(20).mean().iloc[-1]
         vol_spike = vol.iloc[-1] > avg_vol * 1.5
 
+        # =========================
+        # 🔥 VWAP Trend
+        # =========================
+        vwap_trend_up = d['VWAP'].iloc[-1] > d['VWAP'].iloc[-5]
+        vwap_trend_down = d['VWAP'].iloc[-1] < d['VWAP'].iloc[-5]
+
         signal = "WAIT"
-        bg_color = "#ffffff"
+        color = "#ffffff"
+        entry = target = sl = 0
 
-        if ltp > d['VWAP'].iloc[-1] and d['RSI'].iloc[-1] > 55 and vol_spike:
-            signal = "STRONG BUY"
-            bg_color = "#d4edda"
-        elif ltp < d['VWAP'].iloc[-1] and d['RSI'].iloc[-1] < 45 and vol_spike:
-            signal = "STRONG SELL"
-            bg_color = "#f8d7da"
-
-        return {
-            "Stock": ticker.replace(".NS", ""),
-            "LTP": round(ltp, 2),
-            "VWAP": round(d['VWAP'].iloc[-1], 2),
-            "RSI": round(d['RSI'].iloc[-1], 1),
-            "Signal": signal,
-            "Vol Spike": "YES" if vol_spike else "NO",
-            "Color": bg_color
-        }
-    except:
-        return None
-
-# =============================
-# MAIN APP UI
-# =============================
-st.title("📊 NSE Real-Time Intraday Scanner")
-
-watchlist = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "INFY.NS", "TATAMOTORS.NS"]
-
-data = get_data(watchlist)
-
-if data is not None and not data.empty:
-    results = []
-    for ticker in watchlist:
-        res = analyze(data, ticker)
-        if res:
-            results.append(res)
-
-    if results:
-        df_display = pd.DataFrame(results)
-        def highlight_rows(row):
-            return [f'background-color: {row.Color}' for _ in row]
-
-        st.dataframe(df_display.drop(columns=['Color']).style.apply(highlight_rows, axis=1))
-        st.caption("డేటా ప్రతి 30 సెకన్లకు రిఫ్రెష్ అవుతుంది.")
-    else:
-        st.info("డేటా ప్రాసెస్ అవుతోంది...")
-else:
-    st.error("డేటా అందుబాటులో లేదు. కాసేపు ఆగి మళ్ళీ ప్రయత్నించండి.")
+        # =========================
+        # 🚀 STRONG BUY (Intraday)
+        # =========================
+        if (
+            ltp > opening_high and
+            ltp > d['VWAP'].iloc[-1] and
+            d['RSI'].iloc[-1] > 55 and
+            vol_spike and
+            vwap_trend_up
+        ):
+            signal = "
