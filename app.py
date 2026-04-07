@@ -1,11 +1,48 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+from streamlit_autorefresh import st_autorefresh
+
+# =============================
+# CONFIG
+# =============================
+st.set_page_config(page_title="NSE Intraday Pro Scanner", layout="wide")
+st_autorefresh(interval=10000, key="refresh")
+
+# =============================
+# INDICATORS
+# =============================
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = -delta.clip(upper=0).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def ema(series, span):
+    return series.ewm(span=span, adjust=False).mean()
+
+# =============================
+# DATA FETCH
+# =============================
+@st.cache_data(ttl=20)
+def get_data(stocks):
+    return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
+
+# =============================
+# ANALYSIS FUNCTION
+# =============================
 def analyze_intraday(df, ticker):
     try:
-        d = df[ticker].copy() if isinstance(df.columns, pd.MultiIndex) else df.copy()
+        if isinstance(df.columns, pd.MultiIndex):
+            d = df[ticker].copy()
+        else:
+            d = df.copy()
 
         if d is None or len(d) < 50:
             return None
 
-        # 👉 Today data
+        # 👉 Only today data
         d["Date"] = d.index.date
         today = d["Date"].iloc[-1]
         d = d[d["Date"] == today].copy()
@@ -26,12 +63,12 @@ def analyze_intraday(df, ticker):
         d["VWAP"] = (close * vol).cumsum() / vol.cumsum()
 
         # =============================
-        # RSI (5 min)
+        # RSI
         # =============================
         d["RSI"] = rsi(close)
 
         # =============================
-        # ORB (rounded)
+        # ORB
         # =============================
         orb_high = round(high.iloc[:6].max(), 2)
         orb_low = round(low.iloc[:6].min(), 2)
@@ -44,7 +81,7 @@ def analyze_intraday(df, ticker):
         support = round((2 * pivot) - high.iloc[-2], 2)
 
         # =============================
-        # 1 HOUR TREND (EMA)
+        # TREND (EMA)
         # =============================
         d["EMA20"] = ema(close, 20)
         d["EMA50"] = ema(close, 50)
@@ -56,12 +93,12 @@ def analyze_intraday(df, ticker):
             trend = "DOWNTREND"
 
         # =============================
-        # 15 MIN RSI (approx)
+        # 15 MIN RSI
         # =============================
         rsi_15 = round(rsi(close.rolling(3).mean()).iloc[-1], 1)
 
         # =============================
-        # ADX (Trend Strength)
+        # ADX (Simple)
         # =============================
         tr = high - low
         atr = tr.rolling(14).mean()
@@ -74,12 +111,12 @@ def analyze_intraday(df, ticker):
         vol_spike = vol.iloc[-1] > avg_vol * 1.5
 
         # =============================
-        # FINAL SIGNAL (STRONG)
+        # SIGNAL
         # =============================
         signal = "WAIT"
         color = "#ffffff"
 
-        # 🔥 STRONG BUY
+        # 🟢 STRONG BUY
         if (
             ltp > resistance and
             ltp > d["VWAP"].iloc[-1] and
@@ -91,10 +128,82 @@ def analyze_intraday(df, ticker):
             signal = "STRONG BUY"
             color = "#00ff00"
 
-        # 💀 STRONG SELL
+        # 🔴 STRONG SELL
         elif (
             ltp < support and
             ltp < d["VWAP"].iloc[-1] and
             trend == "DOWNTREND" and
             rsi_15 < 45 and
-            adx >
+            adx > 1 and
+            vol_spike
+        ):
+            signal = "STRONG SELL"
+            color = "#ff4d4d"
+
+        return {
+            "Stock": ticker.replace(".NS", ""),
+            "LTP": round(ltp, 2),
+            "Support": support,
+            "Resistance": resistance,
+            "ORB High": orb_high,
+            "ORB Low": orb_low,
+            "RSI": round(d["RSI"].iloc[-1], 1),
+            "RSI (15m)": rsi_15,
+            "ADX": adx,
+            "Trend": trend,
+            "Signal": signal,
+            "Volume": "YES" if vol_spike else "NO",
+            "Bg": color
+        }
+
+    except Exception as e:
+        return None
+
+# =============================
+# UI
+# =============================
+st.title("🚀 NSE Intraday Pro Scanner")
+
+sectors = {
+    "Nifty 50": ["RELIANCE.NS","HDFCBANK.NS","ICICIBANK.NS","TCS.NS","INFY.NS"],
+    "Bank": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "IT": ["TCS.NS","INFY.NS","WIPRO.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"]
+}
+
+sector = st.selectbox("Select Sector", list(sectors.keys()))
+
+# =============================
+# SCANNER
+# =============================
+data = get_data(sectors[sector])
+results = []
+
+if data is not None:
+    for s in sectors[sector]:
+        res = analyze_intraday(data, s)
+        if res:
+            results.append(res)
+
+if results:
+    df = pd.DataFrame(results)
+
+    st.dataframe(
+        df.style.format({
+            "LTP": "{:.2f}",
+            "RSI": "{:.1f}",
+            "RSI (15m)": "{:.1f}",
+            "ADX": "{:.1f}"
+        }).apply(
+            lambda x: [f"background-color: {df.loc[x.name, 'Bg']}"] * len(x),
+            axis=1
+        )
+    )
+
+# =============================
+# ALERT
+# =============================
+strong = [r for r in results if r["Signal"] != "WAIT"]
+
+if strong:
+    st.warning("⚡ Strong Signals Found!")
