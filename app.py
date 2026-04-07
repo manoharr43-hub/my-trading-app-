@@ -1,109 +1,127 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-from streamlit_autorefresh import st_autorefresh
+import streamlit as st import yfinance as yf import pandas as pd import numpy as np from streamlit_autorefresh import st_autorefresh
 
-# =============================
-# CONFIG
-# =============================
-st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
+=============================
 
-# Rate Limit సమస్య రాకుండా 30 సెకన్ల గ్యాప్ ఇచ్చాను
-st_autorefresh(interval=30000, key="refresh")
+CONFIG
 
-# =============================
-# INDICATORS
-# =============================
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+=============================
 
-# =============================
-# DATA FETCH
-# =============================
-@st.cache_data(ttl=30)
-def get_data(stocks):
-    try:
-        # Intraday కోసం కేవలం 1 Day డేటా
-        return yf.download(stocks, period="1d", interval="5m", group_by="ticker", progress=False)
-    except:
-        return None
+st.set_page_config(page_title="NSE Pro Scanner", layout="wide") st_autorefresh(interval=10000, key="refresh")
 
-# =============================
-# LOGIC
-# =============================
-def analyze(df, ticker):
-    try:
-        if isinstance(df.columns, pd.MultiIndex):
-            d = df[ticker].copy()
-        else:
-            d = df.copy()
-            
-        if len(d) < 15: return None
+=============================
 
-        close = d['Close']
-        vol = d['Volume']
-        ltp = close.iloc[-1]
+INDICATORS
 
-        # Correct VWAP for Intraday
-        d['VWAP'] = (close * vol).cumsum() / vol.cumsum()
-        d['RSI'] = rsi(close)
+=============================
 
-        avg_vol = vol.rolling(10).mean().iloc[-1]
-        vol_spike = vol.iloc[-1] > avg_vol * 1.5
+def rsi(series, period=14): delta = series.diff() gain = delta.clip(lower=0).rolling(period).mean() loss = -delta.clip(upper=0).rolling(period).mean() rs = gain / loss return 100 - (100 / (1 + rs))
 
-        signal = "WAIT"
-        bg_color = "#ffffff"
+def ema(series, span): return series.ewm(span=span, adjust=False).mean()
 
-        if ltp > d['VWAP'].iloc[-1] and d['RSI'].iloc[-1] > 55 and vol_spike:
-            signal = "STRONG BUY"
-            bg_color = "#d4edda"
-        elif ltp < d['VWAP'].iloc[-1] and d['RSI'].iloc[-1] < 45 and vol_spike:
-            signal = "STRONG SELL"
-            bg_color = "#f8d7da"
+=============================
 
-        return {
-            "Stock": ticker.replace(".NS", ""),
-            "LTP": round(ltp, 2),
-            "VWAP": round(d['VWAP'].iloc[-1], 2),
-            "RSI": round(d['RSI'].iloc[-1], 1),
-            "Signal": signal,
-            "Vol Spike": "YES" if vol_spike else "NO",
-            "Color": bg_color
-        }
-    except:
-        return None
+DATA FETCH
 
-# =============================
-# MAIN APP UI
-# =============================
-st.title("📊 NSE Real-Time Intraday Scanner")
+=============================
 
-watchlist = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "INFY.NS", "TATAMOTORS.NS"]
+@st.cache_data(ttl=20) def get_data(stocks): return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
 
-data = get_data(watchlist)
+=============================
 
-if data is not None and not data.empty:
-    results = []
-    for ticker in watchlist:
-        res = analyze(data, ticker)
-        if res:
-            results.append(res)
+LOGIC
 
-    if results:
-        df_display = pd.DataFrame(results)
-        
-        def highlight_rows(row):
-            return [f'background-color: {row.Color}' for _ in row]
+=============================
 
-        # ఎర్రర్ రాకుండా ఇక్కడ మార్చాను
-        st.dataframe(df_display.drop(columns=['Color']).style.apply(highlight_rows, axis=1))
-        
-        st.caption("డేటా ప్రతి 30 సెకన్లకు ఒకసారి ఆటోమేటిక్ గా అప్‌డేట్ అవుతుంది.")
-    else:
-        st.info("విశ్లేషించడానికి తగినంత డేటా లేదు.")
-else:
-    st.error("Yahoo Finance నుండి డేటా రావడం లేదు. కాసేపు ఆగి మళ్ళీ ప్రయత్నించండి.")
+def analyze(df, ticker): try: d = df[ticker] if isinstance(df.columns, pd.MultiIndex) else df if len(d) < 30: return None
+
+close = d['Close']
+    high = d['High']
+    low = d['Low']
+    vol = d['Volume']
+
+    ltp = close.iloc[-1]
+
+    d['VWAP'] = (close * vol).cumsum() / vol.cumsum()
+    d['RSI'] = rsi(close)
+    d['EMA20'] = ema(close, 20)
+    d['EMA50'] = ema(close, 50)
+
+    # Pivot
+    pivot = (high.iloc[-2] + low.iloc[-2] + close.iloc[-2]) / 3
+    res = (2 * pivot) - low.iloc[-2]
+    sup = (2 * pivot) - high.iloc[-2]
+
+    # Volume Spike
+    avg_vol = vol.rolling(20).mean().iloc[-1]
+    vol_spike = vol.iloc[-1] > avg_vol * 1.5
+
+    signal = "WAIT"
+    color = "#ffffff"
+
+    if ltp > res and ltp > d['VWAP'].iloc[-1] and d['RSI'].iloc[-1] > 55 and vol_spike:
+        signal = "STRONG BUY"
+        color = "#d4edda"
+    elif ltp < sup and ltp < d['VWAP'].iloc[-1] and d['RSI'].iloc[-1] < 45 and vol_spike:
+        signal = "STRONG SELL"
+        color = "#f8d7da"
+
+    return {
+        "Stock": ticker.replace(".NS", ""),
+        "LTP": round(ltp, 2),
+        "VWAP": round(d['VWAP'].iloc[-1], 2),
+        "RSI": round(d['RSI'].iloc[-1], 1),
+        "EMA20": round(d['EMA20'].iloc[-1], 2),
+        "EMA50": round(d['EMA50'].iloc[-1], 2),
+        "Signal": signal,
+        "Volume Spike": "YES" if vol_spike else "NO",
+        "Bg": color
+    }
+
+except:
+    return None
+
+=============================
+
+UI
+
+=============================
+
+st.title("🚀 NSE Advanced Pro Scanner")
+
+sectors = { "Nifty 50": ["RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "TCS.NS", "INFY.NS"], "Auto": ["TATAMOTORS.NS", "MARUTI.NS", "M&M.NS"], "Bank": ["SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS"] }
+
+col1, col2 = st.columns(2)
+
+with col1: sector = st.selectbox("Select Sector", list(sectors.keys()))
+
+with col2: search = st.text_input("Search Stock").upper()
+
+=============================
+
+SEARCH
+
+=============================
+
+if search: ticker = search + ".NS" data = yf.download(ticker, period="2d", interval="5m") res = analyze({ticker: data}, ticker) if res: st.write(res)
+
+=============================
+
+SCANNER
+
+=============================
+
+data = get_data(sectors[sector]) results = []
+
+for s in sectors[sector]: r = analyze(data, s) if r: results.append(r)
+
+if results: df = pd.DataFrame(results)
+
+st.dataframe(df.style.apply(lambda x: [f"background-color: {df.loc[x.name, 'Bg']}"]*len(x), axis=1))
+
+=============================
+
+ALERT
+
+=============================
+
+strong = [r for r in results if r['Signal'] != "WAIT"] if strong: st.warning("⚡ Trade Signals Found!")
