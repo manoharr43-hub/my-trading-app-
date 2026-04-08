@@ -56,13 +56,14 @@ st.title("🛡️ NSE Pro Live Smart Scanner")
 
 with st.sidebar:
     sector_name = st.selectbox("Select NSE Sector", list(sectors.keys()))
-    trend_filter = st.multiselect("Select Trend", ["UPTREND", "DOWNTREND"], default=["UPTREND", "DOWNTREND"])
+    trend_filter = st.multiselect("Select Trend", ["UPTREND", "DOWNTREND"], default=["UPTREND","DOWNTREND"])
 
 # =============================
 # 5. SCANNER FUNCTION
 # =============================
 def process_scanner(tickers):
-    data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
+    # --- 10 days data to include enough bars for EMA50 ---
+    data = yf.download(tickers, period="10d", interval="5m", group_by='ticker', progress=False)
     results = []
     
     for t in tickers:
@@ -73,32 +74,29 @@ def process_scanner(tickers):
             df, res, sup = analyze_stock(df)
             last = df.iloc[-1]
             
-            # --- LTP & Other Values Round & Shorten ---
+            # --- LTP & other numbers rounded/short ---
             ltp = round(float(last['Close']), 2)
             rsi = round(float(last['RSI']), 1)
             p_change = round(((ltp - df.iloc[0]['Open']) / df.iloc[0]['Open']) * 100, 2)
             
-            # Trend Detection
-            trend = "UPTREND" if last['EMA20'] > last['EMA50'] else "DOWNTREND"
+            # --- Trend Detection ---
+            trend = "UPTREND" if last['EMA20'] >= last['EMA50'] else "DOWNTREND"
             
-            # Status Alerts
+            # --- Status Alerts ---
             status = "NORMAL"
             if ltp >= res:
                 status = "🚀 BREAKOUT" if rsi < 70 else "⚠️ FAKE BREAKOUT"
             elif ltp <= sup:
                 status = "📉 BREAKDOWN" if rsi > 30 else "⚠️ FAKE BREAKDOWN"
             
-            # Signal
+            # --- Signal ---
             signal = "BUY" if ltp > last['VWAP'] and trend == "UPTREND" else \
                      "SELL" if ltp < last['VWAP'] and trend == "DOWNTREND" else "WAIT"
             
-            # --- Shortened numbers for LTP vs Resistance ---
-            if len(str(ltp)) > 6:  # e.g., 1234.5678 → 1234.57
-                ltp = float(f"{ltp:.2f}")
-            if len(str(res)) > 6:
-                res = float(f"{res:.2f}")
-            if len(str(sup)) > 6:
-                sup = float(f"{sup:.2f}")
+            # --- Short numbers for readability ---
+            if len(str(ltp)) > 6: ltp = float(f"{ltp:.2f}")
+            if len(str(res)) > 6: res = float(f"{res:.2f}")
+            if len(str(sup)) > 6: sup = float(f"{sup:.2f}")
             
             results.append({
                 "Stock": t.replace(".NS",""),
@@ -121,11 +119,12 @@ def process_scanner(tickers):
 res_df = process_scanner(sectors[sector_name])
 
 if not res_df.empty:
-    # Trend Filter Apply
     res_df = res_df[res_df['Trend'].isin(trend_filter)]
     
     def style_table(row):
         styles = [''] * len(row)
+        
+        # Breakout/Breakdown row colors
         if "BREAKOUT" in str(row.Status):
             styles = ['background-color:#004d1a; color:white']*len(row)
         elif "BREAKDOWN" in str(row.Status):
@@ -145,3 +144,8 @@ if not res_df.empty:
     styled_df = res_df.style.apply(style_table, axis=1)\
         .set_properties(subset=['Support'], **{'color':'#ff4d4d','font-weight':'bold'})\
         .set_properties(subset=['Resistance'], **{'color':'#00ff41','font-weight':'bold'})
+    
+    st.dataframe(styled_df, use_container_width=True, height=500)
+    st.success(f"Synced at: {pd.Timestamp.now().strftime('%H:%M:%S')}")
+else:
+    st.info("Searching for stocks matching trend criteria...")
