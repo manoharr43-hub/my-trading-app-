@@ -3,156 +3,73 @@ import yfinance as yf
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# =============================
-# 1. CONFIG & UI SETUP
-# =============================
-st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
-
-# ఆటో రిఫ్రెష్ (ప్రతి 15 సెకన్లకు)
+# 1. SETUP
+st.set_page_config(page_title="NSE Smart Scanner", layout="wide")
 st_autorefresh(interval=15000, key="refresh")
 
-# CSS - ఎర్రర్స్ లేకుండా డిజైన్ సెట్ చేయడం
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; }
-    [data-testid="stMetricValue"] { font-size: 25px; color: #00ff41; }
-    .stDataFrame { border: 1px solid #30363d; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# =============================
-# 2. INDICATORS LOGIC
-# =============================
+# 2. INDICATORS
 def get_indicators(df):
-    # RSI Calculation
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
+    rs = gain / (loss + 1e-9) # 0 డివిజన్ రాకుండా
     df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # EMAs for Trend
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    
-    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
     return df
 
-# =============================
-# 3. STOCK SECTORS
-# =============================
+# 3. STOCKS
 sectors = {
-    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS","BHARTIARTL.NS","LT.NS","ITC.NS"],
-    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","INDUSINDBK.NS","AUBANK.NS"],
-    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS","LTIM.NS","PERSISTENT.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS","EICHERMOT.NS"]
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"]
 }
 
-# =============================
-# 4. SIDEBAR & FILTERS
-# =============================
 st.title("⚡ NSE Pro Smart Scanner")
+sector_name = st.sidebar.selectbox("Select Sector", list(sectors.keys()))
 
-with st.sidebar:
-    st.header("Scanner Settings")
-    sector_name = st.selectbox("Select Sector", list(sectors.keys()))
-    trend_filter = st.radio("Trend Filter", ["ALL", "UPTREND", "DOWNTREND"])
-    min_rsi = st.slider("Min RSI Level", 0, 100, 30)
-    st.write("---")
-    st.info("Scanner updates every 15s")
-
-# =============================
-# 5. DATA PROCESSING
-# =============================
-@st.cache_data(ttl=10) # 10 సెకన్ల వరకు డేటాను క్యాష్ చేస్తుంది
-def fetch_data(ticker_list):
-    try:
-        data = yf.download(ticker_list, period="2d", interval="5m", group_by='ticker', progress=False)
-        return data
-    except Exception as e:
-        st.error(f"Data fetch error: {e}")
-        return None
-
-def process_results(ticker_list):
-    data = fetch_data(ticker_list)
-    if data is None: return pd.DataFrame()
-    
+# 4. DATA PROCESSING
+def process_stocks(tickers):
+    data = yf.download(tickers, period="2d", interval="5m", group_by='ticker', progress=False)
     results = []
-    for ticker in ticker_list:
+    for t in tickers:
         try:
-            df = data[ticker].dropna()
+            df = data[t].dropna()
             if len(df) < 20: continue
-            
             df = get_indicators(df)
             last = df.iloc[-1]
             
-            ltp = round(last['Close'], 2)
-            rsi_val = round(last['RSI'], 1)
-            vwap_val = round(last['VWAP'], 2)
+            # Simple Logic
+            ltp = round(float(last['Close']), 2)
+            rsi = round(float(last['RSI']), 1)
+            vwap = round(float(last['VWAP']), 2)
             
-            # Trend Logic
-            trend = "UPTREND" if last['EMA20'] > last['EMA50'] else "DOWNTREND"
-            
-            # Signal Logic
-            if ltp > vwap_val and rsi_val > 55:
-                signal = "🚀 STRONG BUY"
-            elif ltp > vwap_val:
-                signal = "BUY"
-            elif ltp < vwap_val and rsi_val < 45:
-                signal = "⚠️ STRONG SELL"
-            else:
-                signal = "SELL"
-                
-            # % Change calculation
-            day_open = df.iloc[0]['Open']
-            p_change = round(((ltp - day_open) / day_open) * 100, 2)
+            signal = "🚀 BUY" if ltp > vwap and rsi > 50 else "⚠️ SELL" if ltp < vwap else "HOLD"
+            p_change = round(((ltp - df.iloc[0]['Open']) / df.iloc[0]['Open']) * 100, 2)
 
             results.append({
-                "Ticker": ticker.replace(".NS",""),
-                "Price": ltp,
+                "Stock": t.replace(".NS",""),
+                "LTP": ltp,
                 "Change %": p_change,
-                "RSI": rsi_val,
-                "Trend": trend,
-                "Signal": signal,
-                "VWAP": vwap_val
+                "RSI": rsi,
+                "Signal": signal
             })
-        except:
-            continue
+        except: continue
     return pd.DataFrame(results)
 
-# =============================
-# 6. DISPLAY RESULTS
-# =============================
-res_df = process_results(sectors[sector_name])
+# 5. DISPLAY
+res_df = process_stocks(sectors[sector_name])
 
 if not res_df.empty:
-    # Applying Filters
-    if trend_filter != "ALL":
-        res_df = res_df[res_df['Trend'] == trend_filter]
-    res_df = res_df[res_df['RSI'] >= min_rsi]
+    # మీ ఫోటోలో వచ్చిన ఎర్రర్‌ని నివారించడానికి సింపుల్ హైలైటింగ్ పద్ధతి:
+    def highlight_signal(row):
+        color = 'background-color: #004d1a' if 'BUY' in row.Signal else 'background-color: #4d0000' if 'SELL' in row.Signal else ''
+        return [color] * len(row)
 
-    if not res_df.empty:
-        # Metrics Row
-        m1, m2, m3 = st.columns(3)
-        top_stock = res_df.loc[res_df['Change %'].idxmax()]
-        m1.metric("Top Gainer", top_stock['Ticker'], f"{top_stock['Change %']}%")
-        m2.metric("Market", "Live")
-        m3.metric("Stocks Count", len(res_df))
-
-        # Styling Table - Updated applymap to map for Pandas 2.0+
-        def style_signal(val):
-            if 'BUY' in str(val): color = '#00ff41'
-            elif 'SELL' in str(val): color = '#ff3131'
-            else: color = 'white'
-            return f'color: {color}; font-weight: bold'
-
-        # FIX: map() function used instead of applymap()
-        styled_df = res_df.style.map(style_signal, subset=['Signal']) \
-                                .background_gradient(cmap='RdYlGn', subset=['Change %'])
-
-        st.dataframe(styled_df, use_container_width=True, height=500)
-    else:
-        st.warning("No stocks match the filter criteria.")
+    # ఇక్కడ తక్కువ ఫార్మాటింగ్ వాడి రిస్క్ తగ్గించాను
+    st.dataframe(res_df.style.apply(highlight_signal, axis=1), use_container_width=True, height=500)
+    
+    st.success(f"Updated at: {pd.Timestamp.now().strftime('%H:%M:%S')}")
 else:
-    st.error("Waiting for data... Please check your internet or Ticker symbols.")
+    st.info("Loading Data... Please wait.")
