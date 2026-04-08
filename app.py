@@ -164,3 +164,29 @@ if not df.empty:
 
 else:
     st.warning("No signals found")
+st.subheader(f"📊 {selected} Live Chart")
+
+st.components.v1.html(f"""
+<!-- TradingView Widget BEGIN -->
+<div class="tradingview-widget-container">
+  <div id="tradingview_chart"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget(
+  {{
+  "width": "100%",
+  "height": 500,
+  "symbol": "NSE:{selected}",
+  "interval": "5",
+  "timezone": "Asia/Kolkata",
+  "theme": "dark",
+  "style": "1",
+  "locale": "en",
+  "toolbar_bg": "#f1f3f6",
+  "enable_publishing": false,
+  "container_id": "tradingview_chart"
+}});
+  </script>
+</div>
+<!-- TradingView Widget END -->
+""", height=520)
