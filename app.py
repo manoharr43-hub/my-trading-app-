@@ -4,31 +4,34 @@ import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# CONFIG
+# 1. CONFIG & UI SETUP
 # =============================
 st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
+
+# ఆటో రిఫ్రెష్ (ప్రతి 15 సెకన్లకు)
 st_autorefresh(interval=15000, key="refresh")
 
-# CSS for better UI
+# CSS - ఇక్కడ ఎర్రర్ సరిచేయబడింది (unsafe_allow_html=True)
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
+    .stMetric { background-color: #1e212b; padding: 10px; border-radius: 10px; border: 1px solid #30363d; }
     .stDataFrame { border: 1px solid #30363d; }
     </style>
-    """, unsafe_allow_input=True)
+    """, unsafe_allow_html=True)
 
 # =============================
-# INDICATORS (Faster Version)
+# 2. INDICATORS LOGIC
 # =============================
 def get_indicators(df):
-    # RSI (Vectorized)
+    # RSI Calculation
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # EMAs
+    # EMAs for Trend
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     
@@ -37,54 +40,67 @@ def get_indicators(df):
     return df
 
 # =============================
-# UI & DATA LOADING
+# 3. STOCK SECTORS
+# =============================
+sectors = {
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS","BHARTIARTL.NS","LT.NS","ITC.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","INDUSINDBK.NS","AUBANK.NS"],
+    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS","LTIM.NS","PERSISTENT.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS","EICHERMOT.NS"]
+}
+
+# =============================
+# 4. SIDEBAR & FILTERS
 # =============================
 st.title("⚡ NSE Pro Smart Scanner")
 
-sectors = {
-    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS","BHARTIARTL.NS"],
-    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","AUBANK.NS"],
-    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS","LTIM.NS"]
-}
-
-c1, c2, c3 = st.columns(3)
-with c1: sector = st.selectbox("Sector", list(sectors.keys()))
-with c2: trend_filter = st.selectbox("Trend Filter", ["ALL","UPTREND","DOWNTREND"])
-with c3: rsi_filter = st.slider("Min RSI", 0, 100, 30)
+with st.sidebar:
+    st.header("Settings")
+    sector_name = st.selectbox("Select Sector", list(sectors.keys()))
+    trend_filter = st.radio("Trend Filter", ["ALL", "UPTREND", "DOWNTREND"])
+    min_rsi = st.slider("Min RSI Level", 0, 100, 40)
+    st.info("Scanner refreshes every 15 seconds.")
 
 # =============================
-# CORE ANALYSIS
+# 5. DATA PROCESSING
 # =============================
-def process_stocks(ticker_list):
-    all_results = []
-    # Fetching all stocks at once is faster
+def process_data(ticker_list):
+    results = []
+    # Fetch data for all stocks in one go (Faster)
     data = yf.download(ticker_list, period="2d", interval="5m", group_by='ticker', progress=False)
     
     for ticker in ticker_list:
         try:
             df = data[ticker].dropna()
-            if len(df) < 50: continue
+            if len(df) < 20: continue
             
             df = get_indicators(df)
-            last_row = df.iloc[-1]
-            prev_row = df.iloc[-2]
+            last = df.iloc[-1]
             
-            # Logic
-            ltp = round(last_row['Close'], 2)
-            rsi_val = round(last_row['RSI'], 1)
-            vwap_val = round(last_row['VWAP'], 2)
+            ltp = round(last['Close'], 2)
+            rsi_val = round(last['RSI'], 1)
+            vwap_val = round(last['VWAP'], 2)
             
-            # Trend & Signal
-            trend = "UPTREND" if last_row['EMA20'] > last_row['EMA50'] else "DOWNTREND"
-            signal = "🚀 BUY" if ltp > vwap_val and rsi_val > 50 else "⚠️ SELL" if ltp < vwap_val else "HOLD"
+            # Trend Logic
+            trend = "UPTREND" if last['EMA20'] > last['EMA50'] else "DOWNTREND"
             
-            # Price Change %
+            # Signal Logic
+            if ltp > vwap_val and rsi_val > 55:
+                signal = "🚀 STRONG BUY"
+            elif ltp > vwap_val:
+                signal = "BUY"
+            elif ltp < vwap_val and rsi_val < 45:
+                signal = "⚠️ STRONG SELL"
+            else:
+                signal = "SELL"
+                
+            # % Change calculation
             day_open = df.iloc[0]['Open']
             p_change = round(((ltp - day_open) / day_open) * 100, 2)
 
-            all_results.append({
-                "Stock": ticker.replace(".NS",""),
-                "Price": ltp,
+            results.append({
+                "Ticker": ticker.replace(".NS",""),
+                "LTP": ltp,
                 "Change %": p_change,
                 "RSI": rsi_val,
                 "Trend": trend,
@@ -93,35 +109,38 @@ def process_stocks(ticker_list):
             })
         except:
             continue
-    return pd.DataFrame(all_results)
+    return pd.DataFrame(results)
 
-# Execution
-if st.button("Manual Refresh"):
-    st.rerun()
+# =============================
+# 6. DISPLAY RESULTS
+# =============================
+res_df = process_data(sectors[sector_name])
 
-results_df = process_stocks(sectors[sector])
-
-if not results_df.empty:
-    # Filtering
+if not res_df.empty:
+    # Applying Filters
     if trend_filter != "ALL":
-        results_df = results_df[results_df['Trend'] == trend_filter]
-    
-    results_df = results_df[results_df['RSI'] >= rsi_filter]
+        res_df = res_df[res_df['Trend'] == trend_filter]
+    res_df = res_df[res_df['RSI'] >= min_rsi]
 
-    # Styling for Table
-    def color_signal(val):
-        color = '#2ecc71' if 'BUY' in val else '#e74c3c' if 'SELL' in val else 'white'
+    # Metrics Row
+    m1, m2, m3 = st.columns(3)
+    top_stock = res_df.loc[res_df['Change %'].idxmax()]
+    m1.metric("Top Gainer", top_stock['Ticker'], f"{top_stock['Change %']}%")
+    m2.metric("Market Sentiment", "Bullish" if top_stock['Change %'] > 0 else "Bearish")
+    m3.metric("Total Stocks", len(res_df))
+
+    # Styling Table
+    def style_signal(val):
+        color = '#00ff41' if 'BUY' in val else '#ff3131' if 'SELL' in val else 'white'
         return f'color: {color}; font-weight: bold'
 
-    styled_df = results_df.style.applymap(color_signal, subset=['Signal']) \
-                                .background_gradient(cmap='RdYlGn', subset=['Change %'])
-
-    st.dataframe(styled_df, use_container_width=True, height=400)
+    st.dataframe(
+        res_df.style.applymap(style_signal, subset=['Signal'])
+        .background_gradient(cmap='RdYlGn', subset=['Change %']),
+        use_container_width=True, height=500
+    )
     
-    # Summary Metrics
-    m1, m2 = st.columns(2)
-    m1.metric("Top Gainer", results_df.loc[results_df['Change %'].idxmax()]['Stock'], f"{results_df['Change %'].max()}%")
-    m2.metric("Strongest RSI", results_df.loc[results_df['RSI'].idxmax()]['Stock'], results_df['RSI'].max())
-
+    if any("STRONG BUY" in s for s in res_df['Signal']):
+        st.success("🔥 High Probability Breakout Detected!")
 else:
-    st.error("No data found for selected criteria.")
+    st.warning("No stocks matching the current filters.")
