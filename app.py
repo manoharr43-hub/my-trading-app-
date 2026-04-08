@@ -3,13 +3,14 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from streamlit_autorefresh import st_autorefresh
-
-st.set_page_config(page_title="NSE PRO FIXED", layout="wide")
-st_autorefresh(interval=20000, key="refresh")
 
 # =============================
-# SAFE STOCK LIST (NO ERROR)
+# CONFIG
+# =============================
+st.set_page_config(page_title="NSE PRO FINAL SCANNER", layout="wide")
+
+# =============================
+# STOCK LIST (SAFE)
 # =============================
 stocks = [
     "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
@@ -17,7 +18,7 @@ stocks = [
 ]
 
 # =============================
-# ANALYSIS
+# ANALYSIS FUNCTION
 # =============================
 def analyze_stock(df):
     if df.empty or len(df) < 50:
@@ -25,25 +26,30 @@ def analyze_stock(df):
 
     df = df.copy()
 
+    # RSI
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
+    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
+    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
+    # Volume
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     last_vol = df['Volume'].iloc[-1]
     vol_ratio = last_vol / (avg_vol + 1e-9)
 
+    # Support / Resistance
     res = df['High'].iloc[-20:].max()
     sup = df['Low'].iloc[-20:].min()
 
-    # AI
+    # AI Prediction
     X = np.arange(10).reshape(-1, 1)
     y = df['Close'].iloc[-10:].values
     model = LinearRegression().fit(X, y)
@@ -55,7 +61,7 @@ def analyze_stock(df):
     return df, res, sup, vol_ratio, ai_view
 
 # =============================
-# BREAKOUT
+# BREAKOUT FUNCTION
 # =============================
 def check_breakout(df):
     recent_high = df['High'].iloc[-20:-1].max()
@@ -77,7 +83,11 @@ def run_scanner(tickers):
 
     for t in tickers:
         try:
-            df = yf.download(t, period="5d", interval="5m", progress=False)
+            df = yf.download(t, period="5d", interval="5m", progress=False, threads=False)
+
+            if df.empty:
+                continue
+
             df = df.dropna()
 
             result = analyze_stock(df)
@@ -93,6 +103,7 @@ def run_scanner(tickers):
             rsi = round(last['RSI'], 1)
             trend = "UPTREND" if last['EMA20'] > last['EMA50'] else "DOWNTREND"
 
+            # SIGNAL LOGIC
             signal = "WAIT"
 
             if (ltp > last['VWAP'] and trend == "UPTREND" and ai_view == "🚀 BULLISH"):
@@ -101,8 +112,10 @@ def run_scanner(tickers):
             elif (ltp < last['VWAP'] and trend == "DOWNTREND" and ai_view == "📉 BEARISH"):
                 signal = "SELL"
 
+            # STRONG BREAKOUT
             if breakout == "🚀 BREAKOUT" and vol_ratio > 1.5:
                 signal = "STRONG BUY"
+
             elif breakout == "📉 BREAKDOWN" and vol_ratio > 1.5:
                 signal = "STRONG SELL"
 
@@ -125,14 +138,14 @@ def run_scanner(tickers):
 # =============================
 # UI
 # =============================
-st.title("🔥 NSE PRO STABLE SCANNER")
+st.title("🔥 NSE PRO FINAL AI SCANNER")
 
 df = run_scanner(stocks)
 
 if not df.empty:
     st.dataframe(df, use_container_width=True)
 
-    # LIVE CHART (WORKING)
+    # LIVE CHART
     selected = st.selectbox("Select Stock", df['Stock'])
 
     if selected:
