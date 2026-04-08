@@ -134,3 +134,19 @@ if not res_df.empty:
     st.success(f"Last Updated: {pd.Timestamp.now().strftime('%H:%M:%S')}")
 else:
     st.info("No data found.")
+sectors = {
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],
+    "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
+    "Energy": ["RELIANCE.NS","ONGC.NS","NTPC.NS","POWERGRID.NS"],
+    "NSE 500": [
+        # Manual ticker list for NSE500 top companies (example 20 for demo)
+        "RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS",
+        "SBIN.NS","HCLTECH.NS","BHARTIARTL.NS","LT.NS","AXISBANK.NS",
+        "MARUTI.NS","ITC.NS","KOTAKBANK.NS","BAJAJ-AUTO.NS","TECHM.NS",
+        "WIPRO.NS","SUNPHARMA.NS","TITAN.NS","ULTRACEMCO.NS","HINDUNILVR.NS"
+        # Full NSE500 list can be extended here
+    ]
+}
