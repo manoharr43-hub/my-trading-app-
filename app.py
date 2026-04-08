@@ -3,11 +3,17 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="NSE SUPER FAST SCANNER", layout="wide")
+st.set_page_config(page_title="NSE PRO AI SCANNER", layout="wide")
 
 # =============================
-# FULL NSE SECTORS (MORE ADDED)
+# AUTO REFRESH (20 sec)
+# =============================
+st_autorefresh(interval=20000, key="refresh")
+
+# =============================
+# NSE SECTORS
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
@@ -17,8 +23,7 @@ sectors = {
     "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
-    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
-    "Adani": ["ADANIENT.NS","ADANIPORTS.NS","ADANIGREEN.NS","ADANIPOWER.NS"]
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
 }
 
 # =============================
@@ -27,6 +32,23 @@ sectors = {
 with st.sidebar:
     st.header("📊 Select NSE Sector")
     sector_name = st.selectbox("Sector", list(sectors.keys()))
+
+# =============================
+# COLOR FUNCTIONS
+# =============================
+def color_signal(val):
+    if "BUY" in val:
+        return "background-color: green; color: white"
+    elif "SELL" in val:
+        return "background-color: red; color: white"
+    return ""
+
+def color_trend(val):
+    if val == "UP":
+        return "background-color: green; color: white"
+    elif val == "DOWN":
+        return "background-color: red; color: white"
+    return ""
 
 # =============================
 # ANALYSIS
@@ -97,14 +119,13 @@ def run_scanner(tickers):
 
             trend = "UP" if ema20 > ema50 else "DOWN"
 
-            # 🔥 EASY SIGNAL (MORE RESULTS)
             signal = "WAIT"
 
-            if (ltp > vwap and trend=="UP" and rsi>48 and ai=="BUY"):
-                signal = "BUY"
+            if (ltp > vwap and trend=="UP" and rsi>50 and ai=="BUY"):
+                signal = "🔥 BUY"
 
-            elif (ltp < vwap and trend=="DOWN" and rsi<52 and ai=="SELL"):
-                signal = "SELL"
+            elif (ltp < vwap and trend=="DOWN" and rsi<50 and ai=="SELL"):
+                signal = "🔥 SELL"
 
             results.append({
                 "Stock": s.replace(".NS",""),
@@ -125,20 +146,32 @@ def run_scanner(tickers):
 # =============================
 # UI
 # =============================
-st.title("⚡ NSE SUPER FAST SCANNER (FIXED)")
+st.title("🔥 NSE PRO AI SCANNER (FULL UPGRADE)")
 
 st.write(f"📊 Sector: {sector_name}")
 
 df = run_scanner(sectors[sector_name])
 
 if not df.empty:
-    st.dataframe(df)
 
-    selected = st.selectbox("Select Stock", df['Stock'])
+    st.subheader("🚀 Live Signals")
+
+    styled_df = df.style.applymap(color_signal, subset=['Signal']) \
+                         .applymap(color_trend, subset=['Trend'])
+
+    st.dataframe(styled_df, use_container_width=True)
+
+    if st.button("🔄 Refresh Data"):
+        st.rerun()
+
+    selected = st.selectbox("📈 Select Stock", df['Stock'])
 
     chart = yf.download(selected+".NS", period="1d", interval="5m")
 
     if not chart.empty:
         st.line_chart(chart['Close'])
+    else:
+        st.warning("Chart not available")
+
 else:
-    st.warning("Market slow / no signals now")
+    st.warning("No signals found now")
