@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="NSE SMART AI SCANNER", layout="wide")
+st.set_page_config(page_title="NSE ULTRA AI SCANNER", layout="wide")
 
 # =============================
 # NSE SECTORS
@@ -20,8 +20,8 @@ sectors = {
 # SIDEBAR
 # =============================
 with st.sidebar:
-    st.header("📊 Select NSE Sector")
-    sector_name = st.selectbox("Sector", list(sectors.keys()))
+    st.header("📊 NSE Sector")
+    sector_name = st.selectbox("Select Sector", list(sectors.keys()))
 
 # =============================
 # ANALYSIS
@@ -48,6 +48,10 @@ def analyze_stock(df):
     last_vol = df['Volume'].iloc[-1]
     vol_ratio = last_vol / (avg_vol + 1e-9)
 
+    # Support / Resistance
+    res = df['High'].iloc[-20:].max()
+    sup = df['Low'].iloc[-20:].min()
+
     # Breakout
     high = df['High'].iloc[-20:-1].max()
     low = df['Low'].iloc[-20:-1].min()
@@ -59,7 +63,7 @@ def analyze_stock(df):
     elif last_close < low:
         breakout = "📉 BREAKDOWN"
 
-    # AI MODEL (SMART)
+    # AI MODEL
     df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
     df = df.dropna()
 
@@ -72,10 +76,9 @@ def analyze_stock(df):
     prediction = model.predict([features.iloc[-1]])[0]
     ai_view = "🚀 BULLISH" if prediction == 1 else "📉 BEARISH"
 
-    # Accuracy estimate (simple)
     accuracy = round(model.score(features, target)*100, 2)
 
-    return df, vol_ratio, breakout, ai_view, accuracy
+    return df, vol_ratio, breakout, ai_view, accuracy, res, sup
 
 # =============================
 # SCANNER
@@ -99,7 +102,7 @@ def run_scanner(tickers):
             if result is None:
                 continue
 
-            df, vol_ratio, breakout, ai_view, accuracy = result
+            df, vol_ratio, breakout, ai_view, accuracy, res, sup = result
             last = df.iloc[-1]
 
             ltp = round(float(last['Close']), 2)
@@ -111,42 +114,48 @@ def run_scanner(tickers):
             trend = "UPTREND" if ema20 > ema50 else "DOWNTREND"
 
             # =============================
-            # SMART SIGNAL
+            # SMART SIGNAL + AUTO ENTRY
             # =============================
             signal = "WAIT"
+            entry = "-"
+            sl = "-"
+            target = "-"
 
+            # BUY
             if (
-                ltp > vwap and
-                trend == "UPTREND" and
-                rsi > 55 and
-                vol_ratio > 1.5 and
-                breakout == "🚀 BREAKOUT" and
-                ai_view == "🚀 BULLISH" and
-                accuracy > 60
+                ltp > vwap and trend == "UPTREND" and rsi > 55 and
+                vol_ratio > 1.5 and breakout == "🚀 BREAKOUT" and
+                ai_view == "🚀 BULLISH" and accuracy > 60
             ):
                 signal = "🔥 STRONG BUY"
+                entry = ltp
+                sl = round(sup, 2)
+                target = round(ltp + (ltp - sl)*2, 2)
 
+            # SELL
             elif (
-                ltp < vwap and
-                trend == "DOWNTREND" and
-                rsi < 45 and
-                vol_ratio > 1.5 and
-                breakout == "📉 BREAKDOWN" and
-                ai_view == "📉 BEARISH" and
-                accuracy > 60
+                ltp < vwap and trend == "DOWNTREND" and rsi < 45 and
+                vol_ratio > 1.5 and breakout == "📉 BREAKDOWN" and
+                ai_view == "📉 BEARISH" and accuracy > 60
             ):
                 signal = "🔥 STRONG SELL"
+                entry = ltp
+                sl = round(res, 2)
+                target = round(ltp - (sl - ltp)*2, 2)
 
             results.append({
                 "Stock": t.replace(".NS",""),
                 "LTP": ltp,
-                "RSI": rsi,
                 "Trend": trend,
+                "RSI": rsi,
                 "Volume": round(vol_ratio,2),
                 "AI": ai_view,
                 "Accuracy %": accuracy,
                 "Breakout": breakout,
-                "Signal": signal
+                "Signal": signal,
+                "Entry": entry,
+                "Stoploss": sl,
+                "Target": target
             })
 
         except Exception as e:
@@ -155,9 +164,9 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# MAIN
+# UI
 # =============================
-st.title("🔥 NSE SMART AI SCANNER")
+st.title("🔥 NSE ULTRA AI AUTO ENTRY SCANNER")
 
 st.write(f"📊 Sector: {sector_name}")
 
@@ -168,6 +177,9 @@ if not df.empty:
 
     selected = st.selectbox("Select Stock", df['Stock'])
 
+    # FIXED SYMBOL
+    symbol = selected + ".NS"
+
     st.subheader(f"📈 {selected} Chart")
 
     st.components.v1.html(f"""
@@ -177,7 +189,7 @@ if not df.empty:
     new TradingView.widget({{
       "width": "100%",
       "height": 500,
-      "symbol": "NSE:{selected}",
+      "symbol": "{symbol}",
       "interval": "5",
       "timezone": "Asia/Kolkata",
       "theme": "dark",
