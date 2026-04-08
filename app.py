@@ -30,7 +30,7 @@ def analyze_stock(df):
     # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
     
-    # Support & Resistance (Pivot Points)
+    # Support & Resistance (Pivot Points last 20 bars)
     res = df['High'].iloc[-20:].max()
     sup = df['Low'].iloc[-20:].min()
     
@@ -85,9 +85,9 @@ def process_scanner(tickers):
             # Status
             status = "NORMAL"
             if ltp >= res:
-                status = "🚀 BREAKOUT" if rsi < 70 else "⚠️ FAKE BREAKOUT"
+                status = "🚀 STRONG BUY" if rsi < 70 else "⚠️ POSSIBLE FAKE"
             elif ltp <= sup:
-                status = "📉 BREAKDOWN" if rsi > 30 else "⚠️ FAKE BREAKDOWN"
+                status = "📉 STRONG SELL" if rsi > 30 else "⚠️ POSSIBLE FAKE"
             
             # Signal
             signal = "BUY" if ltp > last['VWAP'] and trend == "UPTREND" else "SELL" if ltp < last['VWAP'] and trend == "DOWNTREND" else "WAIT"
@@ -114,30 +114,28 @@ res_df = process_scanner(sectors[sector_name])
 if not res_df.empty:
     res_df = res_df[res_df['Trend'].isin(trend_filter)]
     
-    # --- ADVANCED STYLING ---
+    # --- STYLING ---
     def style_table(row):
         styles = [''] * len(row)
         
-        # 1. Row Background based on Status
-        if "BREAKOUT" in str(row.Status):
+        # Row Background based on strong Status only
+        if "STRONG BUY" in str(row.Status):
             styles = ['background-color: #004d1a; color: white'] * len(row)
-        elif "BREAKDOWN" in str(row.Status):
+        elif "STRONG SELL" in str(row.Status):
             styles = ['background-color: #4d0000; color: white'] * len(row)
             
-        # 2. LTP Color Logic (Blue at Support, Red at Resistance)
-        # ధర సపోర్ట్ కి దగ్గరగా ఉంటే (0.1% లోపు) బ్లూ
+        # LTP proximity to Support/Resistance (visual cue only)
+        ltp_idx = res_df.columns.get_loc('LTP')
         if abs(row.LTP - row.Support) / row.Support < 0.001:
-            styles[res_df.columns.get_loc('LTP')] = 'color: #00ffff; font-weight: bold; font-size: 18px'
-        # ధర రెసిస్టెన్స్ కి దగ్గరగా ఉంటే రెడ్
+            styles[ltp_idx] = 'color: #00ffff; font-weight: bold; font-size: 18px'
         elif abs(row.LTP - row.Resistance) / row.Resistance < 0.001:
-            styles[res_df.columns.get_loc('LTP')] = 'color: #ff3131; font-weight: bold; font-size: 18px'
+            styles[ltp_idx] = 'color: #ff3131; font-weight: bold; font-size: 18px'
             
         return styles
 
-    # Apply Styles
     styled_df = res_df.style.apply(style_table, axis=1)\
-        .set_properties(subset=['Support'], **{'color': '#ff4d4d', 'font-weight': 'bold'})\
-        .set_properties(subset=['Resistance'], **{'color': '#00ff41', 'font-weight': 'bold'})
+        .set_properties(subset=['Support'], **{'color': '#00ffff', 'font-weight': 'bold'})\
+        .set_properties(subset=['Resistance'], **{'color': '#ff3131', 'font-weight': 'bold'})
 
     st.dataframe(styled_df, use_container_width=True, height=500)
     
