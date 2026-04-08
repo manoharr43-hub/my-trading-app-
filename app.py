@@ -17,37 +17,32 @@ def rsi(series, period=14):
     gain = delta.clip(lower=0).rolling(period).mean()
     loss = -delta.clip(upper=0).rolling(period).mean()
     rs = gain / loss
-    return 100 - (100 / (1 + rs))
+    rsi_val = 100 - (100 / (1 + rs))
+    return rsi_val.fillna(0)   # ✅ FIX
 
 def ema(series, span):
     return series.ewm(span=span, adjust=False).mean()
 
 # =============================
-# DATA FETCH
+# DATA
 # =============================
 @st.cache_data(ttl=30)
 def get_data(stocks):
     try:
-        data = yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
-        return data
+        return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
     except:
         return None
 
 # =============================
 # ANALYSIS
 # =============================
-def analyze_intraday(df, ticker):
+def analyze(df, ticker):
     try:
-        # Handle multi ticker data
-        if isinstance(df.columns, pd.MultiIndex):
-            d = df[ticker].copy()
-        else:
-            d = df.copy()
+        d = df[ticker].copy() if isinstance(df.columns, pd.MultiIndex) else df.copy()
 
         if d is None or len(d) < 20:
             return None
 
-        # Only today's data
         d["Date"] = d.index.date
         today = d["Date"].iloc[-1]
         d = d[d["Date"] == today].copy()
@@ -65,17 +60,13 @@ def analyze_intraday(df, ticker):
         # VWAP
         d["VWAP"] = (close * vol).cumsum() / vol.cumsum()
 
-        # RSI
+        # RSI FIX
         d["RSI"] = rsi(close)
+        rsi_val = round(float(d["RSI"].iloc[-1]), 1)
 
         # ORB
         orb_high = round(high.iloc[:6].max(), 2)
         orb_low = round(low.iloc[:6].min(), 2)
-
-        # Support / Resistance
-        pivot = (high.iloc[-2] + low.iloc[-2] + close.iloc[-2]) / 3
-        resistance = round((2 * pivot) - low.iloc[-2], 2)
-        support = round((2 * pivot) - high.iloc[-2], 2)
 
         # Trend
         d["EMA20"] = ema(close, 20)
@@ -88,54 +79,53 @@ def analyze_intraday(df, ticker):
             trend = "DOWNTREND"
 
         # Signal
-        signal = "WAIT"
-        if ltp > d["VWAP"].iloc[-1]:
-            signal = "BUY"
-        elif ltp < d["VWAP"].iloc[-1]:
-            signal = "SELL"
+        signal = "BUY" if ltp > d["VWAP"].iloc[-1] else "SELL"
 
         return {
-            "Stock": ticker.replace(".NS", ""),
-            "LTP": round(ltp, 2),
-            "Support": support,
-            "Resistance": resistance,
+            "Stock": ticker.replace(".NS",""),
+            "LTP": round(ltp,2),
+            "RSI": rsi_val,
             "ORB High": orb_high,
             "ORB Low": orb_low,
-            "RSI": round(d["RSI"].iloc[-1], 1),
             "Trend": trend,
             "Signal": signal
         }
 
-    except Exception as e:
+    except:
         return None
 
 # =============================
 # UI
 # =============================
-st.title("🚀 NSE Smart Scanner (Error-Free)")
+st.title("🚀 NSE Smart Scanner (RSI FIXED)")
 
+# ✅ NSE SECTORS FULL
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS"],
-    "Bank": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"],
-    "IT": ["TCS.NS","INFY.NS","WIPRO.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"]
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
+    "FMCG": ["ITC.NS","HINDUNILVR.NS","DABUR.NS","BRITANNIA.NS"],
+    "Energy": ["RELIANCE.NS","ONGC.NS","NTPC.NS","POWERGRID.NS"]
 }
 
 col1, col2 = st.columns(2)
 
 with col1:
-    sector = st.selectbox("Select Sector", list(sectors.keys()))
+    sector = st.selectbox("Select NSE Sector", list(sectors.keys()))
 
 with col2:
-    trend_filter = st.selectbox("Select Trend", ["ALL", "UPTREND", "DOWNTREND", "SIDEWAYS"])
+    trend_filter = st.selectbox("Trend", ["ALL","UPTREND","DOWNTREND","SIDEWAYS"])
 
 # =============================
-# LOAD DATA
+# LOAD
 # =============================
-limit = st.slider("Stocks Count", 5, 15, 10)
+limit = st.slider("Stocks",5,15,10)
 stocks = sectors[sector][:limit]
 
-with st.spinner("Fetching data... ⏳"):
+with st.spinner("Loading data..."):
     data = get_data(stocks)
 
 # =============================
@@ -145,22 +135,17 @@ results = []
 
 if data is not None:
     for s in stocks:
-        res = analyze_intraday(data, s)
-        if res:
-            results.append(res)
+        r = analyze(data, s)
+        if r:
+            results.append(r)
 
 # =============================
-# FILTER (SAFE)
+# FILTER
 # =============================
-all_results = results.copy()
-
 if trend_filter != "ALL":
-    filtered = [r for r in results if r["Trend"] == trend_filter]
-    if len(filtered) > 0:
-        results = filtered
-    else:
-        st.warning("⚠️ No stocks in selected trend → Showing ALL")
-        results = all_results
+    temp = [r for r in results if r["Trend"] == trend_filter]
+    if temp:
+        results = temp
 
 # =============================
 # DISPLAY
@@ -169,12 +154,10 @@ if results:
     df = pd.DataFrame(results)
     st.dataframe(df)
 else:
-    st.error("No data available")
+    st.warning("No stocks found")
 
 # =============================
 # ALERT
 # =============================
-signals = [r for r in results if r["Signal"] != "WAIT"]
-
-if signals:
-    st.success("🔥 Signals Available!")
+if any(r["Signal"]=="BUY" for r in results):
+    st.success("🔥 BUY Signals Available")
