@@ -39,7 +39,7 @@ def analyze_intraday(df, ticker):
         if d is None or len(d) < 50:
             return None
 
-        # Only today data
+        # Today data
         d["Date"] = d.index.date
         today = d["Date"].iloc[-1]
         d = d[d["Date"] == today].copy()
@@ -85,15 +85,11 @@ def analyze_intraday(df, ticker):
 
         # Signal
         signal = "WAIT"
-        color = "#ffffff"
 
         if ltp > resistance and ltp > d["VWAP"].iloc[-1] and trend == "UPTREND" and vol_spike:
             signal = "BUY"
-            color = "#d4edda"
-
         elif ltp < support and ltp < d["VWAP"].iloc[-1] and trend == "DOWNTREND" and vol_spike:
             signal = "SELL"
-            color = "#f8d7da"
 
         return {
             "Stock": ticker.replace(".NS", ""),
@@ -105,11 +101,10 @@ def analyze_intraday(df, ticker):
             "RSI": round(d["RSI"].iloc[-1], 1),
             "Trend": trend,
             "Signal": signal,
-            "Volume": "YES" if vol_spike else "NO",
-            "Bg": color
+            "Volume": "YES" if vol_spike else "NO"
         }
 
-    except:
+    except Exception as e:
         return None
 
 # =============================
@@ -139,19 +134,13 @@ if data is not None:
             results.append(r)
 
 # =============================
-# DISPLAY (FIXED NO ERROR)
+# DISPLAY (NO STYLE ERROR)
 # =============================
 if results:
     df = pd.DataFrame(results)
 
-    def highlight(row):
-        return [f'background-color: {row["Bg"]}'] * len(row)
-
-    st.dataframe(
-        df.drop(columns=["Bg"]).style
-        .format({"LTP": "{:.2f}", "RSI": "{:.1f}"})
-        .apply(highlight, axis=1)
-    )
+    # ✅ Simple safe display
+    st.dataframe(df)
 
 # =============================
 # ALERT
