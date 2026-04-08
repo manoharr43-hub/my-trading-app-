@@ -30,7 +30,7 @@ def get_data(stocks):
     return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
 
 # =============================
-# ANALYSIS (RELAXED LOGIC)
+# ANALYSIS
 # =============================
 def analyze_intraday(df, ticker):
     try:
@@ -39,7 +39,7 @@ def analyze_intraday(df, ticker):
         if d is None or len(d) < 20:
             return None
 
-        # Today data
+        # Only today
         d["Date"] = d.index.date
         today = d["Date"].iloc[-1]
         d = d[d["Date"] == today].copy()
@@ -79,103 +79,6 @@ def analyze_intraday(df, ticker):
         elif d["EMA20"].iloc[-1] < d["EMA50"].iloc[-1]:
             trend = "DOWNTREND"
 
-        # Volume
-        avg_vol = vol.rolling(20).mean().iloc[-1]
-        vol_spike = vol.iloc[-1] > avg_vol
-
-        # ✅ RELAXED SIGNAL (MARKET OPEN FRIENDLY)
+        # Signal (simple)
         signal = "WAIT"
-
-        if ltp > d["VWAP"].iloc[-1]:
-            signal = "BUY"
-        elif ltp < d["VWAP"].iloc[-1]:
-            signal = "SELL"
-
-        return {
-            "Stock": ticker.replace(".NS", ""),
-            "LTP": round(ltp, 2),
-            "Support": support,
-            "Resistance": resistance,
-            "ORB High": orb_high,
-            "ORB Low": orb_low,
-            "RSI": round(d["RSI"].iloc[-1], 1),
-            "Trend": trend,
-            "Signal": signal,
-            "Volume": "YES" if vol_spike else "NO"
-        }
-
-    except:
-        return None
-
-# =============================
-# UI
-# =============================
-st.title("🚀 NSE Pro Scanner (Market Open Ready)")
-
-sectors = {
-    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS"],
-    "Bank": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"],
-    "IT": ["TCS.NS","INFY.NS","WIPRO.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"],
-    "Pharma": ["SUNPHARMA.NS","CIPLA.NS","DRREDDY.NS"],
-
-    # Nifty 500 (limited fast)
-    "Nifty 500": [
-        "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
-        "ITC.NS","SBIN.NS","LT.NS","BHARTIARTL.NS","KOTAKBANK.NS",
-        "AXISBANK.NS","MARUTI.NS","HCLTECH.NS","WIPRO.NS"
-    ]
-}
-
-col1, col2 = st.columns(2)
-
-with col1:
-    sector = st.selectbox("Select Sector", list(sectors.keys()))
-
-with col2:
-    trend_filter = st.selectbox("Select Trend", ["ALL", "UPTREND", "DOWNTREND", "SIDEWAYS"])
-
-# =============================
-# FAST LOAD
-# =============================
-limit = st.slider("Stocks Count", 5, 20, 10)
-stocks = sectors[sector][:limit]
-
-with st.spinner("Fetching live data... ⏳"):
-    data = get_data(stocks)
-
-# =============================
-# SCANNER
-# =============================
-results = []
-
-if data is not None:
-    for s in stocks:
-        r = analyze_intraday(data, s)
-        if r:
-            results.append(r)
-
-# =============================
-# FILTER
-# =============================
-if trend_filter != "ALL":
-    results = [r for r in results if r["Trend"] == trend_filter]
-
-# =============================
-# DISPLAY
-# =============================
-st.write("Total Stocks Found:", len(results))
-
-if results:
-    df = pd.DataFrame(results)
-    st.dataframe(df)
-else:
-    st.warning("No stocks found (Try Trend = ALL)")
-
-# =============================
-# ALERT
-# =============================
-strong = [r for r in results if r["Signal"] != "WAIT"]
-
-if strong:
-    st.success("🔥 Signals Available!")
+        if ltp > d["VWAP"].iloc[-1
