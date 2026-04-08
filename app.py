@@ -4,41 +4,53 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="NSE 500 SUPER FAST SCANNER", layout="wide")
+st.set_page_config(page_title="NSE SUPER FAST AI SCANNER", layout="wide")
 
 # =============================
-# NSE 500 SAMPLE (FAST)
+# NSE SECTORS
 # =============================
-stocks = [
-    "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
-    "SBIN.NS","LT.NS","ITC.NS","AXISBANK.NS","KOTAKBANK.NS",
-    "TATAMOTORS.NS","MARUTI.NS","M&M.NS","WIPRO.NS","HCLTECH.NS",
-    "TECHM.NS","SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","ONGC.NS",
-    "BPCL.NS","IOC.NS","TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"
-]
+sectors = {
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS"]
+}
 
 # =============================
-# ANALYSIS FAST
+# SIDEBAR
+# =============================
+with st.sidebar:
+    st.header("📊 Select NSE Sector")
+    sector_name = st.selectbox("Sector", list(sectors.keys()))
+
+# =============================
+# ANALYSIS FUNCTION
 # =============================
 def analyze(df):
     if df.empty or len(df) < 50:
         return None
 
+    df = df.copy()
+
+    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
+    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
+    # RSI
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain/(loss+1e-9)
     df['RSI'] = 100 - (100/(1+rs))
 
+    # Volume
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     vol_ratio = df['Volume'].iloc[-1] / (avg_vol + 1e-9)
 
-    # breakout
+    # Breakout
     high = df['High'].iloc[-20:-1].max()
     low = df['Low'].iloc[-20:-1].min()
 
@@ -48,7 +60,7 @@ def analyze(df):
     elif df['Close'].iloc[-1] < low:
         breakout = "📉 BREAKDOWN"
 
-    # AI (light)
+    # AI MODEL
     df['Target'] = np.where(df['Close'].shift(-1) > df['Close'],1,0)
     df = df.dropna()
 
@@ -66,15 +78,15 @@ def analyze(df):
     return df, vol_ratio, breakout, ai, acc
 
 # =============================
-# SUPER FAST SCANNER
+# SCANNER
 # =============================
-def run():
+def run_scanner(tickers):
     results = []
 
-    # ⚡ BULK DOWNLOAD
-    data = yf.download(stocks, period="5d", interval="5m", group_by='ticker', progress=False)
+    # ⚡ BULK DOWNLOAD (FAST)
+    data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
 
-    for s in stocks:
+    for s in tickers:
         try:
             df = data[s].dropna()
 
@@ -94,25 +106,29 @@ def run():
             rsi = float(last['RSI'])
             vwap = float(last['VWAP'])
 
-            trend = "UP" if ema20 > ema50 else "DOWN"
+            trend = "UPTREND" if ema20 > ema50 else "DOWNTREND"
 
+            # =============================
+            # SMART SIGNAL (RELAXED)
+            # =============================
             signal = "WAIT"
             entry, sl, target = "-", "-", "-"
 
-            # SMART FILTER
-            if (ltp>vwap and trend=="UP" and rsi>55 and vol>1.5 and breakout=="🚀 BREAKOUT" and ai=="🚀 BULLISH" and acc>60):
-                signal="🔥 BUY"
-                entry=round(ltp,2)
-                sl=round(df['Low'].iloc[-20:].min(),2)
-                target=round(entry+(entry-sl)*2,2)
+            # BUY
+            if (ltp > vwap and trend == "UPTREND" and rsi > 50 and vol > 1.2 and ai == "🚀 BULLISH"):
+                signal = "🔥 BUY"
+                entry = round(ltp,2)
+                sl = round(df['Low'].iloc[-20:].min(),2)
+                target = round(entry + (entry - sl)*2,2)
 
-            elif (ltp<vwap and trend=="DOWN" and rsi<45 and vol>1.5 and breakout=="📉 BREAKDOWN" and ai=="📉 BEARISH" and acc>60):
-                signal="🔥 SELL"
-                entry=round(ltp,2)
-                sl=round(df['High'].iloc[-20:].max(),2)
-                target=round(entry-(sl-entry)*2,2)
+            # SELL
+            elif (ltp < vwap and trend == "DOWNTREND" and rsi < 50 and vol > 1.2 and ai == "📉 BEARISH"):
+                signal = "🔥 SELL"
+                entry = round(ltp,2)
+                sl = round(df['High'].iloc[-20:].max(),2)
+                target = round(entry - (sl - entry)*2,2)
 
-            if signal!="WAIT":
+            if signal != "WAIT":
                 results.append({
                     "Stock": s.replace(".NS",""),
                     "Price": round(ltp,2),
@@ -133,20 +149,31 @@ def run():
     return pd.DataFrame(results)
 
 # =============================
-# UI
+# MAIN UI
 # =============================
-st.title("⚡ NSE 500 SUPER FAST AI SCANNER")
+st.title("⚡ NSE SUPER FAST AI SCANNER")
 
-df = run()
+st.write(f"📊 Selected Sector: {sector_name}")
+
+df = run_scanner(sectors[sector_name])
 
 if not df.empty:
-    st.success(f"🔥 {len(df)} Strong Signals Found")
-    st.dataframe(df.sort_values(by="Accuracy", ascending=False))
+    st.success(f"🔥 {len(df)} Signals Found")
+    st.dataframe(df)
 
     selected = st.selectbox("Select Stock", df['Stock'])
 
-    chart = yf.download(selected+".NS", period="1d", interval="5m")
-    st.line_chart(chart['Close'])
+    # =============================
+    # CHART (WORKING)
+    # =============================
+    st.subheader(f"📈 {selected} Chart")
+
+    chart = yf.download(selected + ".NS", period="1d", interval="5m")
+
+    if not chart.empty:
+        st.line_chart(chart['Close'])
+    else:
+        st.warning("Chart not available")
 
 else:
-    st.warning("No strong signals now")
+    st.warning("No signals found now (market condition)")
