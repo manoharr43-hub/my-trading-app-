@@ -11,11 +11,11 @@ st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
 # ఆటో రిఫ్రెష్ (ప్రతి 15 సెకన్లకు)
 st_autorefresh(interval=15000, key="refresh")
 
-# CSS - ఇక్కడ ఎర్రర్ సరిచేయబడింది (unsafe_allow_html=True)
+# CSS - ఎర్రర్స్ లేకుండా డిజైన్ సెట్ చేయడం
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    .stMetric { background-color: #1e212b; padding: 10px; border-radius: 10px; border: 1px solid #30363d; }
+    [data-testid="stMetricValue"] { font-size: 25px; color: #00ff41; }
     .stDataFrame { border: 1px solid #30363d; }
     </style>
     """, unsafe_allow_html=True)
@@ -55,20 +55,30 @@ sectors = {
 st.title("⚡ NSE Pro Smart Scanner")
 
 with st.sidebar:
-    st.header("Settings")
+    st.header("Scanner Settings")
     sector_name = st.selectbox("Select Sector", list(sectors.keys()))
     trend_filter = st.radio("Trend Filter", ["ALL", "UPTREND", "DOWNTREND"])
-    min_rsi = st.slider("Min RSI Level", 0, 100, 40)
-    st.info("Scanner refreshes every 15 seconds.")
+    min_rsi = st.slider("Min RSI Level", 0, 100, 30)
+    st.write("---")
+    st.info("Scanner updates every 15s")
 
 # =============================
 # 5. DATA PROCESSING
 # =============================
-def process_data(ticker_list):
-    results = []
-    # Fetch data for all stocks in one go (Faster)
-    data = yf.download(ticker_list, period="2d", interval="5m", group_by='ticker', progress=False)
+@st.cache_data(ttl=10) # 10 సెకన్ల వరకు డేటాను క్యాష్ చేస్తుంది
+def fetch_data(ticker_list):
+    try:
+        data = yf.download(ticker_list, period="2d", interval="5m", group_by='ticker', progress=False)
+        return data
+    except Exception as e:
+        st.error(f"Data fetch error: {e}")
+        return None
+
+def process_results(ticker_list):
+    data = fetch_data(ticker_list)
+    if data is None: return pd.DataFrame()
     
+    results = []
     for ticker in ticker_list:
         try:
             df = data[ticker].dropna()
@@ -100,7 +110,7 @@ def process_data(ticker_list):
 
             results.append({
                 "Ticker": ticker.replace(".NS",""),
-                "LTP": ltp,
+                "Price": ltp,
                 "Change %": p_change,
                 "RSI": rsi_val,
                 "Trend": trend,
@@ -114,7 +124,7 @@ def process_data(ticker_list):
 # =============================
 # 6. DISPLAY RESULTS
 # =============================
-res_df = process_data(sectors[sector_name])
+res_df = process_results(sectors[sector_name])
 
 if not res_df.empty:
     # Applying Filters
@@ -122,25 +132,27 @@ if not res_df.empty:
         res_df = res_df[res_df['Trend'] == trend_filter]
     res_df = res_df[res_df['RSI'] >= min_rsi]
 
-    # Metrics Row
-    m1, m2, m3 = st.columns(3)
-    top_stock = res_df.loc[res_df['Change %'].idxmax()]
-    m1.metric("Top Gainer", top_stock['Ticker'], f"{top_stock['Change %']}%")
-    m2.metric("Market Sentiment", "Bullish" if top_stock['Change %'] > 0 else "Bearish")
-    m3.metric("Total Stocks", len(res_df))
+    if not res_df.empty:
+        # Metrics Row
+        m1, m2, m3 = st.columns(3)
+        top_stock = res_df.loc[res_df['Change %'].idxmax()]
+        m1.metric("Top Gainer", top_stock['Ticker'], f"{top_stock['Change %']}%")
+        m2.metric("Market", "Live")
+        m3.metric("Stocks Count", len(res_df))
 
-    # Styling Table
-    def style_signal(val):
-        color = '#00ff41' if 'BUY' in val else '#ff3131' if 'SELL' in val else 'white'
-        return f'color: {color}; font-weight: bold'
+        # Styling Table - Updated applymap to map for Pandas 2.0+
+        def style_signal(val):
+            if 'BUY' in str(val): color = '#00ff41'
+            elif 'SELL' in str(val): color = '#ff3131'
+            else: color = 'white'
+            return f'color: {color}; font-weight: bold'
 
-    st.dataframe(
-        res_df.style.applymap(style_signal, subset=['Signal'])
-        .background_gradient(cmap='RdYlGn', subset=['Change %']),
-        use_container_width=True, height=500
-    )
-    
-    if any("STRONG BUY" in s for s in res_df['Signal']):
-        st.success("🔥 High Probability Breakout Detected!")
+        # FIX: map() function used instead of applymap()
+        styled_df = res_df.style.map(style_signal, subset=['Signal']) \
+                                .background_gradient(cmap='RdYlGn', subset=['Change %'])
+
+        st.dataframe(styled_df, use_container_width=True, height=500)
+    else:
+        st.warning("No stocks match the filter criteria.")
 else:
-    st.warning("No stocks matching the current filters.")
+    st.error("Waiting for data... Please check your internet or Ticker symbols.")
