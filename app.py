@@ -4,16 +4,21 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-st.set_page_config(page_title="NSE SUPER FAST AI SCANNER", layout="wide")
+st.set_page_config(page_title="NSE SUPER FAST SCANNER", layout="wide")
 
 # =============================
-# NSE SECTORS
+# FULL NSE SECTORS (MORE ADDED)
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
-    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS"]
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
+    "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
+    "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
+    "Adani": ["ADANIENT.NS","ADANIPORTS.NS","ADANIGREEN.NS","ADANIPOWER.NS"]
 }
 
 # =============================
@@ -24,58 +29,43 @@ with st.sidebar:
     sector_name = st.selectbox("Sector", list(sectors.keys()))
 
 # =============================
-# ANALYSIS FUNCTION
+# ANALYSIS
 # =============================
 def analyze(df):
-    if df.empty or len(df) < 50:
+    if df.empty or len(df) < 30:
         return None
 
     df = df.copy()
 
-    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    # VWAP
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
 
-    # RSI
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain/(loss+1e-9)
-    df['RSI'] = 100 - (100/(1+rs))
+    df['RSI'] = 100-(100/(1+rs))
 
-    # Volume
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    vol_ratio = df['Volume'].iloc[-1] / (avg_vol + 1e-9)
+    vol = df['Volume'].iloc[-1]/(avg_vol+1e-9)
 
-    # Breakout
-    high = df['High'].iloc[-20:-1].max()
-    low = df['Low'].iloc[-20:-1].min()
-
-    breakout = "NONE"
-    if df['Close'].iloc[-1] > high:
-        breakout = "🚀 BREAKOUT"
-    elif df['Close'].iloc[-1] < low:
-        breakout = "📉 BREAKDOWN"
-
-    # AI MODEL
-    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'],1,0)
+    df['Target'] = np.where(df['Close'].shift(-1)>df['Close'],1,0)
     df = df.dropna()
 
     X = df[['EMA20','EMA50','RSI','VWAP']]
     y = df['Target']
 
-    model = RandomForestClassifier(n_estimators=50)
+    model = RandomForestClassifier(n_estimators=30)
     model.fit(X,y)
 
     pred = model.predict([X.iloc[-1]])[0]
     acc = round(model.score(X,y)*100,2)
 
-    ai = "🚀 BULLISH" if pred==1 else "📉 BEARISH"
+    ai = "BUY" if pred==1 else "SELL"
 
-    return df, vol_ratio, breakout, ai, acc
+    return df, vol, ai, acc
 
 # =============================
 # SCANNER
@@ -83,7 +73,6 @@ def analyze(df):
 def run_scanner(tickers):
     results = []
 
-    # ⚡ BULK DOWNLOAD (FAST)
     data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
 
     for s in tickers:
@@ -97,7 +86,7 @@ def run_scanner(tickers):
             if res is None:
                 continue
 
-            df, vol, breakout, ai, acc = res
+            df, vol, ai, acc = res
             last = df.iloc[-1]
 
             ltp = float(last['Close'])
@@ -106,42 +95,27 @@ def run_scanner(tickers):
             rsi = float(last['RSI'])
             vwap = float(last['VWAP'])
 
-            trend = "UPTREND" if ema20 > ema50 else "DOWNTREND"
+            trend = "UP" if ema20 > ema50 else "DOWN"
 
-            # =============================
-            # SMART SIGNAL (RELAXED)
-            # =============================
+            # 🔥 EASY SIGNAL (MORE RESULTS)
             signal = "WAIT"
-            entry, sl, target = "-", "-", "-"
 
-            # BUY
-            if (ltp > vwap and trend == "UPTREND" and rsi > 50 and vol > 1.2 and ai == "🚀 BULLISH"):
-                signal = "🔥 BUY"
-                entry = round(ltp,2)
-                sl = round(df['Low'].iloc[-20:].min(),2)
-                target = round(entry + (entry - sl)*2,2)
+            if (ltp > vwap and trend=="UP" and rsi>48 and ai=="BUY"):
+                signal = "BUY"
 
-            # SELL
-            elif (ltp < vwap and trend == "DOWNTREND" and rsi < 50 and vol > 1.2 and ai == "📉 BEARISH"):
-                signal = "🔥 SELL"
-                entry = round(ltp,2)
-                sl = round(df['High'].iloc[-20:].max(),2)
-                target = round(entry - (sl - entry)*2,2)
+            elif (ltp < vwap and trend=="DOWN" and rsi<52 and ai=="SELL"):
+                signal = "SELL"
 
-            if signal != "WAIT":
-                results.append({
-                    "Stock": s.replace(".NS",""),
-                    "Price": round(ltp,2),
-                    "Trend": trend,
-                    "RSI": round(rsi,1),
-                    "Volume": round(vol,2),
-                    "AI": ai,
-                    "Accuracy": acc,
-                    "Signal": signal,
-                    "Entry": entry,
-                    "SL": sl,
-                    "Target": target
-                })
+            results.append({
+                "Stock": s.replace(".NS",""),
+                "Price": round(ltp,2),
+                "Trend": trend,
+                "RSI": round(rsi,1),
+                "Volume": round(vol,2),
+                "AI": ai,
+                "Accuracy": acc,
+                "Signal": signal
+            })
 
         except:
             continue
@@ -149,31 +123,22 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# MAIN UI
+# UI
 # =============================
-st.title("⚡ NSE SUPER FAST AI SCANNER")
+st.title("⚡ NSE SUPER FAST SCANNER (FIXED)")
 
-st.write(f"📊 Selected Sector: {sector_name}")
+st.write(f"📊 Sector: {sector_name}")
 
 df = run_scanner(sectors[sector_name])
 
 if not df.empty:
-    st.success(f"🔥 {len(df)} Signals Found")
     st.dataframe(df)
 
     selected = st.selectbox("Select Stock", df['Stock'])
 
-    # =============================
-    # CHART (WORKING)
-    # =============================
-    st.subheader(f"📈 {selected} Chart")
-
-    chart = yf.download(selected + ".NS", period="1d", interval="5m")
+    chart = yf.download(selected+".NS", period="1d", interval="5m")
 
     if not chart.empty:
         st.line_chart(chart['Close'])
-    else:
-        st.warning("Chart not available")
-
 else:
-    st.warning("No signals found now (market condition)")
+    st.warning("Market slow / no signals now")
