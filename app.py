@@ -1,25 +1,19 @@
-sectors = {
-    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS"],
-
-    "Bank": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS"],
-
-    "IT": ["TCS.NS","INFY.NS","WIPRO.NS"],
-
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"],
-
-    "Pharma": ["SUNPHARMA.NS","CIPLA.NS","DRREDDY.NS"],
-
-    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
-
-    "FMCG": ["ITC.NS","HINDUNILVR.NS","DABUR.NS"],
-
-    "Energy": ["RELIANCE.NS","ONGC.NS","NTPC.NS"],
-
-    # 🚀 NIFTY 500 (LIMITED SAFE)
-    "Nifty 500": [
-        "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS",
-        "ITC.NS","SBIN.NS","LT.NS","BHARTIARTL.NS","KOTAKBANK.NS",
-        "AXISBANK.NS","MARUTI.NS","HCLTECH.NS","WIPRO.NS",
-        "TATASTEEL.NS","SUNPHARMA.NS","ULTRACEMCO.NS","POWERGRID.NS"
+Sectors = {
+    "Nifty_50": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS"],
+    "Bank": ["SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "AXISBANK.NS"],
+    "IT": ["TCS.NS", "INFY.NS", "WIPRO.NS"],
+    "Auto": ["TATAMOTORS.NS", "MARUTI.NS", "M&M.NS"],
+    "Pharma": ["SUNPHARMA.NS", "CIPLA.NS", "DRREDDY.NS"],
+    "Metal": ["TATASTEEL.NS", "JSWSTEEL.NS", "HINDALCO.NS"],
+    "FMCG": ["ITC.NS", "HINDUNILVR.NS", "DABUR.NS"],
+    "Energy": ["RELIANCE.NS", "ONGC.NS", "NTPC.NS"],
+    "Nifty_500": [
+        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS",
+        "ITC.NS", "SBIN.NS", "LT.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
+        "AXISBANK.NS", "MARUTI.NS", "HCLTECH.NS", "WIPRO.NS",
+        "TATASTEEL.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS", "POWERGRID.NS"
     ]
 }
+
+# Code load ayyindho ledho check cheyadaniki chinna print
+print(f"Total Sectors Loaded: {len(Sectors)}")
