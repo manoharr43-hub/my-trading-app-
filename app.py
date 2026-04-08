@@ -2,20 +2,26 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestClassifier
+
+st.set_page_config(page_title="NSE SMART AI SCANNER", layout="wide")
 
 # =============================
-# CONFIG
+# NSE SECTORS
 # =============================
-st.set_page_config(page_title="NSE PRO FINAL AI SCANNER", layout="wide")
+sectors = {
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS"]
+}
 
 # =============================
-# STOCK LIST
+# SIDEBAR
 # =============================
-stocks = [
-    "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
-    "SBIN.NS","LT.NS","ITC.NS","WIPRO.NS","AXISBANK.NS"
-]
+with st.sidebar:
+    st.header("📊 Select NSE Sector")
+    sector_name = st.selectbox("Sector", list(sectors.keys()))
 
 # =============================
 # ANALYSIS
@@ -26,54 +32,50 @@ def analyze_stock(df):
 
     df = df.copy()
 
-    # RSI
+    # Indicators
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = 100 - (100/(1+rs))
 
-    # EMA
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-
-    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
-    # Volume
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     last_vol = df['Volume'].iloc[-1]
     vol_ratio = last_vol / (avg_vol + 1e-9)
 
-    # Support / Resistance
-    res = df['High'].iloc[-20:].max()
-    sup = df['Low'].iloc[-20:].min()
-
-    # AI
-    X = np.arange(10).reshape(-1, 1)
-    y = df['Close'].iloc[-10:].values
-    model = LinearRegression().fit(X, y)
-    prediction = model.predict([[10]])[0]
-
-    current_price = df['Close'].iloc[-1]
-    ai_view = "🚀 BULLISH" if prediction > current_price else "📉 BEARISH"
-
-    return df, res, sup, vol_ratio, ai_view
-
-# =============================
-# BREAKOUT
-# =============================
-def check_breakout(df):
-    recent_high = df['High'].iloc[-20:-1].max()
-    recent_low = df['Low'].iloc[-20:-1].min()
+    # Breakout
+    high = df['High'].iloc[-20:-1].max()
+    low = df['Low'].iloc[-20:-1].min()
     last_close = df['Close'].iloc[-1]
 
-    if last_close > recent_high:
-        return "🚀 BREAKOUT"
-    elif last_close < recent_low:
-        return "📉 BREAKDOWN"
-    else:
-        return "NONE"
+    breakout = "NONE"
+    if last_close > high:
+        breakout = "🚀 BREAKOUT"
+    elif last_close < low:
+        breakout = "📉 BREAKDOWN"
+
+    # AI MODEL (SMART)
+    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
+    df = df.dropna()
+
+    features = df[['EMA20','EMA50','RSI','VWAP']]
+    target = df['Target']
+
+    model = RandomForestClassifier()
+    model.fit(features, target)
+
+    prediction = model.predict([features.iloc[-1]])[0]
+    ai_view = "🚀 BULLISH" if prediction == 1 else "📉 BEARISH"
+
+    # Accuracy estimate (simple)
+    accuracy = round(model.score(features, target)*100, 2)
+
+    return df, vol_ratio, breakout, ai_view, accuracy
 
 # =============================
 # SCANNER
@@ -88,7 +90,6 @@ def run_scanner(tickers):
             if df.empty:
                 continue
 
-            # 🔥 FIX MULTI-INDEX ERROR
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
@@ -98,34 +99,43 @@ def run_scanner(tickers):
             if result is None:
                 continue
 
-            df, res, sup, vol_ratio, ai_view = result
-            breakout = check_breakout(df)
-
+            df, vol_ratio, breakout, ai_view, accuracy = result
             last = df.iloc[-1]
 
-            # 🔥 FINAL FIX (NO SERIES ERROR)
             ltp = round(float(last['Close']), 2)
             rsi = round(float(last['RSI']), 1)
-            vwap = float(last['VWAP'])
             ema20 = float(last['EMA20'])
             ema50 = float(last['EMA50'])
+            vwap = float(last['VWAP'])
 
             trend = "UPTREND" if ema20 > ema50 else "DOWNTREND"
 
+            # =============================
+            # SMART SIGNAL
+            # =============================
             signal = "WAIT"
 
-            if (ltp > vwap and trend == "UPTREND" and ai_view == "🚀 BULLISH"):
-                signal = "BUY"
+            if (
+                ltp > vwap and
+                trend == "UPTREND" and
+                rsi > 55 and
+                vol_ratio > 1.5 and
+                breakout == "🚀 BREAKOUT" and
+                ai_view == "🚀 BULLISH" and
+                accuracy > 60
+            ):
+                signal = "🔥 STRONG BUY"
 
-            elif (ltp < vwap and trend == "DOWNTREND" and ai_view == "📉 BEARISH"):
-                signal = "SELL"
-
-            # BREAKOUT STRONG SIGNAL
-            if breakout == "🚀 BREAKOUT" and vol_ratio > 1.5:
-                signal = "STRONG BUY"
-
-            elif breakout == "📉 BREAKDOWN" and vol_ratio > 1.5:
-                signal = "STRONG SELL"
+            elif (
+                ltp < vwap and
+                trend == "DOWNTREND" and
+                rsi < 45 and
+                vol_ratio > 1.5 and
+                breakout == "📉 BREAKDOWN" and
+                ai_view == "📉 BEARISH" and
+                accuracy > 60
+            ):
+                signal = "🔥 STRONG SELL"
 
             results.append({
                 "Stock": t.replace(".NS",""),
@@ -134,6 +144,7 @@ def run_scanner(tickers):
                 "Trend": trend,
                 "Volume": round(vol_ratio,2),
                 "AI": ai_view,
+                "Accuracy %": accuracy,
                 "Breakout": breakout,
                 "Signal": signal
             })
@@ -144,49 +155,36 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# UI
+# MAIN
 # =============================
-st.title("🔥 NSE PRO FINAL AI SCANNER")
+st.title("🔥 NSE SMART AI SCANNER")
 
-df = run_scanner(stocks)
+st.write(f"📊 Sector: {sector_name}")
+
+df = run_scanner(sectors[sector_name])
 
 if not df.empty:
     st.dataframe(df, use_container_width=True)
 
-    # LIVE CHART
     selected = st.selectbox("Select Stock", df['Stock'])
 
-    if selected:
-        st.markdown(f"""
-        <iframe src="https://www.tradingview.com/chart/?symbol=NSE:{selected}"
-        width="100%" height="500"></iframe>
-        """, unsafe_allow_html=True)
+    st.subheader(f"📈 {selected} Chart")
+
+    st.components.v1.html(f"""
+    <div id="tv_chart"></div>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+    new TradingView.widget({{
+      "width": "100%",
+      "height": 500,
+      "symbol": "NSE:{selected}",
+      "interval": "5",
+      "timezone": "Asia/Kolkata",
+      "theme": "dark",
+      "container_id": "tv_chart"
+    }});
+    </script>
+    """, height=520)
 
 else:
-    st.warning("No signals found")
-st.subheader(f"📊 {selected} Live Chart")
-
-st.components.v1.html(f"""
-<!-- TradingView Widget BEGIN -->
-<div class="tradingview-widget-container">
-  <div id="tradingview_chart"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget(
-  {{
-  "width": "100%",
-  "height": 500,
-  "symbol": "NSE:{selected}",
-  "interval": "5",
-  "timezone": "Asia/Kolkata",
-  "theme": "dark",
-  "style": "1",
-  "locale": "en",
-  "toolbar_bg": "#f1f3f6",
-  "enable_publishing": false,
-  "container_id": "tradingview_chart"
-}});
-  </script>
-</div>
-<!-- TradingView Widget END -->
-""", height=520)
+    st.warning("No strong signals found")
