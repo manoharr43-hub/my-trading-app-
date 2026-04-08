@@ -1,162 +1,69 @@
 import streamlit as st
 import json
-import os
-
-# Try importing Google Gemini AI
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ModuleNotFoundError:
-    GEMINI_AVAILABLE = False
-    st.warning("google-generative-ai module not found! Using mock questions for testing.")
+import pdfplumber
 
 # =============================
-# 1️⃣ Gemini AI Setup (if available)
+# 1️⃣ Upload PDF or load from GitHub
 # =============================
-if GEMINI_AVAILABLE:
-    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY")
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+uploaded_file = st.file_uploader("Upload JEE PDF Question Paper", type="pdf")
+
+questions = []
+
+if uploaded_file:
+    with pdfplumber.open(uploaded_file) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text()
+            # Basic splitting based on numbering (1., 2., etc.)
+            for line in text.split("\n"):
+                if line.strip().startswith(tuple(str(i)+'.' for i in range(1,101))):
+                    # Simple parsing: split question and options
+                    parts = line.split(")")  # assuming options end with A) B) C) D)
+                    if len(parts) >= 5:
+                        question_text = parts[0]
+                        options = [parts[1].strip(), parts[2].strip(), parts[3].strip(), parts[4].strip()]
+                        # For demo, set answer to first option (can manually edit JSON later)
+                        questions.append({
+                            "question": question_text,
+                            "options": options,
+                            "answer": options[0]
+                        })
 
 # =============================
-# 2️⃣ Load old questions
+# 2️⃣ Session State for Quiz
 # =============================
-QUESTIONS_FILE = 'jee_mains_questions.json'
-try:
-    if os.path.exists(QUESTIONS_FILE):
-        with open(QUESTIONS_FILE, 'r', encoding='utf-8') as f:
-            old_questions = json.load(f)
-    else:
-        old_questions = []
-except json.JSONDecodeError:
-    old_questions = []
+if 'quiz_idx' not in st.session_state:
+    st.session_state.quiz_idx = 0
+if 'score' not in st.session_state:
+    st.session_state.score = 0
 
 # =============================
-# 3️⃣ Generate New Questions
+# 3️⃣ Display Quiz
 # =============================
-def generate_new_questions(subject, count=5):
-    if GEMINI_AVAILABLE:
-        prompt = f"""
-        Act as a JEE Mains Expert.
-        Generate {count} HIGH-QUALITY MCQs strictly for {subject}.
-        Each question must have:
-        - question
-        - options ["A","B","C","D"]
-        - answer
-        - explanation (step-by-step solution)
-        Return ONLY raw JSON list.
-        """
-        try:
-            response = model.generate_text(prompt=prompt)
-            text = response.text.strip().replace("\n", " ").replace("'", '"')
-            new_questions = json.loads(text)
-            if isinstance(new_questions, list):
-                return new_questions
-            else:
-                st.error("AI JSON response list కాకుండా వచ్చింది.")
-                return []
-        except Exception as e:
-            st.error(f"AI response parsing లో problem: {e}")
-            return []
-    else:
-        # Mock questions for testing
-        return [
-            {
-                "question": f"Sample {subject} Question {i+1}",
-                "options": ["A", "B", "C", "D"],
-                "answer": "A",
-                "explanation": "Step-by-step solution here."
-            } for i in range(count)
-        ]
+if questions:
+    idx = st.session_state.quiz_idx
+    total = len(questions)
+    q = questions[idx]
 
-# =============================
-# 4️⃣ Streamlit Session State
-# =============================
-if 'mains_bank' not in st.session_state: st.session_state.mains_bank = []
-if 'idx' not in st.session_state: st.session_state.idx = 0
-if 'ans_show' not in st.session_state: st.session_state.ans_show = False
-if 'current_subject' not in st.session_state: st.session_state.current_subject = ""
+    st.subheader(f"Question {idx+1}/{total}")
+    st.write(q['question'])
 
-# =============================
-# 5️⃣ UI Design
-# =============================
-st.title("🎓 SAI RAKSHITH JEE FAST-TRACK")
-st.caption("Auto-Retry Mode: Instant Questions with Long Solutions")
-st.divider()
+    choice = st.radio("Select your answer:", q['options'], key=f"q_{idx}")
 
-# Subject selection
-selected_sub = st.selectbox("సబ్జెక్ట్ ఎంచుకోండి:", ["Mathematics", "Physics", "Chemistry"])
-
-# =============================
-# 6️⃣ Generate New Questions Button
-# =============================
-if st.button(f"🚀 Generate 5 New {selected_sub} Questions"):
-    with st.spinner("AI నుండి కొత్త ప్రశ్నలు సృష్టిస్తోంది..."):
-        new_qs = generate_new_questions(selected_sub, count=5)
-        if new_qs:
-            all_questions = old_questions + new_qs
-            st.session_state.mains_bank = new_qs
-            st.session_state.idx = 0
-            st.session_state.ans_show = False
-            st.session_state.current_subject = selected_sub
-
-            with open(QUESTIONS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(all_questions, f, indent=4, ensure_ascii=False)
-
-            st.success(f"{len(new_qs)} కొత్త ప్రశ్నలు సృష్టించబడ్డాయి! మొత్తం questions: {len(all_questions)}")
-        else:
-            st.error("Questions generate చేయలేకపోయింది. Retry చేయండి.")
-
-# =============================
-# 7️⃣ Display Questions
-# =============================
-if st.session_state.mains_bank and st.session_state.current_subject == selected_sub:
-    curr = st.session_state.idx
-    total = len(st.session_state.mains_bank)
-    
-    q = st.session_state.mains_bank[curr]
-    st.divider()
-    st.subheader(f"ప్రశ్న {curr + 1} / {total} ({selected_sub}):")
-    st.info(q['question'])
-
-    choice = st.radio("నీ సమాధానం ఎంచుకో:", q['options'], key=f"mains_{curr}")
-
-    # Buttons
-    check = st.button("🔍 Check Answer & Detailed Solution", key=f"check_{curr}")
-    prev = st.button("⬅️ Previous Question", key=f"prev_{curr}")
-    nxt = st.button("➡️ Next Question", key=f"next_{curr}")
-
-    # Check Answer
-    if check:
-        st.session_state.ans_show = True
-
-    if st.session_state.ans_show:
+    if st.button("Check Answer"):
         if choice == q['answer']:
-            st.success("అద్భుతం! సరైన సమాధానం! ✅")
+            st.success("Correct! ✅")
+            st.session_state.score += 1
         else:
-            st.error(f"తప్పు! సరైన సమాధానం: {q['answer']} ❌")
-        with st.expander("📖 Step-by-Step Long Solution:", expanded=True):
-            st.write(q['explanation'])
+            st.error(f"Wrong! Correct answer: {q['answer']} ❌")
 
-    # Previous Question
-    if prev and curr > 0:
-        st.session_state.idx -= 1
-        st.session_state.ans_show = False
-        st.experimental_rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Previous") and idx > 0:
+            st.session_state.quiz_idx -= 1
+    with col2:
+        if st.button("Next") and idx < total-1:
+            st.session_state.quiz_idx += 1
 
-    # Next Question
-    if nxt:
-        if curr < total - 1:
-            st.session_state.idx += 1
-            st.session_state.ans_show = False
-            st.experimental_rerun()
-        else:
-            st.success("వెరీ గుడ్ బాబు! ఈ సెషన్ పూర్తి చేసావు.")
-            st.session_state.mains_bank = []
-            st.session_state.current_subject = ""
-
+    st.write(f"Current Score: {st.session_state.score}/{total}")
 else:
-    st.write("బాబు, పైన ఉన్న బటన్ నొక్కి కొత్త questions generate చేయండి.")
-
-st.divider()
-st.caption("Managed by Manohar - Variety Motors | Dedicated to Sai Rakshith's JEE Mains Success")
+    st.info("Upload a PDF question paper to start the quiz.")
