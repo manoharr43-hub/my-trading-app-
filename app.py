@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="NSE PRO AI SCANNER", layout="wide")
@@ -51,52 +52,56 @@ def color_trend(val):
     return ""
 
 # =============================
-# ANALYSIS
+# NEW AI ANALYSIS (UPDATED)
 # =============================
 def analyze(df):
     try:
-        if df is None or df.empty or len(df) < 30:
+        if df is None or len(df) < 40:
             return None
 
         df = df.copy()
 
-        # EMA
+        # Indicators
         df['EMA20'] = df['Close'].ewm(span=20).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
+        df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
-        # VWAP
-        df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
-
-        # RSI
         delta = df['Close'].diff()
-        gain = delta.clip(lower=0).rolling(14).mean()
-        loss = -delta.clip(upper=0).rolling(14).mean()
-        rs = gain/(loss+1e-9)
-        df['RSI'] = 100-(100/(1+rs))
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / (loss + 1e-9)
+        df['RSI'] = 100 - (100 / (1 + rs))
 
-        # Volume
-        avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-        vol = df['Volume'].iloc[-1]/(avg_vol+1e-9)
+        # Target
+        df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
+        df.dropna(inplace=True)
 
-        # AI MODEL
-        df['Target'] = np.where(df['Close'].shift(-1)>df['Close'],1,0)
-        df = df.dropna()
-
-        if df.empty:
+        if len(df) < 10:
             return None
 
-        X = df[['EMA20','EMA50','RSI','VWAP']]
+        features = ['EMA20', 'EMA50', 'RSI', 'VWAP']
+        X = df[features]
         y = df['Target']
 
-        model = RandomForestClassifier(n_estimators=30)
-        model.fit(X,y)
+        # Train/Test Split (REAL accuracy)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-        pred = model.predict([X.iloc[-1]])[0]
-        acc = round(model.score(X,y)*100,2)
+        model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
+        model.fit(X_train, y_train)
 
-        ai = "BUY" if pred==1 else "SELL"
+        acc = round(model.score(X_test, y_test) * 100, 2)
 
-        return df, vol, ai, acc
+        pred = model.predict(X.iloc[[-1]])[0]
+        ai_signal = "BUY" if pred == 1 else "SELL"
+
+        # Volume safe
+        avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+        if pd.isna(avg_vol) or avg_vol == 0:
+            vol_ratio = 1
+        else:
+            vol_ratio = df['Volume'].iloc[-1] / avg_vol
+
+        return df, vol_ratio, ai_signal, acc
 
     except:
         return None
@@ -115,7 +120,6 @@ def run_scanner(tickers):
 
     for s in tickers:
         try:
-            # SAFE ACCESS
             if len(tickers) == 1:
                 df = data.copy()
             else:
@@ -148,11 +152,11 @@ def run_scanner(tickers):
 
             signal = "WAIT"
 
-            # RELAXED CONDITIONS (signals రావడానికి)
-            if (ltp > vwap and trend=="UP" and rsi>48 and ai=="BUY"):
+            # Smart signals
+            if (ltp > vwap and trend=="UP" and rsi>50 and ai=="BUY"):
                 signal = "🔥 BUY"
 
-            elif (ltp < vwap and trend=="DOWN" and rsi<52 and ai=="SELL"):
+            elif (ltp < vwap and trend=="DOWN" and rsi<50 and ai=="SELL"):
                 signal = "🔥 SELL"
 
             results.append({
@@ -166,7 +170,7 @@ def run_scanner(tickers):
                 "Signal": signal
             })
 
-        except Exception as e:
+        except:
             continue
 
     return pd.DataFrame(results)
@@ -174,14 +178,13 @@ def run_scanner(tickers):
 # =============================
 # UI
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (FINAL FIXED)")
+st.title("🔥 NSE PRO AI SCANNER (FINAL VERSION)")
 
 st.write(f"📊 Sector: {sector_name}")
 
 df = run_scanner(sectors[sector_name])
 
 if not df.empty:
-
     st.subheader("🚀 Live Signals")
 
     styled_df = df.style.map(color_signal, subset=['Signal']) \
