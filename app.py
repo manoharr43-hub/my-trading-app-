@@ -6,158 +6,122 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="NSE Smart Scanner", layout="wide")
+st.set_page_config(page_title="NSE Pro Scanner", layout="wide")
 st_autorefresh(interval=15000, key="refresh")
 
+# CSS for better UI
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stDataFrame { border: 1px solid #30363d; }
+    </style>
+    """, unsafe_allow_input=True)
+
 # =============================
-# INDICATORS
+# INDICATORS (Faster Version)
 # =============================
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
+def get_indicators(df):
+    # RSI (Vectorized)
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
-    rsi_val = 100 - (100 / (1 + rs))
-    return rsi_val.fillna(0)   # ✅ FIX
-
-def ema(series, span):
-    return series.ewm(span=span, adjust=False).mean()
-
-# =============================
-# DATA
-# =============================
-@st.cache_data(ttl=30)
-def get_data(stocks):
-    try:
-        return yf.download(stocks, period="5d", interval="5m", group_by="ticker", progress=False)
-    except:
-        return None
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # EMAs
+    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+    
+    # VWAP
+    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    return df
 
 # =============================
-# ANALYSIS
+# UI & DATA LOADING
 # =============================
-def analyze(df, ticker):
-    try:
-        d = df[ticker].copy() if isinstance(df.columns, pd.MultiIndex) else df.copy()
+st.title("⚡ NSE Pro Smart Scanner")
 
-        if d is None or len(d) < 20:
-            return None
-
-        d["Date"] = d.index.date
-        today = d["Date"].iloc[-1]
-        d = d[d["Date"] == today].copy()
-
-        if len(d) < 10:
-            return None
-
-        close = d["Close"]
-        high = d["High"]
-        low = d["Low"]
-        vol = d["Volume"]
-
-        ltp = float(close.iloc[-1])
-
-        # VWAP
-        d["VWAP"] = (close * vol).cumsum() / vol.cumsum()
-
-        # RSI FIX
-        d["RSI"] = rsi(close)
-        rsi_val = round(float(d["RSI"].iloc[-1]), 1)
-
-        # ORB
-        orb_high = round(high.iloc[:6].max(), 2)
-        orb_low = round(low.iloc[:6].min(), 2)
-
-        # Trend
-        d["EMA20"] = ema(close, 20)
-        d["EMA50"] = ema(close, 50)
-
-        trend = "SIDEWAYS"
-        if d["EMA20"].iloc[-1] > d["EMA50"].iloc[-1]:
-            trend = "UPTREND"
-        elif d["EMA20"].iloc[-1] < d["EMA50"].iloc[-1]:
-            trend = "DOWNTREND"
-
-        # Signal
-        signal = "BUY" if ltp > d["VWAP"].iloc[-1] else "SELL"
-
-        return {
-            "Stock": ticker.replace(".NS",""),
-            "LTP": round(ltp,2),
-            "RSI": rsi_val,
-            "ORB High": orb_high,
-            "ORB Low": orb_low,
-            "Trend": trend,
-            "Signal": signal
-        }
-
-    except:
-        return None
-
-# =============================
-# UI
-# =============================
-st.title("🚀 NSE Smart Scanner (RSI FIXED)")
-
-# ✅ NSE SECTORS FULL
 sectors = {
-    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS"],
-    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
-    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS"],
-    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
-    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
-    "FMCG": ["ITC.NS","HINDUNILVR.NS","DABUR.NS","BRITANNIA.NS"],
-    "Energy": ["RELIANCE.NS","ONGC.NS","NTPC.NS","POWERGRID.NS"]
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS","BHARTIARTL.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","AUBANK.NS"],
+    "IT": ["TCS.NS","INFY.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS","LTIM.NS"]
 }
 
-col1, col2 = st.columns(2)
-
-with col1:
-    sector = st.selectbox("Select NSE Sector", list(sectors.keys()))
-
-with col2:
-    trend_filter = st.selectbox("Trend", ["ALL","UPTREND","DOWNTREND","SIDEWAYS"])
+c1, c2, c3 = st.columns(3)
+with c1: sector = st.selectbox("Sector", list(sectors.keys()))
+with c2: trend_filter = st.selectbox("Trend Filter", ["ALL","UPTREND","DOWNTREND"])
+with c3: rsi_filter = st.slider("Min RSI", 0, 100, 30)
 
 # =============================
-# LOAD
+# CORE ANALYSIS
 # =============================
-limit = st.slider("Stocks",5,15,10)
-stocks = sectors[sector][:limit]
+def process_stocks(ticker_list):
+    all_results = []
+    # Fetching all stocks at once is faster
+    data = yf.download(ticker_list, period="2d", interval="5m", group_by='ticker', progress=False)
+    
+    for ticker in ticker_list:
+        try:
+            df = data[ticker].dropna()
+            if len(df) < 50: continue
+            
+            df = get_indicators(df)
+            last_row = df.iloc[-1]
+            prev_row = df.iloc[-2]
+            
+            # Logic
+            ltp = round(last_row['Close'], 2)
+            rsi_val = round(last_row['RSI'], 1)
+            vwap_val = round(last_row['VWAP'], 2)
+            
+            # Trend & Signal
+            trend = "UPTREND" if last_row['EMA20'] > last_row['EMA50'] else "DOWNTREND"
+            signal = "🚀 BUY" if ltp > vwap_val and rsi_val > 50 else "⚠️ SELL" if ltp < vwap_val else "HOLD"
+            
+            # Price Change %
+            day_open = df.iloc[0]['Open']
+            p_change = round(((ltp - day_open) / day_open) * 100, 2)
 
-with st.spinner("Loading data..."):
-    data = get_data(stocks)
+            all_results.append({
+                "Stock": ticker.replace(".NS",""),
+                "Price": ltp,
+                "Change %": p_change,
+                "RSI": rsi_val,
+                "Trend": trend,
+                "Signal": signal,
+                "VWAP": vwap_val
+            })
+        except:
+            continue
+    return pd.DataFrame(all_results)
 
-# =============================
-# SCAN
-# =============================
-results = []
+# Execution
+if st.button("Manual Refresh"):
+    st.rerun()
 
-if data is not None:
-    for s in stocks:
-        r = analyze(data, s)
-        if r:
-            results.append(r)
+results_df = process_stocks(sectors[sector])
 
-# =============================
-# FILTER
-# =============================
-if trend_filter != "ALL":
-    temp = [r for r in results if r["Trend"] == trend_filter]
-    if temp:
-        results = temp
+if not results_df.empty:
+    # Filtering
+    if trend_filter != "ALL":
+        results_df = results_df[results_df['Trend'] == trend_filter]
+    
+    results_df = results_df[results_df['RSI'] >= rsi_filter]
 
-# =============================
-# DISPLAY
-# =============================
-if results:
-    df = pd.DataFrame(results)
-    st.dataframe(df)
+    # Styling for Table
+    def color_signal(val):
+        color = '#2ecc71' if 'BUY' in val else '#e74c3c' if 'SELL' in val else 'white'
+        return f'color: {color}; font-weight: bold'
+
+    styled_df = results_df.style.applymap(color_signal, subset=['Signal']) \
+                                .background_gradient(cmap='RdYlGn', subset=['Change %'])
+
+    st.dataframe(styled_df, use_container_width=True, height=400)
+    
+    # Summary Metrics
+    m1, m2 = st.columns(2)
+    m1.metric("Top Gainer", results_df.loc[results_df['Change %'].idxmax()]['Stock'], f"{results_df['Change %'].max()}%")
+    m2.metric("Strongest RSI", results_df.loc[results_df['RSI'].idxmax()]['Stock'], results_df['RSI'].max())
+
 else:
-    st.warning("No stocks found")
-
-# =============================
-# ALERT
-# =============================
-if any(r["Signal"]=="BUY" for r in results):
-    st.success("🔥 BUY Signals Available")
+    st.error("No data found for selected criteria.")
