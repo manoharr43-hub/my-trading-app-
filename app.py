@@ -7,7 +7,7 @@ from streamlit_autorefresh import st_autorefresh
 # 1. CONFIG
 # =============================
 st.set_page_config(page_title="NSE Pro Advanced Scanner", layout="wide")
-st_autorefresh(interval=20000, key="refresh")
+st_autorefresh(interval=20000, key="refresh")  # refresh every 20 seconds
 
 # =============================
 # 2. INDICATORS LOGIC
@@ -34,6 +34,7 @@ def analyze_stock(df):
     res = df['High'].iloc[-20:].max()
     sup = df['Low'].iloc[-20:].min()
     
+    df = df.dropna(subset=['RSI', 'EMA20', 'EMA50', 'VWAP'])
     return df, float(res), float(sup)
 
 # =============================
@@ -61,7 +62,8 @@ with st.sidebar:
 # 5. SCANNER FUNCTION
 # =============================
 def process_scanner(tickers):
-    data = yf.download(tickers, period="2d", interval="5m", group_by='ticker', progress=False)
+    # fetch last 5 days to ensure EMA50 & RSI calculate properly
+    data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
     results = []
     
     for t in tickers:
@@ -70,6 +72,7 @@ def process_scanner(tickers):
             if df.empty: continue
             
             df, res_p, sup_p = analyze_stock(df)
+            if df.empty: continue
             last = df.iloc[-1]
             
             # --- ROUNDING LOGIC ---
@@ -90,7 +93,8 @@ def process_scanner(tickers):
                 status = "📉 STRONG SELL" if rsi > 30 else "⚠️ POSSIBLE FAKE"
             
             # Signal
-            signal = "BUY" if ltp > last['VWAP'] and trend == "UPTREND" else "SELL" if ltp < last['VWAP'] and trend == "DOWNTREND" else "WAIT"
+            signal = "BUY" if ltp > last['VWAP'] and trend == "UPTREND" else \
+                     "SELL" if ltp < last['VWAP'] and trend == "DOWNTREND" else "WAIT"
 
             results.append({
                 "Stock": t.replace(".NS",""),
@@ -101,7 +105,8 @@ def process_scanner(tickers):
                 "Resistance": res,
                 "Trend": trend,
                 "Status": status,
-                "Signal": signal
+                "Signal": signal,
+                "Time": last.name.strftime("%H:%M")
             })
         except: continue
     return pd.DataFrame(results)
@@ -114,11 +119,9 @@ res_df = process_scanner(sectors[sector_name])
 if not res_df.empty:
     res_df = res_df[res_df['Trend'].isin(trend_filter)]
     
-    # --- STYLING ---
     def style_table(row):
         styles = [''] * len(row)
-        
-        # Row Background based on strong Status only
+        # Row Background based on strong Status
         if "STRONG BUY" in str(row.Status):
             styles = ['background-color: #004d1a; color: white'] * len(row)
         elif "STRONG SELL" in str(row.Status):
@@ -135,9 +138,10 @@ if not res_df.empty:
 
     styled_df = res_df.style.apply(style_table, axis=1)\
         .set_properties(subset=['Support'], **{'color': '#00ffff', 'font-weight': 'bold'})\
-        .set_properties(subset=['Resistance'], **{'color': '#ff3131', 'font-weight': 'bold'})
-
-    st.dataframe(styled_df, use_container_width=True, height=500)
+        .set_properties(subset=['Resistance'], **{'color': '#ff3131', 'font-weight': 'bold'})\
+        .set_properties(subset=['Time'], **{'color': '#ffd700', 'font-weight': 'bold'})
+    
+    st.dataframe(styled_df, use_container_width=True, height=600)
     
     st.success(f"Updated at: {pd.Timestamp.now().strftime('%H:%M:%S')}")
 else:
