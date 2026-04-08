@@ -1,14 +1,22 @@
 import streamlit as st
-import google.generativeai as genai
 import json
 import os
 
+# Try importing Google Gemini AI
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ModuleNotFoundError:
+    GEMINI_AVAILABLE = False
+    st.warning("google-generative-ai module not found! Using mock questions for testing.")
+
 # =============================
-# 1️⃣ Gemini AI Setup
+# 1️⃣ Gemini AI Setup (if available)
 # =============================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+if GEMINI_AVAILABLE:
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY")
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
 # =============================
 # 2️⃣ Load old questions
@@ -27,28 +35,39 @@ except json.JSONDecodeError:
 # 3️⃣ Generate New Questions
 # =============================
 def generate_new_questions(subject, count=5):
-    prompt = f"""
-    Act as a JEE Mains Expert.
-    Generate {count} HIGH-QUALITY MCQs strictly for {subject}.
-    Each question must have:
-    - question
-    - options ["A","B","C","D"]
-    - answer
-    - explanation (step-by-step solution)
-    Return ONLY raw JSON list.
-    """
-    try:
-        response = model.generate_text(prompt=prompt)
-        text = response.text.strip().replace("\n", " ").replace("'", '"')
-        new_questions = json.loads(text)
-        if isinstance(new_questions, list):
-            return new_questions
-        else:
-            st.error("AI JSON response list కాకుండా వచ్చింది.")
+    if GEMINI_AVAILABLE:
+        prompt = f"""
+        Act as a JEE Mains Expert.
+        Generate {count} HIGH-QUALITY MCQs strictly for {subject}.
+        Each question must have:
+        - question
+        - options ["A","B","C","D"]
+        - answer
+        - explanation (step-by-step solution)
+        Return ONLY raw JSON list.
+        """
+        try:
+            response = model.generate_text(prompt=prompt)
+            text = response.text.strip().replace("\n", " ").replace("'", '"')
+            new_questions = json.loads(text)
+            if isinstance(new_questions, list):
+                return new_questions
+            else:
+                st.error("AI JSON response list కాకుండా వచ్చింది.")
+                return []
+        except Exception as e:
+            st.error(f"AI response parsing లో problem: {e}")
             return []
-    except Exception as e:
-        st.error(f"AI response parsing లో problem: {e}")
-        return []
+    else:
+        # Mock questions for testing
+        return [
+            {
+                "question": f"Sample {subject} Question {i+1}",
+                "options": ["A", "B", "C", "D"],
+                "answer": "A",
+                "explanation": "Step-by-step solution here."
+            } for i in range(count)
+        ]
 
 # =============================
 # 4️⃣ Streamlit Session State
@@ -86,7 +105,7 @@ if st.button(f"🚀 Generate 5 New {selected_sub} Questions"):
 
             st.success(f"{len(new_qs)} కొత్త ప్రశ్నలు సృష్టించబడ్డాయి! మొత్తం questions: {len(all_questions)}")
         else:
-            st.error("AI కొత్త questions generate చేయలేకపోయింది. Retry చేయండి.")
+            st.error("Questions generate చేయలేకపోయింది. Retry చేయండి.")
 
 # =============================
 # 7️⃣ Display Questions
