@@ -1,60 +1,107 @@
 import streamlit as st
+import pdfplumber
 import pandas as pd
+import json
+import random
 
-# 1. Setup Mock Data (Replace with your actual questions)
-questions = [
-    {"question": "What is the capital of France?", "options": ["London", "Paris", "Berlin"], "answer": "Paris"},
-    {"question": "Which planet is known as the Red Planet?", "options": ["Earth", "Mars", "Jupiter"], "answer": "Mars"},
-    {"question": "What is 5 + 5?", "options": ["10", "12", "15"], "answer": "10"},
-]
+st.set_page_config(page_title="📚 JEE Quiz App", layout="wide")
+st.title("📚 JEE Mains Practice Quiz App")
+st.caption("Upload PDF or JSON of questions → Select questions → Practice → See Answer Analysis")
 
-total = len(questions)
+# =============================
+# 1️⃣ Upload PDF or JSON
+# =============================
+uploaded_file = st.file_uploader("Upload your JEE question paper PDF or JSON", type=["pdf","json"])
 
-# 2. Initialize Session State
-if 'selected' not in st.session_state:
-    st.session_state.selected = [None] * total
-if 'score' not in st.session_state:
-    st.session_state.score = 0
-if 'submitted' not in st.session_state:
-    st.session_state.submitted = False
+questions = []
 
-st.title("🚀 Python Quiz App")
-
-# 3. Quiz Interface
-for i, q in enumerate(questions):
-    st.subheader(f"Q{i+1}: {q['question']}")
-    # Radio button for each question
-    st.session_state.selected[i] = st.radio(
-        f"Select an answer for Q{i+1}:", 
-        q['options'], 
-        index=None, 
-        key=f"q_{i}",
-        disabled=st.session_state.submitted
-    )
-    st.divider()
-
-# 4. Submit Logic
-if st.button("Submit Quiz") and not st.session_state.submitted:
-    correct_count = 0
-    for i, q in enumerate(questions):
-        if st.session_state.selected[i] == q['answer']:
-            correct_count += 1
-    
-    st.session_state.score = correct_count
-    st.session_state.submitted = True
-    st.rerun()
-
-# 5. Answer Analysis (Your logic with UI enhancements)
-if st.session_state.submitted:
-    st.success(f"Quiz Completed! Your Score: {st.session_state.score} / {total}")
-    
-    if st.button("📊 Show Detailed Answer Analysis"):
+if uploaded_file is not None:
+    if uploaded_file.type == "application/json":
         try:
+            questions = json.load(uploaded_file)
+            st.success(f"{len(questions)} questions loaded from JSON.")
+        except Exception as e:
+            st.error(f"Error loading JSON: {e}")
+    elif uploaded_file.type == "application/pdf":
+        try:
+            with pdfplumber.open(uploaded_file) as pdf:
+                full_text = ""
+                for page in pdf.pages:
+                    full_text += page.extract_text() + "\n"
+            st.text_area("Preview extracted text:", full_text[:1000])
+            st.info("Manual conversion to JSON recommended for clean quiz practice.")
+        except Exception as e:
+            st.error(f"Error reading PDF: {e}")
+
+# =============================
+# 2️⃣ Select Number of Questions
+# =============================
+if questions:
+    total_questions = len(questions)
+    num_questions = st.number_input(f"Select number of questions for this session (max {total_questions}):",
+                                    min_value=1, max_value=total_questions, value=min(10,total_questions))
+    
+    if 'quiz_questions' not in st.session_state or st.session_state.get('questions_loaded_for') != uploaded_file.name:
+        st.session_state.quiz_questions = random.sample(questions, k=num_questions)
+        st.session_state.quiz_idx = 0
+        st.session_state.score = 0
+        st.session_state.answered = [False]*num_questions
+        st.session_state.selected = [""]*num_questions
+        st.session_state.questions_loaded_for = uploaded_file.name
+
+    # =============================
+    # 3️⃣ Display Current Question
+    # =============================
+    idx = st.session_state.quiz_idx
+    q = st.session_state.quiz_questions[idx]
+
+    st.subheader(f"Question {idx+1} / {num_questions}")
+    st.write(q['question'])
+    choice = st.radio("Select your answer:", q['options'], key=f"q_{idx}")
+
+    # =============================
+    # 4️⃣ Check Answer & Show Explanation
+    # =============================
+    if st.button("🔍 Check Answer"):
+        st.session_state.selected[idx] = choice
+        if not st.session_state.answered[idx]:
+            if choice == q['answer']:
+                st.success("Correct ✅")
+                st.session_state.score += 1
+            else:
+                st.error(f"Wrong ❌. Correct answer: {q['answer']}")
+            st.session_state.answered[idx] = True
+        with st.expander("📖 Step-by-Step Explanation", expanded=True):
+            st.write(q['explanation'])
+
+    # =============================
+    # 5️⃣ Navigation
+    # =============================
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⬅️ Previous") and idx > 0:
+            st.session_state.quiz_idx -= 1
+    with col2:
+        if st.button("➡️ Next"):
+            if idx < num_questions-1:
+                st.session_state.quiz_idx += 1
+            else:
+                st.success(f"🎉 Quiz Finished! Score: {st.session_state.score}/{num_questions}")
+                if st.button("🔄 Restart Quiz"):
+                    st.session_state.quiz_idx = 0
+                    st.session_state.score = 0
+                    st.session_state.answered = [False]*num_questions
+                    st.session_state.selected = [""]*num_questions
+
+    # =============================
+    # 6️⃣ Answer Analysis (Diff Table)
+    # =============================
+    try:
+        if st.button("📊 Show Answer Analysis"):
             analysis_data = []
-            for i, q in enumerate(questions):
-                sel = st.session_state.selected[i] if st.session_state.selected[i] else "No Answer"
+            for i, q in enumerate(st.session_state.quiz_questions):
+                sel = st.session_state.selected[i] if st.session_state.selected[i] else "-"
                 status = "✅ Correct" if sel == q['answer'] else "❌ Wrong"
-                
                 analysis_data.append({
                     "Q No.": i+1,
                     "Question": q['question'],
@@ -62,27 +109,16 @@ if st.session_state.submitted:
                     "Correct Answer": q['answer'],
                     "Status": status
                 })
-            
             df = pd.DataFrame(analysis_data)
-            
-            # Applying conditional formatting to the Status column
-            def color_status(val):
-                color = '#28a745' if "✅" in val else '#dc3545'
-                return f'color: {color}; font-weight: bold'
+            st.dataframe(df, use_container_width=True)
+            st.write(f"✅ Total Correct: {st.session_state.score} / {num_questions}")
+            st.write(f"❌ Total Wrong: {num_questions - st.session_state.score}")
+            st.write(f"📈 Percentage: {(st.session_state.score/num_questions)*100:.2f}%")
+    except Exception as e:
+        st.error(f"Error generating Answer Analysis: {e}")
 
-            styled_df = df.style.map(color_status, subset=['Status'])
+else:
+    st.info("Upload a PDF or JSON file to start the quiz session.")
 
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-            # Summary Metrics
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Correct", st.session_state.score)
-            c2.metric("Wrong", total - st.session_state.score)
-            c3.metric("Grade", f"{(st.session_state.score/total)*100:.1f}%")
-
-        except Exception as e:
-            st.error(f"Error generating analysis: {e}")
-
-    if st.button("🔄 Restart Quiz"):
-        st.session_state.clear()
-        st.rerun()
+st.divider()
+st.caption("Managed by Manohar | Dedicated to Sai Rakshith's JEE Mains Success")
