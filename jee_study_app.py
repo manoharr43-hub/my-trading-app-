@@ -1,81 +1,45 @@
 import streamlit as st
-import json
 
 # =============================
-# 1️⃣ Sample Questions (Manual JSON)
+# 1️⃣ 40 JEE Questions Sample (Telugu + English) with step-by-step explanation
 # =============================
-# Replace or extend with your 40 questions from GitHub PDF
+# For brevity, here only 10 questions shown; you can extend to 40 easily
 questions = [
     {
-        "question": "Math: What is the value of 2+2?",
-        "options": ["3", "4", "5", "6"],
-        "answer": "4"
+        "question": "Mathematics: Solve for x: 2x + 3 = 7",
+        "options": ["1", "2", "3", "4"],
+        "answer": "2",
+        "explanation": "Step-by-Step:\n1. 2x + 3 = 7\n2. 2x = 4\n3. x = 2"
     },
     {
-        "question": "Physics: What is acceleration due to gravity?",
-        "options": ["9.8 m/s²", "10 m/s²", "8 m/s²", "12 m/s²"],
-        "answer": "9.8 m/s²"
+        "question": "Physics: Time to fall 20 m freely under gravity?",
+        "options": ["2 s", "4 s", "3 s", "5 s"],
+        "answer": "2 s",
+        "explanation": "Step-by-Step:\ns = 0.5*g*t^2\n20 = 0.5*10*t^2\n20 = 5*t^2\nt^2=4 => t=2 s"
     },
     {
-        "question": "Chemistry: H2O is called?",
-        "options": ["Hydrogen", "Oxygen", "Water", "Hydroxide"],
-        "answer": "Water"
+        "question": "Chemistry: Molecular formula of water?",
+        "options": ["H2O", "H2O2", "HO", "O2H2"],
+        "answer": "H2O",
+        "explanation": "Step-by-Step:\nWater has 2 H + 1 O → H2O"
     },
-    # Add remaining 37 questions here...
-]
-
-# =============================
-# 2️⃣ Streamlit Session State
-# =============================
-if 'quiz_idx' not in st.session_state:
-    st.session_state.quiz_idx = 0
-if 'score' not in st.session_state:
-    st.session_state.score = 0
-
-# =============================
-# 3️⃣ Quiz UI
-# =============================
-st.title("🎓 SAI RAKSHITH JEE QUIZ")
-st.caption("Manual Questions JSON Mode | No AI Required")
-st.divider()
-
-if questions:
-    idx = st.session_state.quiz_idx
-    total = len(questions)
-    q = questions[idx]
-
-    st.subheader(f"ప్రశ్న {idx + 1} / {total}")
-    st.write(q['question'])
-
-    choice = st.radio("నీ సమాధానం ఎంచుకో:", q['options'], key=f"q_{idx}")
-
-    # Buttons
-    check = st.button("🔍 Check Answer", key=f"check_{idx}")
-    prev = st.button("⬅️ Previous", key=f"prev_{idx}")
-    nxt = st.button("➡️ Next", key=f"next_{idx}")
-
-    # Check Answer
-    if check:
-        if choice == q['answer']:
-            st.success("అద్భుతం! సరైన సమాధానం! ✅")
-            st.session_state.score += 1
-        else:
-            st.error(f"తప్పు! సరైన సమాధానం: {q['answer']} ❌")
-
-    # Previous
-    if prev and idx > 0:
-        st.session_state.quiz_idx -= 1
-        st.experimental_rerun()
-
-    # Next
-    if nxt:
-        if idx < total - 1:
-            st.session_state.quiz_idx += 1
-            st.experimental_rerun()
-        else:
-            st.success(f"వెరీ గుడ్ బాబు! Quiz పూర్తయింది. Final Score: {st.session_state.score}/{total}")
-            st.session_state.quiz_idx = 0
-            st.session_state.score = 0
-
-else:
-    st.info("Questions JSON empty. Add your 40 questions manually.")
+    {
+        "question": "Mathematics: Value of 3^2 + 4^2?",
+        "options": ["25", "12", "7", "10"],
+        "answer": "25",
+        "explanation": "Step-by-Step:\n3^2 + 4^2 = 9 + 16 = 25"
+    },
+    {
+        "question": "Physics: Speed formula?",
+        "options": ["s = d/t", "v = t/d", "v = s*t", "v = d^2/t"],
+        "answer": "s = d/t",
+        "explanation": "Step-by-Step:\nSpeed = distance / time"
+    },
+    {
+        "question": "Chemistry: Atomic number of Oxygen?",
+        "options": ["8", "16", "12", "6"],
+        "answer": "8",
+        "explanation": "Step-by-Step:\nOxygen has 8 protons → atomic number = 8"
+    },
+    {
+        "question": "Mathematics: Solve x^2 =
