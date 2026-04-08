@@ -5,6 +5,5 @@ streamlit-autorefresh
 requests
 numpy
 plotly
-streamlit
 pdfplumber
-pandas
+scikit-learn
