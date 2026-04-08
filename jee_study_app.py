@@ -1,9 +1,9 @@
 import streamlit as st
 
 # =============================
-# 1️⃣ 40 JEE Questions with step-by-step explanation
+# 1️⃣ 40 JEE Questions with Step-by-Step Explanation
 # =============================
-# For brevity, first 10 questions shown; copy/paste similar for full 40
+# For demo, 10 questions shown; copy/paste to make full 40
 questions = [
     {
         "question": "Mathematics: Solve for x: 2x + 3 = 7",
@@ -103,7 +103,7 @@ st.write(q['question'])
 
 choice = st.radio("Select your answer:", q['options'], key=f"q_{idx}")
 
-# Check Answer
+# Check Answer Button
 if st.button("🔍 Check Answer") and not st.session_state.answered[idx]:
     if choice == q['answer']:
         st.success("Correct! ✅")
@@ -116,20 +116,18 @@ if st.button("🔍 Check Answer") and not st.session_state.answered[idx]:
     
     st.session_state.answered[idx] = True
 
-# Previous / Next Buttons
+# Previous / Next Buttons (No st.experimental_rerun needed)
 col1, col2 = st.columns(2)
 with col1:
     if st.button("⬅️ Previous") and idx > 0:
         st.session_state.quiz_idx -= 1
-        st.experimental_rerun()
 with col2:
     if st.button("➡️ Next"):
         if idx < total - 1:
             st.session_state.quiz_idx += 1
-            st.experimental_rerun()
         else:
             st.success(f"Quiz Finished! Final Score: {st.session_state.score}/{total}")
-            # Reset quiz for new session
+            # Reset for new session
             st.session_state.quiz_idx = 0
             st.session_state.score = 0
-            st.session_state
+            st.session_state.answered = [False]*len(questions)
