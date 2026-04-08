@@ -6,17 +6,17 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # 1. CONFIG
 # =============================
-st.set_page_config(page_title="NSE Advanced Pro Scanner", layout="wide")
+st.set_page_config(page_title="NSE Pro Advanced Scanner", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
 # 2. INDICATORS LOGIC
 # =============================
 def analyze_stock(df):
-    if df.empty or len(df) < 30: # కనీసం 30 క్యాండిల్స్ ఉండేలా చూస్తాం
+    if df.empty or len(df) < 20:
         return df, 0, 0
     
-    # RSI (రౌండ్ ఆఫ్ చేయబడింది)
+    # RSI
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
@@ -30,18 +30,18 @@ def analyze_stock(df):
     # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
     
-    # Support & Resistance (గత 20 క్యాండిల్స్ హై/లో)
+    # Support & Resistance (Pivot Points)
     res = df['High'].iloc[-20:].max()
     sup = df['Low'].iloc[-20:].min()
     
-    return df, round(float(res), 2), round(float(sup), 2)
+    return df, float(res), float(sup)
 
 # =============================
 # 3. NSE SECTORS
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","SBIN.NS"],
-    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
     "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],
     "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
     "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
@@ -49,20 +49,18 @@ sectors = {
 }
 
 # =============================
-# 4. INTERFACE
+# 4. MAIN INTERFACE
 # =============================
 st.title("🛡️ NSE Pro Live Smart Scanner")
 
 with st.sidebar:
-    st.header("Filters")
-    sector_name = st.selectbox("Select NSE Sector", list(sectors.keys()))
-    # ఇక్కడ 'DOWNTREND' ని కూడా డీఫాల్ట్‌గా సెలెక్ట్ అయ్యేలా మార్చాను
-    trend_filter = st.multiselect("Filter Trend", ["UPTREND", "DOWNTREND"], default=["UPTREND", "DOWNTREND"])
+    sector_name = st.selectbox("Select Sector", list(sectors.keys()))
+    trend_filter = st.multiselect("Trend Filter", ["UPTREND", "DOWNTREND"], default=["UPTREND", "DOWNTREND"])
 
 # =============================
-# 5. CORE SCANNER
+# 5. SCANNER FUNCTION
 # =============================
-def process_data(tickers):
+def process_scanner(tickers):
     data = yf.download(tickers, period="2d", interval="5m", group_by='ticker', progress=False)
     results = []
     
@@ -74,18 +72,21 @@ def process_data(tickers):
             df, res_p, sup_p = analyze_stock(df)
             last = df.iloc[-1]
             
+            # --- ROUNDING LOGIC ---
             ltp = round(float(last['Close']), 2)
             rsi = round(float(last['RSI']), 1)
+            res = round(res_p, 2)
+            sup = round(sup_p, 2)
             p_change = round(((ltp - df.iloc[0]['Open']) / df.iloc[0]['Open']) * 100, 2)
             
-            # Trend Logic
+            # Trend
             trend = "UPTREND" if last['EMA20'] > last['EMA50'] else "DOWNTREND"
             
-            # Status (Breakout / Fake Alert)
+            # Status
             status = "NORMAL"
-            if ltp > res_p:
+            if ltp >= res:
                 status = "🚀 BREAKOUT" if rsi < 70 else "⚠️ FAKE BREAKOUT"
-            elif ltp < sup_p:
+            elif ltp <= sup:
                 status = "📉 BREAKDOWN" if rsi > 30 else "⚠️ FAKE BREAKDOWN"
             
             # Signal
@@ -96,8 +97,8 @@ def process_data(tickers):
                 "LTP": ltp,
                 "Change %": p_change,
                 "RSI": rsi,
-                "Support": sup_p,
-                "Resistance": res_p,
+                "Support": sup,
+                "Resistance": res,
                 "Trend": trend,
                 "Status": status,
                 "Signal": signal
@@ -108,24 +109,33 @@ def process_data(tickers):
 # =============================
 # 6. DISPLAY & STYLING
 # =============================
-final_df = process_data(sectors[sector_name])
+res_df = process_scanner(sectors[sector_name])
 
-if not final_df.empty:
-    # యూజర్ సెలెక్ట్ చేసిన ఫిల్టర్ ప్రకారం డేటాను చూపిస్తుంది
-    final_df = final_df[final_df['Trend'].isin(trend_filter)]
+if not res_df.empty:
+    res_df = res_df[res_df['Trend'].isin(trend_filter)]
     
-    def apply_color(row):
+    # --- ADVANCED STYLING ---
+    def style_table(row):
         styles = [''] * len(row)
+        
+        # 1. Row Background based on Status
         if "BREAKOUT" in str(row.Status):
             styles = ['background-color: #004d1a; color: white'] * len(row)
         elif "BREAKDOWN" in str(row.Status):
             styles = ['background-color: #4d0000; color: white'] * len(row)
-        elif "FAKE" in str(row.Status):
-            styles = ['background-color: #634a00; color: white'] * len(row)
+            
+        # 2. LTP Color Logic (Blue at Support, Red at Resistance)
+        # ధర సపోర్ట్ కి దగ్గరగా ఉంటే (0.1% లోపు) బ్లూ
+        if abs(row.LTP - row.Support) / row.Support < 0.001:
+            styles[res_df.columns.get_loc('LTP')] = 'color: #00ffff; font-weight: bold; font-size: 18px'
+        # ధర రెసిస్టెన్స్ కి దగ్గరగా ఉంటే రెడ్
+        elif abs(row.LTP - row.Resistance) / row.Resistance < 0.001:
+            styles[res_df.columns.get_loc('LTP')] = 'color: #ff3131; font-weight: bold; font-size: 18px'
+            
         return styles
 
-    # కాలమ్ వైజ్ కలర్స్ (Support: Red, Resistance: Green)
-    styled_df = final_df.style.apply(apply_color, axis=1)\
+    # Apply Styles
+    styled_df = res_df.style.apply(style_table, axis=1)\
         .set_properties(subset=['Support'], **{'color': '#ff4d4d', 'font-weight': 'bold'})\
         .set_properties(subset=['Resistance'], **{'color': '#00ff41', 'font-weight': 'bold'})
 
@@ -133,4 +143,4 @@ if not final_df.empty:
     
     st.success(f"Updated at: {pd.Timestamp.now().strftime('%H:%M:%S')}")
 else:
-    st.info("No stocks matching your filters at the moment.")
+    st.info("Searching for stocks...")
