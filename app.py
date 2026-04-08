@@ -7,10 +7,10 @@ from sklearn.linear_model import LinearRegression
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="NSE PRO FINAL SCANNER", layout="wide")
+st.set_page_config(page_title="NSE PRO FINAL AI SCANNER", layout="wide")
 
 # =============================
-# STOCK LIST (SAFE)
+# STOCK LIST
 # =============================
 stocks = [
     "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
@@ -18,7 +18,7 @@ stocks = [
 ]
 
 # =============================
-# ANALYSIS FUNCTION
+# ANALYSIS
 # =============================
 def analyze_stock(df):
     if df.empty or len(df) < 50:
@@ -49,7 +49,7 @@ def analyze_stock(df):
     res = df['High'].iloc[-20:].max()
     sup = df['Low'].iloc[-20:].min()
 
-    # AI Prediction
+    # AI
     X = np.arange(10).reshape(-1, 1)
     y = df['Close'].iloc[-10:].values
     model = LinearRegression().fit(X, y)
@@ -61,7 +61,7 @@ def analyze_stock(df):
     return df, res, sup, vol_ratio, ai_view
 
 # =============================
-# BREAKOUT FUNCTION
+# BREAKOUT
 # =============================
 def check_breakout(df):
     recent_high = df['High'].iloc[-20:-1].max()
@@ -99,20 +99,25 @@ def run_scanner(tickers):
 
             last = df.iloc[-1]
 
-            ltp = round(last['Close'], 2)
-            rsi = round(last['RSI'], 1)
-            trend = "UPTREND" if last['EMA20'] > last['EMA50'] else "DOWNTREND"
+            # 🔥 FIXED (NO SERIES ERROR)
+            ltp = round(float(last['Close']), 2)
+            rsi = round(float(last['RSI']), 1)
+            vwap = float(last['VWAP'])
+            ema20 = float(last['EMA20'])
+            ema50 = float(last['EMA50'])
 
-            # SIGNAL LOGIC
+            trend = "UPTREND" if ema20 > ema50 else "DOWNTREND"
+
+            # SIGNAL
             signal = "WAIT"
 
-            if (ltp > last['VWAP'] and trend == "UPTREND" and ai_view == "🚀 BULLISH"):
+            if (ltp > vwap and trend == "UPTREND" and ai_view == "🚀 BULLISH"):
                 signal = "BUY"
 
-            elif (ltp < last['VWAP'] and trend == "DOWNTREND" and ai_view == "📉 BEARISH"):
+            elif (ltp < vwap and trend == "DOWNTREND" and ai_view == "📉 BEARISH"):
                 signal = "SELL"
 
-            # STRONG BREAKOUT
+            # BREAKOUT STRONG SIGNAL
             if breakout == "🚀 BREAKOUT" and vol_ratio > 1.5:
                 signal = "STRONG BUY"
 
