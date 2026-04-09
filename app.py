@@ -204,5 +204,43 @@ if not df.empty:
     else:
         st.warning("Chart not available")
 
-else:
+else:# =============================
+# BIG MOVERS SECTION (ALL SECTORS, TOP 10)
+# =============================
+with st.sidebar:
+    st.header("📌 Top 10 Big Movers (All Sectors)")
+    show_big = st.checkbox("Show Top 10 Movers")
+
+def get_top_10_movers(sectors_dict):
+    combined = []
+    for sector, tickers in sectors_dict.items():
+        df = run_scanner(tickers)
+        if df.empty:
+            continue
+        # % Move calculation
+        df['Change'] = df['Price'] - df['Price'].shift(1)
+        df['PctChange'] = df['Change'] / df['Price'].shift(1) * 100
+        df.fillna(0, inplace=True)
+        combined.append(df)
+
+    if combined:
+        all_stocks = pd.concat(combined)
+        # Sort by absolute % change
+        all_stocks['AbsPctChange'] = all_stocks['PctChange'].abs()
+        top10 = all_stocks.sort_values(by='AbsPctChange', ascending=False).head(10)
+        return top10
+    else:
+        return pd.DataFrame()
+
+# =============================
+# DISPLAY TOP 10
+# =============================
+if show_big:
+    st.subheader("🚀 Top 10 Big Movers Across All Sectors")
+    movers = get_top_10_movers(sectors)
+    if not movers.empty:
+        styled = movers.style.map(color_signal, subset=['Signal']).map(color_trend, subset=['Trend'])
+        st.dataframe(styled, use_container_width=True)
+    else:
+        st.warning("No big movers found now")
     st.warning("No signals found now")
