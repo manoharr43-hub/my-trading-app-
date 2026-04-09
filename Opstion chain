@@ -6,63 +6,106 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from streamlit_autorefresh import st_autorefresh
 
-# 1. సెట్టింగ్స్ & ఆటో రిఫ్రెష్ (ప్రతి 30 సెకన్లకు)
-st.set_page_config(page_title="NSE AI Pro Dashboard", layout="wide")
-st_autorefresh(interval=30000, key="fivedatarefresh")
+# 1. పేజీ సెట్టింగ్స్ & ఆటో రిఫ్రెష్ (ప్రతి 30 సెకన్లకు)
+st.set_page_config(page_title="NSE AI Pro Dashboard", layout="wide", page_icon="🔥")
+st_autorefresh(interval=30000, key="datarefresh")
+
+# CSS తో స్టైలింగ్
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stMetric { background-color: #1e2130; padding: 15px; border-radius: 10px; border: 1px solid #3e445e; }
+    </style>
+    """, unsafe_allow_index=True)
 
 st.title("🚀 NSE AI Intelligent Dashboard")
+st.markdown("---")
 
-# 2. సైడ్ బార్ లో స్టాక్ ఎంపిక
-symbol = st.sidebar.selectbox("Stock ఎంచుకోండి", ["RELIANCE.NS", "TCS.NS", "INFY.NS", "SBIN.NS", "HDFCBANK.NS"])
+# 2. సెక్టార్ మరియు స్టాక్ ఎంపిక
+sectors = {
+    "Nifty 50": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS"],
+    "Banking": ["SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS", "ICICIBANK.NS"],
+    "IT": ["WIPRO.NS", "HCLTECH.NS", "TECHM.NS", "LTIM.NS"]
+}
 
-# 3. డేటా లోడ్ చేయడం
+selected_sector = st.sidebar.selectbox("Sector ఎంచుకోండి", list(sectors.keys()))
+symbol = st.sidebar.selectbox("Stock ఎంచుకోండి", sectors[selected_sector])
+
+# 3. డేటా లోడ్ చేయడం (Caching ఉపయోగించి)
 @st.cache_data(ttl=30)
-def load_data(ticker):
-    df = yf.download(ticker, period="6mo", interval="1d", progress=False)
-    return df
+def load_stock_data(ticker):
+    try:
+        df = yf.download(ticker, period="1y", interval="1d", progress=False)
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return None
 
-data = load_data(symbol)
+data = load_stock_data(symbol)
 
-if not data.empty:
-    # 4. AI Prediction Logic (Simple RandomForest)
+if data is not None and not data.empty:
+    # 4. AI Prediction Logic
     df = data.copy()
-    df['MA10'] = df['Close'].rolling(10).mean()
-    df['MA20'] = df['Close'].rolling(20).mean()
+    df['SMA10'] = df['Close'].rolling(window=10).mean()
+    df['SMA20'] = df['Close'].rolling(window=20).mean()
+    df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().where(df['Close'].diff() > 0, 0).rolling(14).mean() / 
+                                  (df['Close'].diff().where(df['Close'].diff() < 0, 0).abs().rolling(14).mean() + 1e-9))))
+    
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-    df.dropna(inplace=True)
+    df_ml = df.dropna()
 
-    X = df[['MA10', 'MA20']]
-    y = df['Target']
-    
-    model = RandomForestClassifier(n_estimators=50)
-    model.fit(X[:-1], y[:-1]) # చివరి రోజు తప్ప మిగిలినది ట్రైనింగ్
-    
-    prediction = model.predict(X.tail(1))[0]
-    signal = "🟢 BUY" if prediction == 1 else "🔴 SELL / WAIT"
+    if len(df_ml) > 20:
+        X = df_ml[['SMA10', 'SMA20', 'RSI']]
+        y = df_ml['Target']
+        
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X[:-1], y[:-1])
+        
+        prediction = model.predict(X.tail(1))[0]
+        prob = model.predict_proba(X.tail(1))[0][prediction]
+        
+        signal = "🟢 BUY" if prediction == 1 else "🔴 SELL / WAIT"
+        accuracy_str = f"{round(prob * 100, 2)}% Confidence"
+    else:
+        signal = "Insufficient Data"
+        accuracy_str = "0%"
 
-    # 5. UI ప్రదర్శన (Metrics)
-    last_price = round(data['Close'].iloc[-1], 2)
-    change = round(data['Close'].iloc[-1] - data['Open'].iloc[-1], 2)
+    # 5. మెట్రిక్స్ ప్రదర్శన
+    last_price = round(float(data['Close'].iloc[-1]), 2)
+    prev_close = round(float(data['Close'].iloc[-2]), 2)
+    change = round(last_price - prev_close, 2)
+    p_change = round((change / prev_close) * 100, 2)
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Stock Symbol", symbol)
-    col2.metric("Current Price", f"₹{last_price}", f"{change}")
-    col3.metric("AI Prediction", signal)
+    col2.metric("Price (₹)", f"₹{last_price}", f"{change} ({p_change}%)")
+    col3.metric("AI Prediction", signal, accuracy_str)
 
-    # 6. Plotly తో క్యాండిల్ స్టిక్ చార్ట్
-    st.subheader(f"📈 {symbol} Analysis Chart")
-    fig = go.Figure(data=[go.Candlestick(x=data.index,
-                open=data['Open'],
-                high=data['High'],
-                low=data['Low'],
-                close=data['Close'],
-                name="Market Data")])
+    st.markdown("---")
+
+    # 6. Plotly Candlestick Chart
+    st.subheader(f"📊 {symbol} Live Analysis Chart")
+    fig = go.Figure(data=[go.Candlestick(
+        x=data.index,
+        open=data['Open'],
+        high=data['High'],
+        low=data['Low'],
+        close=data['Close'],
+        name="Market Data"
+    )])
     
-    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False)
+    fig.update_layout(
+        template="plotly_dark",
+        xaxis_rangeslider_visible=False,
+        height=500,
+        margin=dict(l=10, r=10, t=10, b=10)
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    # 7. Raw Data చూసే ఆప్షన్
-    if st.checkbox("Show Raw Data"):
-        st.dataframe(data.tail(10))
+    # 7. Additional Info
+    with st.expander("Technical Data చూడండి"):
+        st.write(data.tail(10))
+
 else:
-    st.error("డేటా దొరకలేదు. దయచేసి ఇంటర్నెట్ కనెక్షన్ లేదా స్టాక్ సింబల్ చెక్ చేయండి.")
+    st.warning("డేటా లోడ్ అవ్వలేదు. దయచేసి కాసేపు ఆగి రిఫ్రెష్ చేయండి.")
+
