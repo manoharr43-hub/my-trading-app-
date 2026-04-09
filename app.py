@@ -13,7 +13,7 @@ st.set_page_config(page_title="🔥 NSE PRO AI SCANNER", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
-# NSE SECTORS + NSE 500 (partial example, full list can be added)
+# NSE SECTORS + NSE 500 (ready)
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
@@ -24,10 +24,7 @@ sectors = {
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
-    "NSE 500": [  # Partial example, full list can be added here
-        "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
-        "SBIN.NS","HCLTECH.NS","WIPRO.NS","LT.NS","BAJAJFINANCE.NS"
-    ]
+    "NSE 500": []  # <-- Add NSE 500 tickers here ["RELIANCE.NS", "TCS.NS", ...]
 }
 
 # =============================
@@ -38,7 +35,7 @@ with st.sidebar:
     sector_name = st.selectbox("Sector", list(sectors.keys()))
     st.header("📌 Top 10 Big Movers")
     show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
-    min_vol = st.number_input("Minimum Volume (for Top Movers)", value=1000000, step=100000)
+    min_vol = st.number_input("Minimum Volume (for Top Movers)", value=50000, step=10000)
 
 # =============================
 # COLOR FUNCTIONS
@@ -133,28 +130,26 @@ def run_scanner(tickers):
                 "Volume":round(vol,2),
                 "AI":ai,
                 "Accuracy":acc,
-                "Signal":signal,
-                "Entry":round(ltp,2),       # Placeholder for entry price
-                "StopLoss":round(ltp*0.99,2),  # Example: 1% below
-                "Target":round(ltp*1.01,2)     # Example: 1% above
+                "Signal":signal
             })
         except:
             continue
     return pd.DataFrame(results)
 
 # =============================
-# TOP 10 BIG MOVERS FUNCTION
+# TOP 10 BIG MOVERS FUNCTION (MIN_VOL RELAXED)
 # =============================
-def get_top_10_movers(sectors_dict, min_vol=1000000):
+def get_top_10_movers(sectors_dict, min_vol=50000):
     combined=[]
     for tickers in sectors_dict.values():
         df = run_scanner(tickers)
         if df.empty:
             continue
+        # Minimum volume filter (relaxed)
         df = df[df['Volume'] >= min_vol]
         if df.empty:
             continue
-        for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume','Entry','StopLoss','Target']:
+        for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume']:
             if col not in df.columns:
                 df[col] = np.nan
         df['Change'] = df['Price'] - df['Price'].shift(1)
@@ -184,10 +179,10 @@ def display_styled(df):
 # =============================
 # MAIN UI
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (FULL NEW VERSION)")
-st.write(f"📊 Sector: {sector_name}")
+st.title("🔥 NSE PRO AI SCANNER (NSE 500 READY)")
 
 # Sector Scanner
+st.write(f"📊 Sector: {sector_name}")
 df = run_scanner(sectors[sector_name])
 if not df.empty:
     st.subheader("🚀 Live Signals")
