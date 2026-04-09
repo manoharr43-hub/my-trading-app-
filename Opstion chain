@@ -2,168 +2,100 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="🔥 NSE AI + Option Chain App", layout="wide")
+# Page Settings
+st.set_page_config(page_title="🔥 NSE AI Predictor Pro", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
-# NSE SECTORS
+# 1. NSE SECTORS DATA
 # =============================
 sectors = {
-    "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
-    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS"],
-    "IT": ["INFY.NS","TCS.NS","WIPRO.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"]
+    "Nifty 50": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS"],
+    "Banking": ["SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "AXISBANK.NS", "KOTAKBANK.NS"],
+    "IT": ["INFY.NS", "TCS.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS"],
+    "Auto": ["TATAMOTORS.NS", "MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS"]
 }
 
 # =============================
-# SIDEBAR
+# 2. AI ANALYSIS FUNCTION
 # =============================
-with st.sidebar:
-    st.header("📊 Controls")
-    sector = st.selectbox("Select Sector", list(sectors.keys()))
-    show_option = st.checkbox("Show Option Chain", True)
-
-# =============================
-# COLOR
-# =============================
-def color_signal(val):
-    if "BUY" in str(val):
-        return "background-color: green; color: white"
-    elif "SELL" in str(val):
-        return "background-color: red; color: white"
-    return ""
-
-# =============================
-# AI ANALYSIS
-# =============================
-def analyze(df):
-    if df is None or len(df) < 40:
-        return None
-    df = df.copy()
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
-
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain/(loss+1e-9)
-    df['RSI'] = 100-(100/(1+rs))
-
-    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
-    df.dropna(inplace=True)
-
-    X = df[['EMA20','EMA50','RSI','VWAP']]
-    y = df['Target']
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-
-    model = RandomForestClassifier(n_estimators=50, max_depth=5)
-    model.fit(X_train, y_train)
-
-    acc = round(model.score(X_test, y_test)*100,2)
-    pred = model.predict(X.iloc[[-1]])[0]
-    signal = "BUY" if pred==1 else "SELL"
-    vol = df['Volume'].iloc[-1] / (df['Volume'].rolling(20).mean().iloc[-1] + 1e-9)
-
-    return df, signal, acc, vol
-
-# =============================
-# SCANNER
-# =============================
-def run_scanner(stocks):
-    results = []
-
-    # Handle single stock vs multiple stock download
-    if len(stocks) == 1:
-        data = {stocks[0]: yf.download(stocks[0], period="5d", interval="5m")}
-    else:
-        data = yf.download(stocks, period="5d", interval="5m", group_by='ticker', progress=False)
-
-    for s in stocks:
-        try:
-            df = data[s].dropna()
-            res = analyze(df)
-            if res is None:
-                continue
-            df, ai, acc, vol = res
-            last = df.iloc[-1]
-            price = round(last['Close'],2)
-            trend = "UP" if last['EMA20'] > last['EMA50'] else "DOWN"
-            signal = "WAIT"
-            if ai=="BUY" and trend=="UP":
-                signal = "🔥 BUY"
-            elif ai=="SELL" and trend=="DOWN":
-                signal = "🔥 SELL"
-            results.append({
-                "Stock": s.replace(".NS",""),
-                "Price": price,
-                "Trend": trend,
-                "AI": ai,
-                "Accuracy": acc,
-                "Signal": signal
-            })
-        except Exception as e:
-            st.error(f"Error analyzing {s}: {e}")
-            continue
-    return pd.DataFrame(results)
-
-# =============================
-# OPTION CHAIN
-# =============================
-def option_chain():
+def get_ai_prediction(symbol):
     try:
-        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br"
-        }
-        session = requests.Session()
-        session.get("https://www.nseindia.com", headers=headers, timeout=5)
-        data = session.get(url, headers=headers, timeout=5).json()
-        records = data['records']['data']
+        # గత 1 సంవత్సరం డేటా డౌన్‌లోడ్
+        df = yf.download(symbol, period="1y", interval="1d", progress=False)
+        if len(df) < 50: return "Insufficient Data"
 
-        rows = []
-        for item in records:
-            rows.append({
-                "Strike": item['strikePrice'],
-                "Call OI": item.get('CE', {}).get('openInterest', 0),
-                "Put OI": item.get('PE', {}).get('openInterest', 0)
-            })
-        df = pd.DataFrame(rows)
-        support = df.loc[df['Put OI'].idxmax()]
-        resistance = df.loc[df['Call OI'].idxmax()]
-        return df, support['Strike'], resistance['Strike']
-    except Exception as e:
-        st.warning(f"Option Chain Error: {e}")
-        return None, None, None
+        # Technical Indicators గణన
+        df['EMA20'] = df['Close'].ewm(span=20).mean()
+        df['EMA50'] = df['Close'].ewm(span=50).mean()
+        
+        # RSI Calculation
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / (loss + 1e-9)
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        # Target: రేపటి క్లోజింగ్ ఈరోజు కంటే ఎక్కువగా ఉంటే 1 (Buy), లేదంటే 0 (Sell)
+        df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+        
+        # ML Model Training
+        features = ['EMA20', 'EMA50', 'RSI']
+        data = df.dropna()
+        X = data[features]
+        y = data['Target']
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+        
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+
+        # చివరగా ఉన్న డేటాతో ప్రిడిక్షన్
+        last_row = X.tail(1)
+        prediction = model.predict(last_row)[0]
+        
+        return "🚀 STRONG BUY" if prediction == 1 else "⚠️ SELL / WAIT"
+    except:
+        return "Error"
 
 # =============================
-# UI
+# 3. SIDEBAR & UI
 # =============================
-st.title("🔥 NSE AI + OPTION CHAIN APP")
+st.sidebar.header("📊 NSE AI CONTROLS")
+selected_sector = st.sidebar.selectbox("Sector ఎంచుకోండి", list(sectors.keys()))
+stocks = sectors[selected_sector]
 
-df = run_scanner(sectors[sector])
-if not df.empty:
-    st.subheader("📊 Scanner Results")
-    st.dataframe(df.style.map(color_signal, subset=['Signal']), use_container_width=True)
+st.title(f"📈 AI Stock Analysis: {selected_sector}")
+st.write(f"చివరి అప్‌డేట్: {pd.Timestamp.now().strftime('%H:%M:%S')}")
 
-    stock = st.selectbox("📈 Select Stock", df['Stock'])
-    chart = yf.download(stock+".NS", period="1d", interval="5m")
-    st.line_chart(chart['Close'])
+# =============================
+# 4. RESULTS DISPLAY
+# =============================
+results = []
 
-if show_option:
-    st.subheader("📊 Option Chain (NIFTY)")
-    oc_df, sup, res = option_chain()
-    if oc_df is not None:
-        st.dataframe(oc_df)
-        st.success(f"Support: {sup}")
-        st.error(f"Resistance: {res}")
-    else:
-        st.warning("Option Chain not loading")
+with st.spinner("AI విశ్లేషిస్తోంది..."):
+    for stock in stocks:
+        current_price = yf.Ticker(stock).fast_info['last_price']
+        signal = get_ai_prediction(stock)
+        results.append({"Stock": stock, "Price (₹)": round(current_price, 2), "AI Signal": signal})
+
+# DataFrame Display
+df_res = pd.DataFrame(results)
+
+def apply_color(val):
+    color = 'green' if 'BUY' in val else 'red'
+    return f'color: {color}; font-weight: bold'
+
+st.table(df_res.style.applymap(apply_color, subset=['AI Signal']))
+
+# =============================
+# 5. CHARTING SECTION
+# =============================
+st.subheader("🔍 క్విక్ చార్ట్ వ్యూ")
+selected_stock = st.selectbox("చార్ట్ చూడటానికి స్టాక్ ఎంచుకోండి", stocks)
+chart_data = yf.download(selected_stock, period="1mo", interval="1d")
+st.line_chart(chart_data['Close'])
