@@ -13,7 +13,7 @@ st.set_page_config(page_title="🔥 NSE PRO AI SCANNER", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
-# NSE SECTORS + NSE 500
+# NSE SECTORS + NSE 500 placeholder
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
@@ -24,7 +24,7 @@ sectors = {
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
-    "NSE 500": []  # <-- Add full NSE 500 tickers here ["RELIANCE.NS","TCS.NS",...]
+    "NSE 500": []  # <-- ADD full NSE 500 tickers here for testing
 }
 
 # =============================
@@ -35,7 +35,7 @@ with st.sidebar:
     sector_name = st.selectbox("Sector", list(sectors.keys()))
     st.header("📌 Top 10 Big Movers")
     show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
-    min_vol = st.number_input("Minimum Volume Filter", value=1000000, step=100000)
+    min_vol = st.number_input("Minimum Volume (for Top Movers)", value=50000, step=10000)
 
 # =============================
 # COLOR FUNCTIONS
@@ -139,16 +139,18 @@ def run_scanner(tickers):
 # =============================
 # TOP 10 BIG MOVERS FUNCTION
 # =============================
-def get_top_10_movers(sectors_dict, min_vol=1000000):
+def get_top_10_movers(sectors_dict, min_vol=50000):
     combined=[]
     for tickers in sectors_dict.values():
         df = run_scanner(tickers)
         if df.empty:
             continue
-        # Filter by min volume
-        df = df[df['Volume']>=min_vol]
+        df = df[df['Volume'] >= min_vol]
         if df.empty:
             continue
+        for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume']:
+            if col not in df.columns:
+                df[col] = np.nan
         df['Change'] = df['Price'] - df['Price'].shift(1)
         df['PctChange'] = df['Change']/df['Price'].shift(1)*100
         df.fillna(0,inplace=True)
@@ -161,16 +163,16 @@ def get_top_10_movers(sectors_dict, min_vol=1000000):
     return pd.DataFrame()
 
 # =============================
-# SAFE DISPLAY FUNCTION
+# SAFE STYLER DISPLAY
 # =============================
 def display_styled(df):
     for col in ['Signal','Trend']:
         if col not in df.columns:
-            df[col] = ""
+            df[col]=""
     try:
         styled = df.style.map(color_signal,subset=['Signal']).map(color_trend,subset=['Trend'])
         st.dataframe(styled,use_container_width=True)
-    except:
+    except KeyError:
         st.dataframe(df,use_container_width=True)
 
 # =============================
