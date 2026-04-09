@@ -13,7 +13,7 @@ st.set_page_config(page_title="🔥 NSE PRO AI SCANNER", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
-# NSE SECTORS + NSE 500 placeholder
+# NSE SECTORS
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
@@ -23,8 +23,7 @@ sectors = {
     "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
-    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
-    "NSE 500": []  # <-- ADD full NSE 500 tickers here for testing
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
 }
 
 # =============================
@@ -35,7 +34,6 @@ with st.sidebar:
     sector_name = st.selectbox("Sector", list(sectors.keys()))
     st.header("📌 Top 10 Big Movers")
     show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
-    min_vol = st.number_input("Minimum Volume (for Top Movers)", value=50000, step=10000)
 
 # =============================
 # COLOR FUNCTIONS
@@ -137,17 +135,15 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# TOP 10 BIG MOVERS FUNCTION
+# TOP 10 BIG MOVERS FUNCTION (Entry/Stoploss/Target added)
 # =============================
-def get_top_10_movers(sectors_dict, min_vol=50000):
+def get_top_10_movers(sectors_dict):
     combined=[]
     for tickers in sectors_dict.values():
         df = run_scanner(tickers)
         if df.empty:
             continue
-        df = df[df['Volume'] >= min_vol]
-        if df.empty:
-            continue
+        # Ensure required columns
         for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume']:
             if col not in df.columns:
                 df[col] = np.nan
@@ -158,7 +154,34 @@ def get_top_10_movers(sectors_dict, min_vol=50000):
     if combined:
         all_stocks = pd.concat(combined)
         all_stocks['AbsPctChange'] = all_stocks['PctChange'].abs()
-        top10 = all_stocks.sort_values(by='AbsPctChange',ascending=False).head(10)
+        top10 = all_stocks.sort_values(by='AbsPctChange', ascending=False).head(10)
+        
+        # Entry / Stop-Loss / Target
+        entry_list=[]
+        stoploss_list=[]
+        target_list=[]
+        for i,row in top10.iterrows():
+            price = row['Price']
+            signal = row['Signal']
+            if "BUY" in signal:
+                entry = price
+                stoploss = round(price * 0.995, 2)
+                target = round(price * 1.01, 2)
+            elif "SELL" in signal:
+                entry = price
+                stoploss = round(price * 1.005, 2)
+                target = round(price * 0.99, 2)
+            else:
+                entry = price
+                stoploss = np.nan
+                target = np.nan
+            entry_list.append(entry)
+            stoploss_list.append(stoploss)
+            target_list.append(target)
+        top10['Entry'] = entry_list
+        top10['Stop-Loss'] = stoploss_list
+        top10['Target'] = target_list
+        
         return top10
     return pd.DataFrame()
 
@@ -198,7 +221,7 @@ else:
 # Top 10 Movers Across All Sectors
 if show_big:
     st.subheader("🚀 Top 10 Big Movers Across All Sectors")
-    movers = get_top_10_movers(sectors, min_vol=min_vol)
+    movers = get_top_10_movers(sectors)
     if not movers.empty:
         display_styled(movers)
     else:
