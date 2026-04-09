@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG + AUTO REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE PRO AI SCANNER", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI Scanner (Big Movers + Big Player)", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
@@ -43,6 +43,10 @@ def color_signal(val):
         return "background-color: green; color: white"
     elif "SELL" in str(val):
         return "background-color: red; color: white"
+    elif "Big Buyer" in str(val):
+        return "background-color: orange; color: white"
+    elif "Big Seller" in str(val):
+        return "background-color: purple; color: white"
     return ""
 
 def color_trend(val):
@@ -56,36 +60,33 @@ def color_trend(val):
 # AI ANALYSIS FUNCTION
 # =============================
 def analyze(df):
-    try:
-        if df is None or len(df)<40:
-            return None
-        df = df.copy()
-        df['EMA20'] = df['Close'].ewm(span=20).mean()
-        df['EMA50'] = df['Close'].ewm(span=50).mean()
-        df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-        delta = df['Close'].diff()
-        gain = (delta.where(delta>0,0)).rolling(14).mean()
-        loss = (-delta.where(delta<0,0)).rolling(14).mean()
-        rs = gain / (loss + 1e-9)
-        df['RSI'] = 100 - (100/(1+rs))
-        df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
-        df.dropna(inplace=True)
-        if len(df)<10:
-            return None
-        features = ['EMA20','EMA50','RSI','VWAP']
-        X = df[features]
-        y = df['Target']
-        X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.2,shuffle=False)
-        model = RandomForestClassifier(n_estimators=50,max_depth=5,random_state=42)
-        model.fit(X_train,y_train)
-        acc = round(model.score(X_test,y_test)*100,2)
-        pred = model.predict(X.iloc[[-1]])[0]
-        ai_signal = "BUY" if pred==1 else "SELL"
-        avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-        vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
-        return df, vol_ratio, ai_signal, acc
-    except:
+    if df is None or len(df)<40:
         return None
+    df = df.copy()
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+    delta = df['Close'].diff()
+    gain = (delta.where(delta>0,0)).rolling(14).mean()
+    loss = (-delta.where(delta<0,0)).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    df['RSI'] = 100 - (100/(1+rs))
+    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
+    df.dropna(inplace=True)
+    if len(df)<10:
+        return None
+    features = ['EMA20','EMA50','RSI','VWAP']
+    X = df[features]
+    y = df['Target']
+    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.2,shuffle=False)
+    model = RandomForestClassifier(n_estimators=50,max_depth=5,random_state=42)
+    model.fit(X_train,y_train)
+    acc = round(model.score(X_test,y_test)*100,2)
+    pred = model.predict(X.iloc[[-1]])[0]
+    ai_signal = "BUY" if pred==1 else "SELL"
+    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+    vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
+    return df, vol_ratio, ai_signal, acc
 
 # =============================
 # RUN SCANNER
@@ -107,7 +108,7 @@ def run_scanner(tickers):
             res = analyze(df)
             if res is None:
                 continue
-            df, vol, ai, acc = res
+            df, vol_ratio, ai, acc = res
             last = df.iloc[-1]
             ltp = float(last['Close'])
             ema20 = float(last['EMA20'])
@@ -116,16 +117,21 @@ def run_scanner(tickers):
             vwap = float(last['VWAP'])
             trend = "UP" if ema20>ema50 else "DOWN"
             signal="WAIT"
+            # Signal + Big Player detection
             if ltp>vwap and trend=="UP" and rsi>50 and ai=="BUY":
                 signal="🔥 BUY"
+                if vol_ratio>2:
+                    signal="Big Buyer Entry 🔥"
             elif ltp<vwap and trend=="DOWN" and rsi<50 and ai=="SELL":
                 signal="🔥 SELL"
+                if vol_ratio>2:
+                    signal="Big Seller Entry 🔥"
             results.append({
                 "Stock":s.replace(".NS",""),
                 "Price":round(ltp,2),
                 "Trend":trend,
                 "RSI":round(rsi,1),
-                "Volume":round(vol,2),
+                "Volume":round(vol_ratio,2),
                 "AI":ai,
                 "Accuracy":acc,
                 "Signal":signal
@@ -135,7 +141,7 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# TOP 10 BIG MOVERS FUNCTION (Entry/Stoploss/Target added)
+# TOP 10 BIG MOVERS FUNCTION
 # =============================
 def get_top_10_movers(sectors_dict):
     combined=[]
@@ -143,10 +149,6 @@ def get_top_10_movers(sectors_dict):
         df = run_scanner(tickers)
         if df.empty:
             continue
-        # Ensure required columns
-        for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume']:
-            if col not in df.columns:
-                df[col] = np.nan
         df['Change'] = df['Price'] - df['Price'].shift(1)
         df['PctChange'] = df['Change']/df['Price'].shift(1)*100
         df.fillna(0,inplace=True)
@@ -155,38 +157,11 @@ def get_top_10_movers(sectors_dict):
         all_stocks = pd.concat(combined)
         all_stocks['AbsPctChange'] = all_stocks['PctChange'].abs()
         top10 = all_stocks.sort_values(by='AbsPctChange', ascending=False).head(10)
-        
-        # Entry / Stop-Loss / Target
-        entry_list=[]
-        stoploss_list=[]
-        target_list=[]
-        for i,row in top10.iterrows():
-            price = row['Price']
-            signal = row['Signal']
-            if "BUY" in signal:
-                entry = price
-                stoploss = round(price * 0.995, 2)
-                target = round(price * 1.01, 2)
-            elif "SELL" in signal:
-                entry = price
-                stoploss = round(price * 1.005, 2)
-                target = round(price * 0.99, 2)
-            else:
-                entry = price
-                stoploss = np.nan
-                target = np.nan
-            entry_list.append(entry)
-            stoploss_list.append(stoploss)
-            target_list.append(target)
-        top10['Entry'] = entry_list
-        top10['Stop-Loss'] = stoploss_list
-        top10['Target'] = target_list
-        
         return top10
     return pd.DataFrame()
 
 # =============================
-# SAFE STYLER DISPLAY
+# DISPLAY FUNCTION
 # =============================
 def display_styled(df):
     for col in ['Signal','Trend']:
@@ -201,7 +176,8 @@ def display_styled(df):
 # =============================
 # MAIN UI
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (FULL NEW VERSION)")
+st.title("🔥 NSE AI Scanner (Big Movers + Big Player)")
+
 st.write(f"📊 Sector: {sector_name}")
 
 # Sector Scanner
