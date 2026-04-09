@@ -53,11 +53,11 @@ def color_trend(val):
     return ""
 
 # =============================
-# AI ANALYSIS
+# AI ANALYSIS FUNCTION
 # =============================
 def analyze(df):
     try:
-        if df is None or len(df) < 40:
+        if df is None or len(df)<40:
             return None
         df = df.copy()
         df['EMA20'] = df['Close'].ewm(span=20).mean()
@@ -70,7 +70,7 @@ def analyze(df):
         df['RSI'] = 100 - (100/(1+rs))
         df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
         df.dropna(inplace=True)
-        if len(df) < 10:
+        if len(df)<10:
             return None
         features = ['EMA20','EMA50','RSI','VWAP']
         X = df[features]
@@ -102,7 +102,7 @@ def run_scanner(tickers):
             df = df.dropna()
             if df.empty:
                 continue
-            if isinstance(df.columns, pd.MultiIndex):
+            if isinstance(df.columns,pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             res = analyze(df)
             if res is None:
@@ -135,7 +135,7 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# TOP 10 BIG MOVERS
+# TOP 10 BIG MOVERS FUNCTION
 # =============================
 def get_top_10_movers(sectors_dict):
     combined=[]
@@ -143,34 +143,47 @@ def get_top_10_movers(sectors_dict):
         df = run_scanner(tickers)
         if df.empty:
             continue
+        # Ensure required columns exist
         for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume']:
             if col not in df.columns:
-                df[col]=np.nan
-        df['Change']=df['Price']-df['Price'].shift(1)
-        df['PctChange']=df['Change']/df['Price'].shift(1)*100
+                df[col] = np.nan
+        df['Change'] = df['Price'] - df['Price'].shift(1)
+        df['PctChange'] = df['Change']/df['Price'].shift(1)*100
         df.fillna(0,inplace=True)
         combined.append(df)
     if combined:
-        all_stocks=pd.concat(combined)
-        all_stocks['AbsPctChange']=all_stocks['PctChange'].abs()
-        top10=all_stocks.sort_values(by='AbsPctChange',ascending=False).head(10)
+        all_stocks = pd.concat(combined)
+        all_stocks['AbsPctChange'] = all_stocks['PctChange'].abs()
+        top10 = all_stocks.sort_values(by='AbsPctChange',ascending=False).head(10)
         return top10
     return pd.DataFrame()
 
 # =============================
+# SAFE STYLER DISPLAY
+# =============================
+def display_styled(df):
+    for col in ['Signal','Trend']:
+        if col not in df.columns:
+            df[col]=""
+    try:
+        styled = df.style.map(color_signal,subset=['Signal']).map(color_trend,subset=['Trend'])
+        st.dataframe(styled,use_container_width=True)
+    except KeyError:
+        st.dataframe(df,use_container_width=True)
+
+# =============================
 # MAIN UI
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (NEW FULL VERSION)")
+st.title("🔥 NSE PRO AI SCANNER (FULL NEW VERSION)")
 st.write(f"📊 Sector: {sector_name}")
 
-# Scanner per sector
-df=run_scanner(sectors[sector_name])
+# Sector Scanner
+df = run_scanner(sectors[sector_name])
 if not df.empty:
     st.subheader("🚀 Live Signals")
-    styled_df=df.style.map(color_signal,subset=['Signal']).map(color_trend,subset=['Trend'])
-    st.dataframe(styled_df,use_container_width=True)
-    selected=st.selectbox("📈 Select Stock",df['Stock'])
-    chart=yf.download(selected+".NS",period="1d",interval="5m",progress=False)
+    display_styled(df)
+    selected = st.selectbox("📈 Select Stock", df['Stock'])
+    chart = yf.download(selected+".NS", period="1d", interval="5m", progress=False)
     if not chart.empty:
         st.line_chart(chart['Close'])
     else:
@@ -178,12 +191,11 @@ if not df.empty:
 else:
     st.warning("No signals found now")
 
-# Show Top 10 Big Movers
+# Top 10 Movers Across All Sectors
 if show_big:
     st.subheader("🚀 Top 10 Big Movers Across All Sectors")
-    movers=get_top_10_movers(sectors)
+    movers = get_top_10_movers(sectors)
     if not movers.empty:
-        styled=movers.style.map(color_signal,subset=['Signal']).map(color_trend,subset=['Trend'])
-        st.dataframe(styled,use_container_width=True)
+        display_styled(movers)
     else:
         st.warning("No big movers found now")
