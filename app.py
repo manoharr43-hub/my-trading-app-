@@ -13,7 +13,7 @@ st.set_page_config(page_title="🔥 NSE PRO AI SCANNER", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
-# NSE SECTORS + NSE 500 (ready)
+# NSE SECTORS + NSE 500
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
@@ -24,7 +24,15 @@ sectors = {
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
-    "NSE 500": []  # <-- Add NSE 500 tickers here ["RELIANCE.NS", "TCS.NS", ...]
+    "NSE 500": [
+        # **Partial NSE 500 list for example**
+        "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
+        "SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","LT.NS","BAJAJFINANCE.NS",
+        "ITC.NS","HINDUNILVR.NS","M&M.NS","MARUTI.NS","SUNPHARMA.NS",
+        "TATAMOTORS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS","TATASTEEL.NS",
+        "JSWSTEEL.NS","BPCL.NS","ONGC.NS","IOC.NS","COALINDIA.NS",
+        # (You can expand this list to full NSE 500)
+    ]
 }
 
 # =============================
@@ -64,11 +72,11 @@ def analyze(df):
         df = df.copy()
         df['EMA20'] = df['Close'].ewm(span=20).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
-        df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+        df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
         delta = df['Close'].diff()
         gain = (delta.where(delta>0,0)).rolling(14).mean()
         loss = (-delta.where(delta<0,0)).rolling(14).mean()
-        rs = gain / (loss + 1e-9)
+        rs = gain / (loss+1e-9)
         df['RSI'] = 100 - (100/(1+rs))
         df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
         df.dropna(inplace=True)
@@ -137,7 +145,7 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# TOP 10 BIG MOVERS FUNCTION (MIN_VOL RELAXED)
+# TOP 10 BIG MOVERS FUNCTION
 # =============================
 def get_top_10_movers(sectors_dict, min_vol=50000):
     combined=[]
@@ -145,7 +153,6 @@ def get_top_10_movers(sectors_dict, min_vol=50000):
         df = run_scanner(tickers)
         if df.empty:
             continue
-        # Minimum volume filter (relaxed)
         df = df[df['Volume'] >= min_vol]
         if df.empty:
             continue
@@ -169,17 +176,17 @@ def get_top_10_movers(sectors_dict, min_vol=50000):
 def display_styled(df):
     for col in ['Signal','Trend']:
         if col not in df.columns:
-            df[col]=""
+            df[col] = ""
     try:
         styled = df.style.map(color_signal,subset=['Signal']).map(color_trend,subset=['Trend'])
         st.dataframe(styled,use_container_width=True)
-    except KeyError:
+    except:
         st.dataframe(df,use_container_width=True)
 
 # =============================
 # MAIN UI
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (NSE 500 READY)")
+st.title("🔥 NSE PRO AI SCANNER (NSE 500 ENABLED)")
 
 # Sector Scanner
 st.write(f"📊 Sector: {sector_name}")
