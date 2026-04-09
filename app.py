@@ -6,11 +6,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="NSE PRO AI SCANNER", layout="wide")
-
 # =============================
-# AUTO REFRESH
+# PAGE CONFIG + AUTO REFRESH
 # =============================
+st.set_page_config(page_title="🔥 NSE PRO AI SCANNER", layout="wide")
 st_autorefresh(interval=20000, key="refresh")
 
 # =============================
@@ -28,11 +27,13 @@ sectors = {
 }
 
 # =============================
-# SIDEBAR
+# SIDEBAR SELECTION
 # =============================
 with st.sidebar:
     st.header("📊 Select NSE Sector")
     sector_name = st.selectbox("Sector", list(sectors.keys()))
+    st.header("📌 Top 10 Big Movers")
+    show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
 
 # =============================
 # COLOR FUNCTIONS
@@ -52,7 +53,7 @@ def color_trend(val):
     return ""
 
 # =============================
-# NEW AI ANALYSIS (UPDATED)
+# AI ANALYSIS FUNCTION
 # =============================
 def analyze(df):
     try:
@@ -60,8 +61,6 @@ def analyze(df):
             return None
 
         df = df.copy()
-
-        # Indicators
         df['EMA20'] = df['Close'].ewm(span=20).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
         df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
@@ -72,10 +71,8 @@ def analyze(df):
         rs = gain / (loss + 1e-9)
         df['RSI'] = 100 - (100 / (1 + rs))
 
-        # Target
         df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
         df.dropna(inplace=True)
-
         if len(df) < 10:
             return None
 
@@ -83,23 +80,16 @@ def analyze(df):
         X = df[features]
         y = df['Target']
 
-        # Train/Test Split (REAL accuracy)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-
         model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
         model.fit(X_train, y_train)
 
         acc = round(model.score(X_test, y_test) * 100, 2)
-
         pred = model.predict(X.iloc[[-1]])[0]
         ai_signal = "BUY" if pred == 1 else "SELL"
 
-        # Volume safe
         avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-        if pd.isna(avg_vol) or avg_vol == 0:
-            vol_ratio = 1
-        else:
-            vol_ratio = df['Volume'].iloc[-1] / avg_vol
+        vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
 
         return df, vol_ratio, ai_signal, acc
 
@@ -107,11 +97,10 @@ def analyze(df):
         return None
 
 # =============================
-# SCANNER
+# RUN SCANNER
 # =============================
 def run_scanner(tickers):
     results = []
-
     try:
         data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
     except Exception as e:
@@ -120,45 +109,28 @@ def run_scanner(tickers):
 
     for s in tickers:
         try:
-            if len(tickers) == 1:
-                df = data.copy()
-            else:
-                if s not in data:
-                    continue
-                df = data[s].copy()
-
+            df = data.copy() if len(tickers)==1 else data[s].copy()
             df = df.dropna()
-
             if df.empty:
                 continue
-
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-
             res = analyze(df)
             if res is None:
                 continue
-
             df, vol, ai, acc = res
             last = df.iloc[-1]
-
             ltp = float(last['Close'])
             ema20 = float(last['EMA20'])
             ema50 = float(last['EMA50'])
             rsi = float(last['RSI'])
             vwap = float(last['VWAP'])
-
             trend = "UP" if ema20 > ema50 else "DOWN"
-
             signal = "WAIT"
-
-            # Smart signals
-            if (ltp > vwap and trend=="UP" and rsi>50 and ai=="BUY"):
+            if ltp > vwap and trend=="UP" and rsi>50 and ai=="BUY":
                 signal = "🔥 BUY"
-
-            elif (ltp < vwap and trend=="DOWN" and rsi<50 and ai=="SELL"):
+            elif ltp < vwap and trend=="DOWN" and rsi<50 and ai=="SELL":
                 signal = "🔥 SELL"
-
             results.append({
                 "Stock": s.replace(".NS",""),
                 "Price": round(ltp,2),
@@ -169,72 +141,52 @@ def run_scanner(tickers):
                 "Accuracy": acc,
                 "Signal": signal
             })
-
         except:
             continue
-
     return pd.DataFrame(results)
 
 # =============================
-# UI
+# TOP 10 BIG MOVERS FUNCTION
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (FINAL VERSION)")
-
-st.write(f"📊 Sector: {sector_name}")
-
-df = run_scanner(sectors[sector_name])
-
-if not df.empty:
-    st.subheader("🚀 Live Signals")
-
-    styled_df = df.style.map(color_signal, subset=['Signal']) \
-                         .map(color_trend, subset=['Trend'])
-
-    st.dataframe(styled_df, use_container_width=True)
-
-    if st.button("🔄 Refresh Data"):
-        st.rerun()
-
-    selected = st.selectbox("📈 Select Stock", df['Stock'])
-
-    chart = yf.download(selected+".NS", period="1d", interval="5m", progress=False)
-
-    if not chart.empty:
-        st.line_chart(chart['Close'])
-    else:
-        st.warning("Chart not available")
-
-else:# =============================
-# BIG MOVERS SECTION (ALL SECTORS, TOP 10)
-# =============================
-with st.sidebar:
-    st.header("📌 Top 10 Big Movers (All Sectors)")
-    show_big = st.checkbox("Show Top 10 Movers")
-
 def get_top_10_movers(sectors_dict):
     combined = []
-    for sector, tickers in sectors_dict.items():
+    for tickers in sectors_dict.values():
         df = run_scanner(tickers)
         if df.empty:
             continue
-        # % Move calculation
         df['Change'] = df['Price'] - df['Price'].shift(1)
         df['PctChange'] = df['Change'] / df['Price'].shift(1) * 100
         df.fillna(0, inplace=True)
         combined.append(df)
-
     if combined:
         all_stocks = pd.concat(combined)
-        # Sort by absolute % change
         all_stocks['AbsPctChange'] = all_stocks['PctChange'].abs()
         top10 = all_stocks.sort_values(by='AbsPctChange', ascending=False).head(10)
         return top10
-    else:
-        return pd.DataFrame()
+    return pd.DataFrame()
 
 # =============================
-# DISPLAY TOP 10
+# MAIN UI
 # =============================
+st.title("🔥 NSE PRO AI SCANNER (FINAL VERSION)")
+st.write(f"📊 Sector: {sector_name}")
+
+# Scanner for selected sector
+df = run_scanner(sectors[sector_name])
+if not df.empty:
+    st.subheader("🚀 Live Signals")
+    styled_df = df.style.map(color_signal, subset=['Signal']).map(color_trend, subset=['Trend'])
+    st.dataframe(styled_df, use_container_width=True)
+    selected = st.selectbox("📈 Select Stock", df['Stock'])
+    chart = yf.download(selected+".NS", period="1d", interval="5m", progress=False)
+    if not chart.empty:
+        st.line_chart(chart['Close'])
+    else:
+        st.warning("Chart not available")
+else:
+    st.warning("No signals found now")
+
+# Show Top 10 Big Movers
 if show_big:
     st.subheader("🚀 Top 10 Big Movers Across All Sectors")
     movers = get_top_10_movers(sectors)
@@ -243,4 +195,3 @@ if show_big:
         st.dataframe(styled, use_container_width=True)
     else:
         st.warning("No big movers found now")
-    st.warning("No signals found now")
