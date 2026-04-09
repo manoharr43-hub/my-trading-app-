@@ -24,15 +24,7 @@ sectors = {
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"],
-    "NSE 500": [
-        # **Partial NSE 500 list for example**
-        "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS",
-        "SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","LT.NS","BAJAJFINANCE.NS",
-        "ITC.NS","HINDUNILVR.NS","M&M.NS","MARUTI.NS","SUNPHARMA.NS",
-        "TATAMOTORS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS","TATASTEEL.NS",
-        "JSWSTEEL.NS","BPCL.NS","ONGC.NS","IOC.NS","COALINDIA.NS",
-        # (You can expand this list to full NSE 500)
-    ]
+    "NSE 500": []  # <-- Add full NSE 500 tickers here
 }
 
 # =============================
@@ -43,7 +35,7 @@ with st.sidebar:
     sector_name = st.selectbox("Sector", list(sectors.keys()))
     st.header("📌 Top 10 Big Movers")
     show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
-    min_vol = st.number_input("Minimum Volume (for Top Movers)", value=50000, step=10000)
+    min_vol = st.number_input("Minimum Volume (for Top Movers)", value=50000, step=50000)
 
 # =============================
 # COLOR FUNCTIONS
@@ -72,11 +64,11 @@ def analyze(df):
         df = df.copy()
         df['EMA20'] = df['Close'].ewm(span=20).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
-        df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
+        df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
         delta = df['Close'].diff()
         gain = (delta.where(delta>0,0)).rolling(14).mean()
         loss = (-delta.where(delta<0,0)).rolling(14).mean()
-        rs = gain / (loss+1e-9)
+        rs = gain / (loss + 1e-9)
         df['RSI'] = 100 - (100/(1+rs))
         df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
         df.dropna(inplace=True)
@@ -176,20 +168,20 @@ def get_top_10_movers(sectors_dict, min_vol=50000):
 def display_styled(df):
     for col in ['Signal','Trend']:
         if col not in df.columns:
-            df[col] = ""
+            df[col]=""
     try:
         styled = df.style.map(color_signal,subset=['Signal']).map(color_trend,subset=['Trend'])
         st.dataframe(styled,use_container_width=True)
-    except:
+    except KeyError:
         st.dataframe(df,use_container_width=True)
 
 # =============================
 # MAIN UI
 # =============================
-st.title("🔥 NSE PRO AI SCANNER (NSE 500 ENABLED)")
+st.title("🔥 NSE PRO AI SCANNER (FULL NEW VERSION)")
+st.write(f"📊 Sector: {sector_name}")
 
 # Sector Scanner
-st.write(f"📊 Sector: {sector_name}")
 df = run_scanner(sectors[sector_name])
 if not df.empty:
     st.subheader("🚀 Live Signals")
