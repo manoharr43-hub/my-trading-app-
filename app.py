@@ -135,7 +135,7 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# TOP 10 BIG MOVERS FUNCTION
+# TOP 10 BIG MOVERS FUNCTION (Entry/Stoploss/Target added)
 # =============================
 def get_top_10_movers(sectors_dict):
     combined=[]
@@ -143,7 +143,7 @@ def get_top_10_movers(sectors_dict):
         df = run_scanner(tickers)
         if df.empty:
             continue
-        # Ensure required columns exist
+        # Ensure required columns
         for col in ['Signal','Trend','Price','Stock','AI','Accuracy','Volume']:
             if col not in df.columns:
                 df[col] = np.nan
@@ -154,7 +154,34 @@ def get_top_10_movers(sectors_dict):
     if combined:
         all_stocks = pd.concat(combined)
         all_stocks['AbsPctChange'] = all_stocks['PctChange'].abs()
-        top10 = all_stocks.sort_values(by='AbsPctChange',ascending=False).head(10)
+        top10 = all_stocks.sort_values(by='AbsPctChange', ascending=False).head(10)
+        
+        # Entry / Stop-Loss / Target
+        entry_list=[]
+        stoploss_list=[]
+        target_list=[]
+        for i,row in top10.iterrows():
+            price = row['Price']
+            signal = row['Signal']
+            if "BUY" in signal:
+                entry = price
+                stoploss = round(price * 0.995, 2)
+                target = round(price * 1.01, 2)
+            elif "SELL" in signal:
+                entry = price
+                stoploss = round(price * 1.005, 2)
+                target = round(price * 0.99, 2)
+            else:
+                entry = price
+                stoploss = np.nan
+                target = np.nan
+            entry_list.append(entry)
+            stoploss_list.append(stoploss)
+            target_list.append(target)
+        top10['Entry'] = entry_list
+        top10['Stop-Loss'] = stoploss_list
+        top10['Target'] = target_list
+        
         return top10
     return pd.DataFrame()
 
