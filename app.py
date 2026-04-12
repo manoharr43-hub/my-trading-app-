@@ -19,5 +19,26 @@ sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
     "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],  # removed TATAMOTORS.NS (delisted issue)
-    "Pharma
+    "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],  # removed TATAMOTORS.NS
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],  # ✅ fixed string literal
+    "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
+    "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
+}
+
+# =============================
+# SIDEBAR
+# =============================
+with st.sidebar:
+    st.header("📊 Select NSE Sector")
+    sector_name = st.selectbox("Sector", list(sectors.keys()))
+    st.header("📌 Top 10 Big Movers")
+    show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
+    st.header("🔎 Manual Symbol Entry")
+    manual_symbol = st.text_input("Enter NSE Symbol (use .NS)", "")
+
+# =============================
+# COLOR FUNCTIONS
+# =============================
+def color_signal(val):
+    if "BUY" in
