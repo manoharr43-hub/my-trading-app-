@@ -33,7 +33,7 @@ with st.sidebar:
     st.header("📊 Select NSE Sector")
     sector_name = st.selectbox("Sector", list(sectors.keys()))
     st.header("📌 Top 10 Big Movers")
-    show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
+    show_movers = st.checkbox("Show Top 10 Movers Across All Sectors")
 
 # =============================
 # COLOR FUNCTIONS
@@ -89,33 +89,36 @@ def analyze(df):
     return df, vol_ratio, ai_signal, acc
 
 # =============================
-# RUN SCANNER
+# GET INTRADAY MOVERS (SAFE)
 # =============================
-def run_scanner(tickers):
-    results = []
-    try:
-        data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
-    except Exception as e:
-        return pd.DataFrame()
-
-    for s in tickers:
-        try:
-            df = data.copy() if len(tickers) == 1 else data[s].copy()
-            df = df.dropna()
-            if df.empty:
+def get_intraday_movers(sectors):
+    movers = []
+    for sector, tickers in sectors.items():
+        for s in tickers:
+            try:
+                df = yf.download(s, period="1d", interval="5m", progress=False)
+                if df.empty:
+                    continue
+                change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+                movers.append({"Stock": s, "Change %": round(change_pct, 2)})
+            except Exception:
                 continue
-            analysis = analyze(df)
-            if analysis:
-                df, vol_ratio, ai_signal, acc = analysis
-                trend = "UP" if ai_signal == "BUY" else "DOWN"
-                results.append({
-                    "Stock": s,
-                    "Signal": ai_signal,
-                    "Trend": trend,
-                    "Vol Ratio": round(vol_ratio, 2),
-                    "AI Acc": acc
-                })
-        except Exception as e:
-            continue
 
-    return pd.DataFrame(results)
+    if not movers:
+        return pd.DataFrame(columns=["Stock","Change %"])
+
+    df_movers = pd.DataFrame(movers)
+    df_movers["Change %"] = pd.to_numeric(df_movers["Change %"], errors="coerce").fillna(0)
+
+    return df_movers.sort_values(by="Change %", ascending=False, na_position="last").reset_index(drop=True)
+
+# =============================
+# UI
+# =============================
+if show_movers:
+    st.subheader("🚀 Top Intraday Movers")
+    movers = get_intraday_movers(sectors)
+    if not movers.empty:
+        st.dataframe(movers, use_container_width=True)
+    else:
+        st.info("No movers data available (Market Closed)")
