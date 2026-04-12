@@ -36,27 +36,6 @@ with st.sidebar:
     show_movers = st.checkbox("Show Top 10 Movers Across All Sectors")
 
 # =============================
-# COLOR FUNCTIONS
-# =============================
-def color_signal(val):
-    if "BUY" in str(val):
-        return "background-color: green; color: white"
-    elif "SELL" in str(val):
-        return "background-color: red; color: white"
-    elif "Big Buyer" in str(val):
-        return "background-color: orange; color: white"
-    elif "Big Seller" in str(val):
-        return "background-color: purple; color: white"
-    return ""
-
-def color_trend(val):
-    if val == "UP":
-        return "background-color: green; color: white"
-    elif val == "DOWN":
-        return "background-color: red; color: white"
-    return ""
-
-# =============================
 # AI ANALYSIS FUNCTION
 # =============================
 def analyze(df):
@@ -97,9 +76,11 @@ def get_intraday_movers(sectors):
         for s in tickers:
             try:
                 df = yf.download(s, period="1d", interval="5m", progress=False)
-                if df.empty:
+                if df.empty or len(df) < 2:
                     continue
-                change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+                open_price = df['Close'].iloc[0]
+                last_price = df['Close'].iloc[-1]
+                change_pct = ((last_price - open_price) / open_price) * 100
                 movers.append({"Stock": s, "Change %": round(change_pct, 2)})
             except Exception:
                 continue
@@ -110,7 +91,7 @@ def get_intraday_movers(sectors):
     df_movers = pd.DataFrame(movers)
     df_movers["Change %"] = pd.to_numeric(df_movers["Change %"], errors="coerce").fillna(0)
 
-    return df_movers.sort_values(by="Change %", ascending=False, na_position="last").reset_index(drop=True)
+    return df_movers.sort_values(by="Change %", ascending=False, na_position="last").head(10).reset_index(drop=True)
 
 # =============================
 # UI
