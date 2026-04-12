@@ -6,11 +6,11 @@ import numpy as np
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 Intraday AI Scanner V4", layout="wide")
-st.title("🔥 Intraday AI Scanner V4 ULTRA (NEW BUILD)")
+st.set_page_config(page_title="🔥 AI Trading Bot V5", layout="wide")
+st.title("🔥 Intraday AI Trading Bot V5 (ULTIMATE)")
 
 # =============================
-# INPUT
+# SYMBOL INPUT
 # =============================
 symbol = st.text_input("Enter Symbol (NSE use .NS)", "RELIANCE.NS")
 
@@ -18,24 +18,21 @@ symbol = st.text_input("Enter Symbol (NSE use .NS)", "RELIANCE.NS")
 # DATA LOADER
 # =============================
 @st.cache_data(ttl=60)
-def fetch_data(symbol):
+def load(symbol):
     df = yf.download(symbol, period="5d", interval="5m", progress=False)
 
-    # FIX: flatten multiindex if exists
+    # FIX MULTIINDEX
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     return df
 
-df = fetch_data(symbol)
+df = load(symbol)
 
 if df is None or df.empty:
-    st.error("❌ No data found. Check symbol.")
+    st.error("❌ No data found")
     st.stop()
 
-# =============================
-# CLEAN DATA
-# =============================
 df = df.dropna()
 
 # =============================
@@ -55,50 +52,55 @@ df["RSI"] = 100 - (100 / (1 + rs))
 # Volume
 df["VOL_MA"] = df["Volume"].rolling(20).mean()
 
+# VWAP (simple version)
+df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / df["Volume"].cumsum()
+
 # =============================
-# SAFE LAST ROW
+# LAST VALUE SAFE
 # =============================
 last = df.iloc[-1]
 
-def v(x):
+def safe(x):
     if isinstance(x, (pd.Series, np.ndarray)):
         return float(x.iloc[-1])
     return float(x)
 
-close = v(last["Close"])
-ema9 = v(last["EMA9"])
-ema21 = v(last["EMA21"])
-ema50 = v(last["EMA50"])
-rsi = v(last["RSI"])
-vol = v(last["Volume"])
-vol_ma = v(last["VOL_MA"])
+close = safe(last["Close"])
+ema9 = safe(last["EMA9"])
+ema21 = safe(last["EMA21"])
+ema50 = safe(last["EMA50"])
+rsi = safe(last["RSI"])
+vol = safe(last["Volume"])
+vol_ma = safe(last["VOL_MA"])
+vwap = safe(last["VWAP"])
 
 # =============================
 # TREND ENGINE
 # =============================
-bull_trend = close > ema50 and ema9 > ema21
-bear_trend = close < ema50 and ema9 < ema21
+bull = close > ema50 and ema9 > ema21 and close > vwap
+bear = close < ema50 and ema9 < ema21 and close < vwap
 
 volume_ok = vol > vol_ma
 
-rsi_buy_zone = 45 <= rsi <= 70
-rsi_sell_zone = 30 <= rsi <= 55
+momentum_buy = 45 <= rsi <= 70
+momentum_sell = 30 <= rsi <= 55
 
 # =============================
-# CONFIDENCE SCORE
+# CONFIDENCE SCORE (0–100)
 # =============================
 score = 0
-score += 30 if bull_trend else 0
-score += 25 if volume_ok else 0
-score += 20 if rsi_buy_zone or rsi_sell_zone else 0
-score += 15 if close > ema21 else 0
+score += 25 if bull else 0
+score += 20 if bear else 0
+score += 20 if volume_ok else 0
+score += 15 if momentum_buy or momentum_sell else 0
+score += 10 if close > ema21 else 0
 score += 10 if abs(ema9 - ema21) > 0 else 0
 
 # =============================
 # SIGNALS
 # =============================
-buy_signal = bull_trend and volume_ok and rsi_buy_zone
-sell_signal = bear_trend and volume_ok and rsi_sell_zone
+buy = bull and volume_ok and momentum_buy
+sell = bear and volume_ok and momentum_sell
 
 # =============================
 # DASHBOARD
@@ -115,11 +117,11 @@ col4.metric("Confidence", str(score) + "%")
 # =============================
 st.subheader("📊 AI Signal Engine")
 
-if score < 40:
-    st.warning("⏳ NO TRADE ZONE (LOW CONFIDENCE)")
-elif buy_signal:
+if score < 35:
+    st.warning("⏳ NO TRADE ZONE")
+elif buy:
     st.success("🔥 STRONG BUY SIGNAL")
-elif sell_signal:
+elif sell:
     st.error("🔴 STRONG SELL SIGNAL")
 else:
     st.info("⚡ WAIT FOR CONFIRMATION")
@@ -129,12 +131,10 @@ else:
 # =============================
 st.subheader("📈 Market Trend")
 
-chart = df[["Close", "EMA9", "EMA21", "EMA50"]]
-
-st.line_chart(chart)
+st.line_chart(df[["Close", "EMA9", "EMA21", "EMA50", "VWAP"]])
 
 # =============================
-# DATA VIEW
+# DATA TABLE
 # =============================
-with st.expander("📊 FULL DATA"):
+with st.expander("📊 Full Data"):
     st.dataframe(df.tail(100))
