@@ -2,57 +2,45 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import datetime
 from sklearn.ensemble import RandomForestClassifier
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# CONFIG
+# PAGE CONFIG
 # =============================
-st.set_page_config(page_title="⚡ NSE Intraday AI PRO", layout="wide")
-st_autorefresh(interval=20000, key="refresh")
+st.set_page_config(page_title="⚡ NSE Intraday AI Scanner", layout="wide")
+st_autorefresh(interval=15000, key="refresh")  # 15 sec refresh
 
 # =============================
-# CACHE (FAST DATA)
-# =============================
-@st.cache_data(ttl=30)
-def get_data(stock, period, interval):
-    return yf.download(stock, period=period, interval=interval, progress=False)
-
-# =============================
-# NSE STOCK LIST
+# NSE SECTORS
 # =============================
 sectors = {
-    "Nifty": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
-    "Bank": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"],
-    "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS"],
+    "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
+    "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS"],
+    "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
+    "Auto": ["TATAMOTORS.NS","MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS"],
+    "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS"],
+    "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS"],
+    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"]
 }
 
 # =============================
 # SIDEBAR
 # =============================
 with st.sidebar:
-    st.header("⚡ Settings")
-    sector = st.selectbox("Select Sector", list(sectors.keys()))
-    show_movers = st.checkbox("Show Movers")
+    st.header("⚡ Intraday Settings")
+    sector_name = st.selectbox("Select Sector", list(sectors.keys()))
+    show_movers = st.checkbox("Show Top Intraday Movers")
 
 # =============================
-# MARKET TIME CHECK
+# ANALYSIS FUNCTION
 # =============================
-now = datetime.datetime.now().time()
-if now < datetime.time(9,15) or now > datetime.time(15,30):
-    st.warning("⚠ Market Closed (Data delay possible)")
-
-# =============================
-# ANALYSIS
-# =============================
-def analyze(df):
+def analyze_intraday(df):
     if df is None or len(df) < 30:
         return None
 
     df = df.copy()
-
     df['EMA9'] = df['Close'].ewm(span=9).mean()
     df['EMA21'] = df['Close'].ewm(span=21).mean()
 
@@ -63,148 +51,110 @@ def analyze(df):
     df['RSI'] = 100 - (100 / (1 + rs))
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-
     df.dropna(inplace=True)
 
     if len(df) < 20:
         return None
 
-    # AI
-    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
     features = ['EMA9','EMA21','RSI','VWAP']
+    df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
 
     X = df[features]
     y = df['Target']
 
-    model = RandomForestClassifier(n_estimators=100, max_depth=6)
+    model = RandomForestClassifier(n_estimators=80, max_depth=5)
     model.fit(X[:-1], y[:-1])
 
     pred = model.predict(X.iloc[[-1]])[0]
-    ai = "BUY" if pred == 1 else "SELL"
+    ai_signal = "BUY" if pred == 1 else "SELL"
 
-    # Volume
     avg_vol = df['Volume'].rolling(10).mean().iloc[-1]
-    vol = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
+    vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
 
-    last = df.iloc[-1]
-
-    # Entry / SL / Target
-    entry = last['Close']
-    sl = entry * 0.995
-    target = entry * 1.01
-
-    return last, ai, vol, entry, sl, target
+    return df.iloc[-1], ai_signal, vol_ratio
 
 # =============================
-# SCANNER
+# RUN SCANNER
 # =============================
-def scanner(tickers):
-    output = []
-
-    for s in tickers:
+def run_intraday_scanner(tickers):
+    results = []
+    for stock in tickers:
         try:
-            df = get_data(s, "1d", "5m")
-
+            df = yf.download(stock, period="1d", interval="5m", progress=False)
             if df.empty:
                 continue
-
-            res = analyze(df)
+            res = analyze_intraday(df)
             if res is None:
                 continue
-
-            last, ai, vol, entry, sl, target = res
-
-            trend = "UP" if last['EMA9'] > last['EMA21'] else "DOWN"
+            last, ai, vol = res
+            ltp = last['Close']
+            ema9 = last['EMA9']
+            ema21 = last['EMA21']
             rsi = last['RSI']
             vwap = last['VWAP']
-            price = last['Close']
-
+            trend = "UP" if ema9 > ema21 else "DOWN"
             signal = "WAIT"
-
-            if price > vwap and trend == "UP" and rsi > 60 and ai == "BUY":
+            if ltp > vwap and trend == "UP" and rsi > 55 and ai == "BUY":
                 signal = "BUY"
                 if vol > 2:
-                    signal = "🔥 BIG BUY"
-
-            elif price < vwap and trend == "DOWN" and rsi < 40 and ai == "SELL":
+                    signal = "🔥 BIG BUYER"
+            elif ltp < vwap and trend == "DOWN" and rsi < 45 and ai == "SELL":
                 signal = "SELL"
                 if vol > 2:
-                    signal = "🔥 BIG SELL"
-
-            output.append({
-                "Stock": s.replace(".NS",""),
-                "Price": round(price,2),
+                    signal = "🔥 BIG SELLER"
+            results.append({
+                "Stock": stock.replace(".NS",""),
+                "Price": round(ltp,2),
                 "Trend": trend,
                 "RSI": round(rsi,1),
-                "Vol Spike": round(vol,2),
+                "Volume Spike": round(vol,2),
                 "AI": ai,
-                "Signal": signal,
-                "Entry": round(entry,2),
-                "SL": round(sl,2),
-                "Target": round(target,2)
+                "Signal": signal
             })
-
         except:
             continue
-
-    df = pd.DataFrame(output)
-
-    if not df.empty:
-        df = df.sort_values(by="Vol Spike", ascending=False)
-
-    return df
+    return pd.DataFrame(results)
 
 # =============================
-# MOVERS
+# TOP INTRADAY MOVERS
 # =============================
-def movers(all_sec):
-    data = []
-
-    for t in all_sec.values():
-        for s in t:
+def get_intraday_movers(all_sectors):
+    movers = []
+    for tickers in all_sectors.values():
+        for stock in tickers:
             try:
-                df = get_data(s, "1d", "15m")
-
+                df = yf.download(stock, period="1d", interval="15m", progress=False)
                 if len(df) < 2:
                     continue
-
                 pct = ((df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1) * 100
-
-                data.append({
-                    "Stock": s.replace(".NS",""),
+                movers.append({
+                    "Stock": stock.replace(".NS",""),
                     "Change %": round(pct,2)
                 })
-
             except:
                 continue
-
-    return pd.DataFrame(data).sort_values(by="Change %", ascending=False).head(10)
+    return pd.DataFrame(movers).sort_values(by="Change %", ascending=False).head(10)
 
 # =============================
 # UI
 # =============================
-st.title("⚡ NSE INTRADAY AI PRO SCANNER")
+st.title("⚡ NSE Intraday AI Scanner")
 
-data = scanner(sectors[sector])
+st.subheader(f"Sector: {sector_name}")
+
+data = run_intraday_scanner(sectors[sector_name])
 
 if not data.empty:
     st.dataframe(data, use_container_width=True)
-
     stock = st.selectbox("Select Stock", data['Stock'])
-
-    chart = get_data(stock+".NS", "1d", "5m")
-
+    chart = yf.download(stock+".NS", period="1d", interval="5m", progress=False)
     if not chart.empty:
         st.line_chart(chart['Close'])
-
 else:
-    st.warning("No signals now")
+    st.warning("Market Closed or No new signals — showing last available signals")
 
-# Movers
 if show_movers:
     st.subheader("🚀 Top Intraday Movers")
-
-    mv = movers(sectors)
-
-    if not mv.empty:
-        st.dataframe(mv, use_container_width=True)
+    movers = get_intraday_movers(sectors)
+    if not movers.empty:
+        st.dataframe(movers, use_container_width=True)
