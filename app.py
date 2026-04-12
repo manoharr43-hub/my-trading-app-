@@ -8,8 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="⚡ NSE Intraday AI Scanner (Safe)", layout="wide")
-st_autorefresh(interval=15000, key="refresh")  # 15 sec refresh
+st.set_page_config(page_title="⚡ NSE Intraday AI Scanner (Safe v2)", layout="wide")
+st_autorefresh(interval=15000, key="refresh")
 
 # =============================
 # NSE SECTORS
@@ -26,51 +26,33 @@ sectors = {
 }
 
 # =============================
-# SIDEBAR
-# =============================
-with st.sidebar:
-    st.header("⚡ Intraday Settings")
-    sector_name = st.selectbox("Select Sector", list(sectors.keys()))
-    show_movers = st.checkbox("Show Top Intraday Movers")
-
-# =============================
 # ANALYSIS FUNCTION
 # =============================
 def analyze_intraday(df):
     if df is None or len(df) < 30:
         return None
-
     df = df.copy()
     df['EMA9'] = df['Close'].ewm(span=9).mean()
     df['EMA21'] = df['Close'].ewm(span=21).mean()
-
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
-
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
     df.dropna(inplace=True)
-
     if len(df) < 20:
         return None
-
     features = ['EMA9','EMA21','RSI','VWAP']
     df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
-
     X = df[features]
     y = df['Target']
-
     model = RandomForestClassifier(n_estimators=80, max_depth=5)
     model.fit(X[:-1], y[:-1])
-
     pred = model.predict(X.iloc[[-1]])[0]
     ai_signal = "BUY" if pred == 1 else "SELL"
-
     avg_vol = df['Volume'].rolling(10).mean().iloc[-1]
     vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
-
     return df.iloc[-1], ai_signal, vol_ratio
 
 # =============================
@@ -133,21 +115,20 @@ def get_intraday_movers(all_sectors):
                 })
             except:
                 continue
-    
-    # ✅ Safe check
     if not movers:
         return pd.DataFrame(columns=["Stock","Change %"])
-    
     df_movers = pd.DataFrame(movers)
-    return df_movers.sort_values(by="Change %", ascending=False).head(10)
+    # ✅ Safe sort with errors ignored
+    return df_movers.sort_values(by="Change %", ascending=False, na_position="last").head(10)
 
 # =============================
 # UI
 # =============================
-st.title("⚡ NSE Intraday AI Scanner (Safe Version)")
+st.title("⚡ NSE Intraday AI Scanner (Safe v2)")
+sector_name = st.sidebar.selectbox("Select Sector", list(sectors.keys()))
+show_movers = st.sidebar.checkbox("Show Top Intraday Movers")
 
 st.subheader(f"Sector: {sector_name}")
-
 data = run_intraday_scanner(sectors[sector_name])
 
 if not data.empty:
