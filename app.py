@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 # PAGE CONFIG + AUTO REFRESH
 # =============================
 st.set_page_config(page_title="🔥 NSE AI Scanner (Big Movers + Big Player)", layout="wide")
-st_autorefresh(interval=60000, key="refresh")  # safer refresh (1 min)
+st_autorefresh(interval=60000, key="refresh")  # safer refresh
 
 # =============================
 # NSE SECTORS
@@ -20,7 +20,7 @@ sectors = {
     "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
     "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],  # removed TATAMOTORS.NS
-    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],  # ✅ fixed string literal
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
@@ -72,3 +72,81 @@ def analyze(df):
     gain = (delta.where(delta>0,0)).rolling(14).mean()
     loss = (-delta.where(delta<0,0)).rolling(14).mean()
     rs = gain / (loss + 1e-9)
+    df['RSI'] = 100 - (100/(1+rs))
+    df['Target'] = (df['Close'].shift(-1).values > df['Close'].values).astype(int)
+    df.dropna(inplace=True)
+    if len(df)<10:
+        return None
+    features = ['EMA20','EMA50','RSI','VWAP']
+    X = df[features]
+    y = df['Target']
+    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.2,shuffle=False)
+    model = RandomForestClassifier(n_estimators=50,max_depth=5,random_state=42)
+    model.fit(X_train,y_train)
+    acc = round(model.score(X_test,y_test)*100,2)
+    pred = model.predict(X.iloc[[-1]])[0]
+    ai_signal = "BUY" if pred==1 else "SELL"
+    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+    vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
+    return df, vol_ratio, ai_signal, acc
+
+# =============================
+# RUN SCANNER
+# =============================
+def run_scanner(tickers):
+    results=[]
+    try:
+        data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
+    except:
+        return pd.DataFrame()
+    for s in tickers:
+        try:
+            df = data.copy() if len(tickers)==1 else data[s].copy()
+            df = df.dropna()
+            if df.empty or "Close" not in df.columns:
+                continue
+            df, vol_ratio, ai_signal, acc = analyze(df)
+            if df is None:
+                continue
+            change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+            trend = "UP" if change_pct>0 else "DOWN"
+            big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
+            results.append({
+                "Ticker": s,
+                "Change %": round(change_pct,2),
+                "Trend": trend,
+                "AI Signal": ai_signal,
+                "Accuracy %": acc,
+                "Volume Ratio": round(vol_ratio,2),
+                "Player": big_player
+            })
+        except Exception:
+            continue
+    return pd.DataFrame(results)
+
+# =============================
+# MAIN DISPLAY
+# =============================
+if manual_symbol:
+    df = run_scanner([manual_symbol])
+    st.subheader(f"📌 Manual Symbol Analysis: {manual_symbol}")
+    if df.empty:
+        st.warning("⚠️ No data found or invalid symbol.")
+    else:
+        st.dataframe(df.style.applymap(color_signal, subset=['AI Signal','Player'])
+                           .applymap(color_trend, subset=['Trend']))
+else:
+    tickers = sectors[sector_name]
+    df = run_scanner(tickers)
+    st.subheader(f"📌 Sector Analysis: {sector_name}")
+    if df.empty:
+        st.warning("⚠️ No data found for this sector.")
+    else:
+        st.dataframe(df.style.applymap(color_signal, subset=['AI Signal','Player'])
+                           .applymap(color_trend, subset=['Trend']))
+    if show_big:
+        all_df = run_scanner([t for sec in sectors.values() for t in sec])
+        top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
+        st.subheader("🔥 Top 10 Movers Across All Sectors")
+        st.dataframe(top10.style.applymap(color_signal, subset=['AI Signal','Player'])
+                              .applymap(color_trend, subset=['Trend']))
