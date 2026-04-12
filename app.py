@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 # PAGE CONFIG + AUTO REFRESH
 # =============================
 st.set_page_config(page_title="🔥 NSE AI Scanner (Big Movers + Big Player)", layout="wide")
-st_autorefresh(interval=60000, key="refresh")  # safer refresh
+st_autorefresh(interval=60000, key="refresh")  # safer refresh (1 min)
 
 # =============================
 # NSE SECTORS
@@ -36,27 +36,6 @@ with st.sidebar:
     show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
     st.header("🔎 Manual Symbol Entry")
     manual_symbol = st.text_input("Enter NSE Symbol (use .NS)", "")
-
-# =============================
-# COLOR FUNCTIONS
-# =============================
-def color_signal(val):
-    if "BUY" in str(val):
-        return "background-color: green; color: white"
-    elif "SELL" in str(val):
-        return "background-color: red; color: white"
-    elif "Big Buyer" in str(val):
-        return "background-color: orange; color: white"
-    elif "Big Seller" in str(val):
-        return "background-color: purple; color: white"
-    return ""
-
-def color_trend(val):
-    if val == "UP":
-        return "background-color: green; color: white"
-    elif val == "DOWN":
-        return "background-color: red; color: white"
-    return ""
 
 # =============================
 # AI ANALYSIS FUNCTION
@@ -125,28 +104,36 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
+# DISPLAY FUNCTION (NO Styler)
+# =============================
+def show_table(df, title):
+    st.subheader(title)
+    if df.empty:
+        st.warning("⚠️ No data found.")
+    else:
+        df_display = df.copy()
+        df_display['AI Signal'] = df_display['AI Signal'].apply(
+            lambda x: "🟢 BUY" if x=="BUY" else "🔴 SELL"
+        )
+        df_display['Trend'] = df_display['Trend'].apply(
+            lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
+        )
+        df_display['Player'] = df_display['Player'].apply(
+            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
+        )
+        st.dataframe(df_display, hide_index=True)
+
+# =============================
 # MAIN DISPLAY
 # =============================
 if manual_symbol:
     df = run_scanner([manual_symbol])
-    st.subheader(f"📌 Manual Symbol Analysis: {manual_symbol}")
-    if df.empty:
-        st.warning("⚠️ No data found or invalid symbol.")
-    else:
-        st.dataframe(df.style.applymap(color_signal, subset=['AI Signal','Player'])
-                           .applymap(color_trend, subset=['Trend']))
+    show_table(df, f"📌 Manual Symbol Analysis: {manual_symbol}")
 else:
     tickers = sectors[sector_name]
     df = run_scanner(tickers)
-    st.subheader(f"📌 Sector Analysis: {sector_name}")
-    if df.empty:
-        st.warning("⚠️ No data found for this sector.")
-    else:
-        st.dataframe(df.style.applymap(color_signal, subset=['AI Signal','Player'])
-                           .applymap(color_trend, subset=['Trend']))
+    show_table(df, f"📌 Sector Analysis: {sector_name}")
     if show_big:
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
         top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
-        st.subheader("🔥 Top 10 Movers Across All Sectors")
-        st.dataframe(top10.style.applymap(color_signal, subset=['AI Signal','Player'])
-                              .applymap(color_trend, subset=['Trend']))
+        show_table(top10, "🔥 Top 10 Movers Across All Sectors")
