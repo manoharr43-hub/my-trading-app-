@@ -6,9 +6,8 @@ import numpy as np
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 AI Intraday Scanner V2", layout="wide")
-
-st.title("🔥 Intraday AI Trading Scanner V2 (PRO)")
+st.set_page_config(page_title="🔥 Intraday AI Scanner V3", layout="wide")
+st.title("🔥 Intraday AI Scanner V3 ULTRA (PRO FIXED)")
 
 # =============================
 # INPUT
@@ -16,77 +15,83 @@ st.title("🔥 Intraday AI Trading Scanner V2 (PRO)")
 symbol = st.text_input("Enter Symbol (NSE use .NS)", "RELIANCE.NS")
 
 # =============================
-# LOAD DATA (SAFE)
+# DATA LOADER (SAFE)
 # =============================
 @st.cache_data(ttl=60)
-def load_data(symbol):
+def get_data(symbol):
     df = yf.download(symbol, period="5d", interval="5m", progress=False)
     return df
 
-data = load_data(symbol)
+df = get_data(symbol)
 
-if data is None or data.empty:
-    st.error("❌ No data found. Try correct symbol like RELIANCE.NS")
+if df is None or df.empty:
+    st.error("❌ No data found. Check symbol.")
     st.stop()
+
+# =============================
+# CLEAN DATA
+# =============================
+df = df.dropna()
 
 # =============================
 # INDICATORS
 # =============================
-data["EMA9"] = data["Close"].ewm(span=9).mean()
-data["EMA21"] = data["Close"].ewm(span=21).mean()
-data["EMA50"] = data["Close"].ewm(span=50).mean()
+df["EMA9"] = df["Close"].ewm(span=9).mean()
+df["EMA21"] = df["Close"].ewm(span=21).mean()
+df["EMA50"] = df["Close"].ewm(span=50).mean()
 
-# RSI
-delta = data["Close"].diff()
+delta = df["Close"].diff()
 gain = delta.clip(lower=0).rolling(14).mean()
 loss = (-delta.clip(upper=0)).rolling(14).mean()
 rs = gain / loss
-data["RSI"] = 100 - (100 / (1 + rs))
+df["RSI"] = 100 - (100 / (1 + rs))
 
-# Volume MA
-data["VOL_MA"] = data["Volume"].rolling(20).mean()
-
-# =============================
-# LAST VALID ROW (SAFE CLEAN)
-# =============================
-last = data.dropna().iloc[-1]
-
-close = float(last["Close"])
-ema9 = float(last["EMA9"])
-ema21 = float(last["EMA21"])
-ema50 = float(last["EMA50"])
-rsi = float(last["RSI"])
-vol = float(last["Volume"])
-vol_ma = float(last["VOL_MA"])
+df["VOL_MA"] = df["Volume"].rolling(20).mean()
 
 # =============================
-# TREND LOGIC
+# SAFE LAST ROW FUNCTION
 # =============================
-bull_trend = close > ema50 and ema9 > ema21
-bear_trend = close < ema50 and ema9 < ema21
+def val(x):
+    if isinstance(x, (pd.Series, np.ndarray)):
+        return float(x.iloc[-1])
+    return float(x)
 
-volume_ok = vol > vol_ma
+last = df.iloc[-1]
 
-rsi_buy_zone = 45 <= rsi <= 70
-rsi_sell_zone = 30 <= rsi <= 55
+close = val(last["Close"])
+ema9 = val(last["EMA9"])
+ema21 = val(last["EMA21"])
+ema50 = val(last["EMA50"])
+rsi = val(last["RSI"])
+vol = val(last["Volume"])
+vol_ma = val(last["VOL_MA"])
 
 # =============================
-# CONFIDENCE SCORE (0–100)
+# TREND ENGINE
+# =============================
+bull = close > ema50 and ema9 > ema21
+bear = close < ema50 and ema9 < ema21
+
+vol_ok = vol > vol_ma
+
+rsi_buy = 45 <= rsi <= 70
+rsi_sell = 30 <= rsi <= 55
+
+# =============================
+# SMART CONFIDENCE SCORE
 # =============================
 score = 0
-score += 25 if bull_trend else 0
-score += 25 if volume_ok else 0
-score += 20 if rsi_buy_zone or rsi_sell_zone else 0
-score += 15 if abs(ema9 - ema21) > 0 else 0
+score += 30 if bull else 0
+score += 25 if vol_ok else 0
+score += 20 if rsi_buy or rsi_sell else 0
 score += 15 if close > ema21 else 0
-
-confidence = score
+score += 10 if abs(ema9 - ema21) > 0 else 0
 
 # =============================
-# SIGNAL ENGINE
+# SIGNALS
 # =============================
-buy_signal = bull_trend and volume_ok and rsi_buy_zone
-sell_signal = bear_trend and volume_ok and rsi_sell_zone
+buy = bull and vol_ok and rsi_buy
+sell = bear and vol_ok and rsi_sell
 
 # =============================
 # DASHBOARD
@@ -96,18 +101,18 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Price", round(close, 2))
 col2.metric("RSI", round(rsi, 2))
 col3.metric("Volume", int(vol))
-col4.metric("Confidence", str(confidence) + "%")
+col4.metric("Confidence", str(score) + "%")
 
 # =============================
-# SIGNAL DISPLAY
+# SIGNAL PANEL
 # =============================
-st.subheader("📊 AI Signal")
+st.subheader("📊 AI Trading Signal")
 
-if confidence < 40:
+if score < 40:
     st.warning("⏳ NO TRADE ZONE (LOW CONFIDENCE)")
-elif buy_signal:
+elif buy:
     st.success("🔥 STRONG BUY SIGNAL")
-elif sell_signal:
+elif sell:
     st.error("🔴 STRONG SELL SIGNAL")
 else:
     st.info("⚡ WAIT FOR CONFIRMATION")
@@ -115,11 +120,12 @@ else:
 # =============================
 # CHART
 # =============================
-st.subheader("📈 Trend Chart")
-st.line_chart(data[["Close", "EMA9", "EMA21", "EMA50"]])
+st.subheader("📈 Market Trend")
+
+st.line_chart(df[["Close", "EMA9", "EMA21", "EMA50"]])
 
 # =============================
-# RAW DATA
+# DATA VIEW
 # =============================
-with st.expander("📊 Show Data"):
-    st.dataframe(data.tail(50))
+with st.expander("📊 Full Data"):
+    st.dataframe(df.tail(100))
