@@ -8,7 +8,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="⚡ NSE Intraday AI Scanner", layout="wide")
+st.set_page_config(page_title="⚡ NSE Intraday AI Scanner (Safe)", layout="wide")
 st_autorefresh(interval=15000, key="refresh")  # 15 sec refresh
 
 # =============================
@@ -116,7 +116,7 @@ def run_intraday_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# TOP INTRADAY MOVERS
+# TOP INTRADAY MOVERS (SAFE)
 # =============================
 def get_intraday_movers(all_sectors):
     movers = []
@@ -133,12 +133,18 @@ def get_intraday_movers(all_sectors):
                 })
             except:
                 continue
-    return pd.DataFrame(movers).sort_values(by="Change %", ascending=False).head(10)
+    
+    # ✅ Safe check
+    if not movers:
+        return pd.DataFrame(columns=["Stock","Change %"])
+    
+    df_movers = pd.DataFrame(movers)
+    return df_movers.sort_values(by="Change %", ascending=False).head(10)
 
 # =============================
 # UI
 # =============================
-st.title("⚡ NSE Intraday AI Scanner")
+st.title("⚡ NSE Intraday AI Scanner (Safe Version)")
 
 st.subheader(f"Sector: {sector_name}")
 
@@ -158,3 +164,5 @@ if show_movers:
     movers = get_intraday_movers(sectors)
     if not movers.empty:
         st.dataframe(movers, use_container_width=True)
+    else:
+        st.info("No movers data available (Market Closed)")
