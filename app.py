@@ -136,4 +136,37 @@ else:
     if show_big:
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
         top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
-        show_table(top10, "🔥 Top 10 Movers Across All Sectors")
+        show_table(top10, "🔥 Top 10 Movers Across All Sectors") def run_scanner(tickers):
+    results=[]
+    try:
+        data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
+    except Exception as e:
+        st.error(f"⚠️ Data fetch error: {e}")
+        return pd.DataFrame()
+    for s in tickers:
+        try:
+            df = data.copy() if len(tickers)==1 else data[s].copy()
+            df = df.dropna()
+            if df.empty or "Close" not in df.columns:
+                st.warning(f"⚠️ No data found for {s}. Symbol may be delisted or unavailable.")
+                continue
+            df, vol_ratio, ai_signal, acc = analyze(df)
+            if df is None:
+                continue
+            change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+            trend = "UP" if change_pct>0 else "DOWN"
+            big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
+            results.append({
+                "Ticker": s,
+                "Change %": round(change_pct,2),
+                "Trend": trend,
+                "AI Signal": ai_signal,
+                "Accuracy %": acc,
+                "Volume Ratio": round(vol_ratio,2),
+                "Player": big_player
+            })
+        except Exception as e:
+            st.error(f"⚠️ Error processing {s}: {e}")
+            continue
+    return pd.DataFrame(results)
+
