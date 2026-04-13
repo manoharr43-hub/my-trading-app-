@@ -7,9 +7,9 @@ from sklearn.model_selection import train_test_split
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# PAGE CONFIG + AUTO REFRESH
+# PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Support/Resistance Filter)", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI Scanner (Entry/Exit/Targets)", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -25,20 +25,6 @@ sectors = {
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
 }
-
-# =============================
-# SIDEBAR
-# =============================
-with st.sidebar:
-    st.header("📊 Select NSE Sector")
-    sector_name = st.selectbox("Sector", list(sectors.keys()))
-    st.header("📌 Top 10 Movers")
-    show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
-    st.header("🔎 Manual Symbol Entry")
-    manual_symbol = st.text_input("Enter NSE Symbol (use .NS)", "")
-    st.header("⚡ Quick Filter (Support/Resistance)")
-    filter_choice = st.radio("Select Condition", ["🟢 Support Near", "🔴 Resistance Near"])
-    run_filter = st.button("Apply Filter")
 
 # =============================
 # AI ANALYSIS FUNCTION
@@ -68,18 +54,26 @@ def analyze(df):
     acc = round(model.score(X_test,y_test)*100,2)
     pred = model.predict(X.iloc[[-1]])[0]
     ai_signal = "BUY" if pred==1 else "SELL"
-    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
-    return df, vol_ratio, ai_signal, acc
+    return df, ai_signal
 
 # =============================
-# SUPPORT & RESISTANCE FUNCTION
+# SUPPORT & RESISTANCE
 # =============================
 def support_resistance(df):
     closes = df['Close'].tail(50)
     support = round(closes.min(),2)
     resistance = round(closes.max(),2)
     return support, resistance
+
+# =============================
+# ENTRY/EXIT/TARGETS
+# =============================
+def trade_levels(price, support, resistance):
+    entry = price
+    exit_point = support if price < resistance else resistance
+    target1 = round((price + (resistance-support)*0.5),2)
+    target2 = round(resistance,2)
+    return entry, exit_point, target1, target2
 
 # =============================
 # RUN SCANNER
@@ -96,24 +90,26 @@ def run_scanner(tickers):
             df = df.dropna()
             if df.empty or "Close" not in df.columns:
                 continue
-            df, vol_ratio, ai_signal, acc = analyze(df)
+            df, ai_signal = analyze(df)
             if df is None:
                 continue
+            price = round(df['Close'].iloc[-1],2)
             change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
             trend = "UP" if change_pct>0 else "DOWN"
-            big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
             support, resistance = support_resistance(df)
+            entry, exit_point, target1, target2 = trade_levels(price, support, resistance)
             results.append({
                 "Ticker": s,
-                "Price": round(df['Close'].iloc[-1],2),
+                "Price": price,
                 "Support": support,
                 "Resistance": resistance,
-                "Change %": round(change_pct,2),
                 "Trend": trend,
                 "AI Signal": ai_signal,
-                "Accuracy %": acc,
-                "Volume Ratio": round(vol_ratio,2),
-                "Player": big_player
+                "Entry Point": entry,
+                "Exit Point": exit_point,
+                "Target1": target1,
+                "Target2": target2,
+                "Highlight": "🟢 Near Support" if abs(price-support)<2 else ("🔴 Near Resistance" if abs(price-resistance)<2 else "")
             })
         except Exception:
             continue
@@ -134,34 +130,27 @@ def show_table(df, title):
         df_display['Trend'] = df_display['Trend'].apply(
             lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
         )
-        df_display['Player'] = df_display['Player'].apply(
-            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
-        )
         st.dataframe(df_display, hide_index=True)
 
 # =============================
 # MAIN DISPLAY
 # =============================
-if run_filter:
-    all_df = run_scanner([t for sec in sectors.values() for t in sec])
-    if not all_df.empty:
-        if filter_choice == "🟢 Support Near":
-            filtered = all_df[abs(all_df["Price"] - all_df["Support"]) < 2]
-        else:
-            filtered = all_df[abs(all_df["Price"] - all_df["Resistance"]) < 2]
-        show_table(filtered, f"📌 Stocks near {filter_choice}")
-    else:
-        st.warning("⚠️ No data found.")
+st.title("🔥 NSE AI Scanner (Entry/Exit/Targets)")
 
-elif manual_symbol:
-    df = run_scanner([manual_symbol])
-    show_table(df, f"📌 Manual Symbol Analysis: {manual_symbol}")
-
-else:
-    tickers = sectors[sector_name]
-    df = run_scanner(tickers)
-    show_table(df, f"📌 Sector Analysis: {sector_name}")
-    if show_big:
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("🟢 Stocks near Support"):
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
-        show_table(top10, "🔥 Top 10 Movers Across All Sectors")
+        filtered = all_df[all_df["Highlight"]=="🟢 Near Support"]
+        show_table(filtered, "📌 Stocks near Support")
+
+with col2:
+    if st.button("🔴 Stocks near Resistance"):
+        all_df = run_scanner([t for sec in sectors.values() for t in sec])
+        filtered = all_df[all_df["Highlight"]=="🔴 Near Resistance"]
+        show_table(filtered, "📌 Stocks near Resistance")
+
+with col3:
+    if st.button("📊 Show All Stocks"):
+        all_df = run_scanner([t for sec in sectors.values() for t in sec])
+        show_table(all_df, "📌 All NSE Stocks with Entry/Exit/Targets")
