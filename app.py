@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG + AUTO REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Support/Resistance Filter)", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI Scanner (Support/Resistance)", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -25,20 +25,6 @@ sectors = {
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
 }
-
-# =============================
-# SIDEBAR
-# =============================
-with st.sidebar:
-    st.header("📊 Select NSE Sector")
-    sector_name = st.selectbox("Sector", list(sectors.keys()))
-    st.header("📌 Top 10 Movers")
-    show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
-    st.header("🔎 Manual Symbol Entry")
-    manual_symbol = st.text_input("Enter NSE Symbol (use .NS)", "")
-    st.header("⚡ Quick Filter (Support/Resistance)")
-    filter_choice = st.radio("Select Condition", ["🟢 Support Near", "🔴 Resistance Near"])
-    run_filter = st.button("Apply Filter")
 
 # =============================
 # AI ANALYSIS FUNCTION
@@ -82,6 +68,16 @@ def support_resistance(df):
     return support, resistance
 
 # =============================
+# ENTRY/EXIT/TARGET POINTS
+# =============================
+def trade_levels(price, support, resistance):
+    entry = price
+    exit_point = support if price<resistance else resistance
+    target1 = round((price + (resistance-support)*0.5),2)
+    target2 = round(resistance,2)
+    return entry, exit_point, target1, target2
+
+# =============================
 # RUN SCANNER
 # =============================
 def run_scanner(tickers):
@@ -101,19 +97,19 @@ def run_scanner(tickers):
                 continue
             change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
             trend = "UP" if change_pct>0 else "DOWN"
-            big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
             support, resistance = support_resistance(df)
+            entry, exit_point, target1, target2 = trade_levels(df['Close'].iloc[-1], support, resistance)
             results.append({
                 "Ticker": s,
                 "Price": round(df['Close'].iloc[-1],2),
                 "Support": support,
                 "Resistance": resistance,
-                "Change %": round(change_pct,2),
                 "Trend": trend,
                 "AI Signal": ai_signal,
-                "Accuracy %": acc,
-                "Volume Ratio": round(vol_ratio,2),
-                "Player": big_player
+                "Entry Point": entry,
+                "Exit Point": exit_point,
+                "Target1": target1,
+                "Target2": target2
             })
         except Exception:
             continue
@@ -134,34 +130,27 @@ def show_table(df, title):
         df_display['Trend'] = df_display['Trend'].apply(
             lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
         )
-        df_display['Player'] = df_display['Player'].apply(
-            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
-        )
         st.dataframe(df_display, hide_index=True)
 
 # =============================
 # MAIN DISPLAY
 # =============================
-if run_filter:
-    all_df = run_scanner([t for sec in sectors.values() for t in sec])
-    if not all_df.empty:
-        if filter_choice == "🟢 Support Near":
-            filtered = all_df[abs(all_df["Price"] - all_df["Support"]) < 2]
-        else:
-            filtered = all_df[abs(all_df["Price"] - all_df["Resistance"]) < 2]
-        show_table(filtered, f"📌 Stocks near {filter_choice}")
-    else:
-        st.warning("⚠️ No data found.")
+st.title("🔥 NSE AI Scanner")
 
-elif manual_symbol:
-    df = run_scanner([manual_symbol])
-    show_table(df, f"📌 Manual Symbol Analysis: {manual_symbol}")
-
-else:
-    tickers = sectors[sector_name]
-    df = run_scanner(tickers)
-    show_table(df, f"📌 Sector Analysis: {sector_name}")
-    if show_big:
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("🟢 Stocks near Support"):
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
-        show_table(top10, "🔥 Top 10 Movers Across All Sectors")
+        filtered = all_df[abs(all_df["Price"] - all_df["Support"]) < 2]
+        show_table(filtered, "📌 Stocks near Support")
+
+with col2:
+    if st.button("🔴 Stocks near Resistance"):
+        all_df = run_scanner([t for sec in sectors.values() for t in sec])
+        filtered = all_df[abs(all_df["Price"] - all_df["Resistance"]) < 2]
+        show_table(filtered, "📌 Stocks near Resistance")
+
+with col3:
+    if st.button("📊 Show All Sector Stocks"):
+        all_df = run_scanner([t for sec in sectors.values() for t in sec])
+        show_table(all_df, "📌 All NSE Stocks with Entry/Exit/Targets")
