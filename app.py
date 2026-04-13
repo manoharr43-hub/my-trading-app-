@@ -133,31 +133,42 @@ def highlight_signal(row):
         return [''] * len(row)
 
 # =============================
-# SCANNER
+# SCANNER (UPDATED SCORE LOGIC 🔥)
 # =============================
 def scanner():
     results = []
     data = get_data(all_stocks)
+
     for s in all_stocks:
         try:
             df = data[s].dropna()
             out = analyze(df)
             if out is None:
                 continue
+
             df, signal, big = out
             price = round(df['Close'].iloc[-1],2)
             support, resistance = levels(df)
             sl, t1, t2 = trade(price, support, resistance, signal)
             trend = "UP" if df['Close'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
 
+            # 🔥 NEW BALANCED SCORE
             score = 0
             breakdown = []
+
             if signal == "BUY":
-                score += 2; breakdown.append("Signal=+2")
-            if trend == "UP":
-                score += 1; breakdown.append("Trend=+1")
-            if big == "Big Buyer":
-                score += 2; breakdown.append("BigPlayer=+2")
+                score += 2; breakdown.append("BUY=+2")
+                if trend == "UP":
+                    score += 1; breakdown.append("Trend=+1")
+                if big == "Big Buyer":
+                    score += 2; breakdown.append("Volume=+2")
+
+            elif signal == "SELL":
+                score += 2; breakdown.append("SELL=+2")
+                if trend == "DOWN":
+                    score += 1; breakdown.append("Trend=+1")
+                if big == "Big Seller":
+                    score += 2; breakdown.append("Volume=+2")
 
             results.append({
                 "Stock": s,
@@ -173,12 +184,14 @@ def scanner():
                 "Score": score,
                 "Breakdown": ", ".join(breakdown)
             })
+
         except:
             continue
+
     return pd.DataFrame(results).sort_values(by="Score", ascending=False)
 
 # =============================
-# UI
+# UI (SAME)
 # =============================
 df = scanner()
 tabs = st.tabs(list(sectors.keys()))
@@ -207,15 +220,16 @@ top = df[df["Score"]>=3]
 st.dataframe(top.style.apply(highlight_signal, axis=1), use_container_width=True)
 
 # =============================
-# EXPORT OPTION
+# EXPORT
 # =============================
 st.download_button("⬇️ Download Excel", df.to_csv(index=False).encode('utf-8'), "scanner_results.csv", "text/csv")
 
 # =============================
-# CHARTS
+# CHART
 # =============================
 st.subheader("📈 Trend Chart (Sample Stock)")
 sample = df.iloc[0]["Stock"] if not df.empty else None
+
 if sample:
     data = get_data([sample])[sample].dropna()
     st.line_chart(data[['Close']])
