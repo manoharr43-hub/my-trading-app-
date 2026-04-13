@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Entry/Exit/Targets)", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI Scanner (Entry/Exit/Targets + Big Player)", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -51,10 +51,12 @@ def analyze(df):
     X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.2,shuffle=False)
     model = RandomForestClassifier(n_estimators=50,max_depth=5,random_state=42)
     model.fit(X_train,y_train)
-    acc = round(model.score(X_test,y_test)*100,2)
     pred = model.predict(X.iloc[[-1]])[0]
     ai_signal = "BUY" if pred==1 else "SELL"
-    return df, ai_signal
+    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+    vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
+    big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
+    return df, ai_signal, big_player
 
 # =============================
 # SUPPORT & RESISTANCE
@@ -90,7 +92,7 @@ def run_scanner(tickers):
             df = df.dropna()
             if df.empty or "Close" not in df.columns:
                 continue
-            df, ai_signal = analyze(df)
+            df, ai_signal, big_player = analyze(df)
             if df is None:
                 continue
             price = round(df['Close'].iloc[-1],2)
@@ -109,6 +111,7 @@ def run_scanner(tickers):
                 "Exit Point": exit_point,
                 "Target1": target1,
                 "Target2": target2,
+                "Big Player": big_player,
                 "Highlight": "🟢 Near Support" if abs(price-support)<2 else ("🔴 Near Resistance" if abs(price-resistance)<2 else "")
             })
         except Exception:
@@ -130,12 +133,15 @@ def show_table(df, title):
         df_display['Trend'] = df_display['Trend'].apply(
             lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
         )
+        df_display['Big Player'] = df_display['Big Player'].apply(
+            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
+        )
         st.dataframe(df_display, hide_index=True)
 
 # =============================
 # MAIN DISPLAY
 # =============================
-st.title("🔥 NSE AI Scanner (Entry/Exit/Targets)")
+st.title("🔥 NSE AI Scanner (Entry/Exit/Targets + Big Player)")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -153,4 +159,4 @@ with col2:
 with col3:
     if st.button("📊 Show All Stocks"):
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        show_table(all_df, "📌 All NSE Stocks with Entry/Exit/Targets")
+        show_table(all_df, "📌 All NSE Stocks with Entry/Exit/Targets + Big Player")
