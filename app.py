@@ -68,7 +68,7 @@ def support_resistance(df):
     return support, resistance
 
 # =============================
-# ENTRY/STOPLOSS/TARGETS
+# ENTRY/STOPLOSS/TARGETS + BASE CONFIRMATION
 # =============================
 def trade_levels(price, support, resistance, ai_signal):
     entry = price
@@ -76,12 +76,12 @@ def trade_levels(price, support, resistance, ai_signal):
         stop_loss = support
         target1 = round(price + (resistance-support)*0.5,2)
         target2 = round(resistance,2)
-        base = "BUY BASE ✅"
+        base = "✅ BUY BASE (Confirmed)"
     else:
         stop_loss = resistance
         target1 = round(price - (resistance-support)*0.5,2)
         target2 = round(support,2)
-        base = "SELL BASE ❌"
+        base = "❌ SELL BASE (Confirmed)"
     return entry, stop_loss, target1, target2, base
 
 # =============================
@@ -149,7 +149,7 @@ def show_table(df, title):
 # =============================
 # MAIN DISPLAY
 # =============================
-st.title("🔥 NSE AI Scanner (Trading View Style: Entry/StopLoss/Targets + Base + Big Player)")
+st.title("🔥 NSE AI Scanner (Trading View Style: Entry/StopLoss/Targets + Base Confirmation + Big Player)")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -167,4 +167,4 @@ with col2:
 with col3:
     if st.button("📊 Show All Stocks"):
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        show_table(all_df, "📌 All NSE Stocks with Entry/StopLoss/Targets + Base + Big Player")
+        show_table(all_df, "📌 All NSE Stocks with Entry/StopLoss/Targets + Base Confirmation + Big Player")
