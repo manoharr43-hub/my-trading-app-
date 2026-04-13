@@ -3,12 +3,11 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner PRO MAX", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI Scanner FINAL", layout="wide")
 
 # =============================
 # MODE
@@ -35,7 +34,7 @@ sectors = {
 }
 
 # =============================
-# AI
+# AI ANALYSIS
 # =============================
 def analyze(df):
     if len(df) < 40:
@@ -61,13 +60,13 @@ def analyze(df):
     return "BUY" if pred==1 else "SELL"
 
 # =============================
-# SUPPORT RESISTANCE
+# SUPPORT / RESISTANCE
 # =============================
 def support_resistance(df):
     return round(df['Close'].tail(50).min(),2), round(df['Close'].tail(50).max(),2)
 
 # =============================
-# TRADE
+# TRADE LEVELS
 # =============================
 def trade_levels(price,support,resistance,signal):
 
@@ -85,7 +84,7 @@ def trade_levels(price,support,resistance,signal):
     return round(entry,2),round(sl,2),round(t1,2),round(t2,2)
 
 # =============================
-# CONFIRM
+# CONFIRMATION (5m + 15m)
 # =============================
 def confirm_tf(ticker):
     try:
@@ -95,15 +94,12 @@ def confirm_tf(ticker):
         s1 = analyze(df5)
         s2 = analyze(df15)
 
-        if s1==s2:
-            return "✅"
-        else:
-            return "⚠️"
+        return "✅" if s1 == s2 else "⚠️"
     except:
         return ""
 
 # =============================
-# SCANNER (FIXED)
+# SCANNER
 # =============================
 def run_scanner(tickers):
 
@@ -114,18 +110,16 @@ def run_scanner(tickers):
             df = yf.download(s, period=days, interval=interval, progress=False)
 
             if df.empty:
-                results.append({"Ticker":s,"AI Signal":"NO DATA"})
+                results.append({"Ticker":s,"Signal":"NO DATA"})
                 continue
 
             price = round(df['Close'].iloc[-1],2)
             signal = analyze(df)
 
             support,resistance = support_resistance(df)
-
             entry,sl,t1,t2 = trade_levels(price,support,resistance,signal if signal else "SELL")
 
             time = df.index[-1]
-
             confirm = confirm_tf(s)
 
             results.append({
@@ -143,12 +137,64 @@ def run_scanner(tickers):
             })
 
         except:
-            results.append({"Ticker":s,"AI Signal":"ERROR"})
+            results.append({"Ticker":s,"Signal":"ERROR"})
 
     return pd.DataFrame(results)
 
 # =============================
-# UI
+# LIVE DISPLAY (OLD FORMAT)
+# =============================
+def show_live(df):
+    st.subheader("📡 Live Market")
+
+    if df.empty:
+        st.warning("No Data")
+        return
+
+    d = df.copy()
+
+    d['Signal'] = d['Signal'].apply(
+        lambda x: "🟢 BUY" if x=="BUY" else ("🔴 SELL" if x=="SELL" else x)
+    )
+
+    st.dataframe(
+        d[[
+            "Ticker","Price","Signal",
+            "Support","Resistance",
+            "Entry","Stoploss","Target1","Target2"
+        ]],
+        use_container_width=True
+    )
+
+# =============================
+# BACKTEST DISPLAY
+# =============================
+def show_backtest(df):
+    st.subheader("📊 Backtest Data")
+
+    if df.empty:
+        st.warning("No Data")
+        return
+
+    d = df.copy()
+
+    d['Signal'] = d['Signal'].apply(
+        lambda x: "🟢 BUY" if x=="BUY" else ("🔴 SELL" if x=="SELL" else x)
+    )
+
+    d['Time'] = pd.to_datetime(d['Time'], errors='coerce').dt.strftime('%d-%m %H:%M')
+
+    st.dataframe(
+        d[[
+            "Ticker","Time","Signal","Confirm",
+            "Price","Support","Resistance",
+            "Entry","Stoploss","Target1","Target2"
+        ]],
+        use_container_width=True
+    )
+
+# =============================
+# MAIN UI
 # =============================
 st.title("🔥 NSE AI Scanner FINAL")
 
@@ -158,8 +204,9 @@ if st.button("🚀 Run Scanner"):
 
     df = run_scanner(all_stocks)
 
-    if not df.empty:
-        df['Time'] = pd.to_datetime(df['Time'], errors='coerce').dt.strftime('%d-%m %H:%M')
-        st.dataframe(df, use_container_width=True)
+    if mode == "🔴 Live":
+        show_live(df)
+    else:
+        show_backtest(df)
 
     st.write("Total Stocks:", len(df))
