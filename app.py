@@ -62,14 +62,4 @@ def analyze(df):
     df['RSI'] = 100 - (100 / (1 + rs))
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-    df.dropna(inplace=True)
-
-    if len(df) < 20:
-        return None
-
-    features = ['EMA20','EMA50','RSI','VWAP','MACD']
-    X = df[features]
-    y = df['Target']
-
-    X_train, _, y_train, _ = train_test_split(X, y
+    df['Target'] = (df['Close'].shift(-1
