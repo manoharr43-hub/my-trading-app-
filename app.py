@@ -129,4 +129,24 @@ def show_table(df, title):
             lambda x: "🟢 BUY" if x=="BUY" else "🔴 SELL"
         )
         df_display['Trend'] = df_display['Trend'].apply(
-            lambda x: "🟢 UP" if x
+            lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
+        )
+        df_display['Player'] = df_display['Player'].apply(
+            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
+        )
+        st.dataframe(df_display, hide_index=True)
+
+# =============================
+# MAIN DISPLAY
+# =============================
+if manual_symbol:
+    df = run_scanner([manual_symbol])
+    show_table(df, f"📌 Manual Symbol Analysis: {manual_symbol}")
+else:
+    tickers = sectors[sector_name]
+    df = run_scanner(tickers)
+    show_table(df, f"📌 Sector Analysis: {sector_name}")
+    if show_big:
+        all_df = run_scanner([t for sec in sectors.values() for t in sec])
+        top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
+        show_table(top10, "🔥 Top 10 Movers Across All Sectors")
