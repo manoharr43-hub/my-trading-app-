@@ -29,7 +29,7 @@ sectors = {
 all_stocks = list(set([s for sec in sectors.values() for s in sec]))
 
 # =============================
-# CACHE DATA (FAST)
+# CACHE DATA
 # =============================
 @st.cache_data(ttl=60)
 def get_data(tickers):
@@ -45,7 +45,7 @@ def train_model(X, y):
     return model
 
 # =============================
-# ANALYSIS FUNCTION
+# ANALYSIS
 # =============================
 def analyze(df):
     if df is None or len(df) < 50:
@@ -53,7 +53,6 @@ def analyze(df):
 
     df = df.copy()
 
-    # Indicators
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
@@ -84,7 +83,6 @@ def analyze(df):
 
     pred = model.predict(X.iloc[[-1]])[0]
 
-    # SMART SIGNAL
     if pred == 1 and df['RSI'].iloc[-1] < 65 and df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
         signal = "BUY"
     elif pred == 0 and df['RSI'].iloc[-1] > 35 and df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
@@ -92,7 +90,6 @@ def analyze(df):
     else:
         signal = "SIDEWAYS"
 
-    # Big Player
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
 
@@ -114,7 +111,7 @@ def levels(df):
     return support, resistance
 
 # =============================
-# ENTRY / EXIT / TARGET
+# TRADE
 # =============================
 def trade(price, support, resistance, signal):
     sl = round(price * 0.98,2)
@@ -129,6 +126,17 @@ def trade(price, support, resistance, signal):
         t1, t2 = "-", "-"
 
     return sl, t1, t2
+
+# =============================
+# 🎨 COLOR FUNCTION (NEW)
+# =============================
+def highlight_signal(row):
+    if row["Signal"] == "BUY":
+        return ['background-color: #2196F3; color: white'] * len(row)   # 🔵 Blue
+    elif row["Signal"] == "SELL":
+        return ['background-color: #f44336; color: white'] * len(row)   # 🔴 Red
+    else:
+        return [''] * len(row)
 
 # =============================
 # SCANNER
@@ -153,7 +161,6 @@ def scanner():
 
             trend = "UP" if df['Close'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
 
-            # SCORE
             score = 0
             if signal == "BUY": score += 2
             if trend == "UP": score += 1
@@ -179,7 +186,7 @@ def scanner():
     return pd.DataFrame(results).sort_values(by="Score", ascending=False)
 
 # =============================
-# UI FILTERS
+# UI
 # =============================
 df = scanner()
 
@@ -187,19 +194,20 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("🟢 Strong BUY"):
-        st.dataframe(df[(df["Signal"]=="BUY") & (df["Score"]>=3)], use_container_width=True)
+        st.dataframe(df[(df["Signal"]=="BUY") & (df["Score"]>=3)].style.apply(highlight_signal, axis=1), use_container_width=True)
 
 with col2:
     if st.button("🔴 Strong SELL"):
-        st.dataframe(df[(df["Signal"]=="SELL") & (df["Score"]>=3)], use_container_width=True)
+        st.dataframe(df[(df["Signal"]=="SELL") & (df["Score"]>=3)].style.apply(highlight_signal, axis=1), use_container_width=True)
 
 with col3:
     if st.button("📊 All Trades"):
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df.style.apply(highlight_signal, axis=1), use_container_width=True)
 
 # =============================
-# AUTO DISPLAY TOP SIGNALS
+# TOP TRADES
 # =============================
 st.subheader("🔥 TOP AI TRADES")
 top = df[df["Score"]>=3]
-st.dataframe(top, use_container_width=True)
+
+st.dataframe(top.style.apply(highlight_signal, axis=1), use_container_width=True)
