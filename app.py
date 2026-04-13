@@ -52,10 +52,8 @@ def analyze(df):
         return None
 
     df = df.copy()
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-
     df['EMA12'] = df['Close'].ewm(span=12).mean()
     df['EMA26'] = df['Close'].ewm(span=26).mean()
     df['MACD'] = df['EMA12'] - df['EMA26']
@@ -67,7 +65,6 @@ def analyze(df):
     df['RSI'] = 100 - (100 / (1 + rs))
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
@@ -80,7 +77,6 @@ def analyze(df):
 
     X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
     model = train_model(X_train, y_train)
-
     pred = model.predict(X.iloc[[-1]])[0]
 
     if pred == 1 and df['RSI'].iloc[-1] < 65 and df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
@@ -115,7 +111,6 @@ def levels(df):
 # =============================
 def trade(price, support, resistance, signal):
     sl = round(price * 0.98,2)
-
     if signal == "BUY":
         t1 = round(price + (resistance - support) * 0.5,2)
         t2 = resistance
@@ -124,17 +119,16 @@ def trade(price, support, resistance, signal):
         t2 = support
     else:
         t1, t2 = "-", "-"
-
     return sl, t1, t2
 
 # =============================
-# 🎨 COLOR FUNCTION (NEW)
+# COLOR FUNCTION
 # =============================
 def highlight_signal(row):
     if row["Signal"] == "BUY":
-        return ['background-color: #2196F3; color: white'] * len(row)   # 🔵 Blue
+        return ['background-color: #2196F3; color: white'] * len(row)
     elif row["Signal"] == "SELL":
-        return ['background-color: #f44336; color: white'] * len(row)   # 🔴 Red
+        return ['background-color: #f44336; color: white'] * len(row)
     else:
         return [''] * len(row)
 
@@ -144,27 +138,26 @@ def highlight_signal(row):
 def scanner():
     results = []
     data = get_data(all_stocks)
-
     for s in all_stocks:
         try:
             df = data[s].dropna()
             out = analyze(df)
-
             if out is None:
                 continue
-
             df, signal, big = out
             price = round(df['Close'].iloc[-1],2)
-
             support, resistance = levels(df)
             sl, t1, t2 = trade(price, support, resistance, signal)
-
             trend = "UP" if df['Close'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
 
             score = 0
-            if signal == "BUY": score += 2
-            if trend == "UP": score += 1
-            if big == "Big Buyer": score += 2
+            breakdown = []
+            if signal == "BUY":
+                score += 2; breakdown.append("Signal=+2")
+            if trend == "UP":
+                score += 1; breakdown.append("Trend=+1")
+            if big == "Big Buyer":
+                score += 2; breakdown.append("BigPlayer=+2")
 
             results.append({
                 "Stock": s,
@@ -177,29 +170,31 @@ def scanner():
                 "Target1": t1,
                 "Target2": t2,
                 "Big Player": big,
-                "Score": score
+                "Score": score,
+                "Breakdown": ", ".join(breakdown)
             })
-
         except:
             continue
-
     return pd.DataFrame(results).sort_values(by="Score", ascending=False)
 
 # =============================
 # UI
 # =============================
 df = scanner()
+tabs = st.tabs(list(sectors.keys()))
+
+for i, sector in enumerate(sectors.keys()):
+    with tabs[i]:
+        sector_df = df[df["Stock"].isin(sectors[sector])]
+        st.dataframe(sector_df.style.apply(highlight_signal, axis=1), use_container_width=True)
 
 col1, col2, col3 = st.columns(3)
-
 with col1:
     if st.button("🟢 Strong BUY"):
         st.dataframe(df[(df["Signal"]=="BUY") & (df["Score"]>=3)].style.apply(highlight_signal, axis=1), use_container_width=True)
-
 with col2:
     if st.button("🔴 Strong SELL"):
         st.dataframe(df[(df["Signal"]=="SELL") & (df["Score"]>=3)].style.apply(highlight_signal, axis=1), use_container_width=True)
-
 with col3:
     if st.button("📊 All Trades"):
         st.dataframe(df.style.apply(highlight_signal, axis=1), use_container_width=True)
@@ -209,5 +204,18 @@ with col3:
 # =============================
 st.subheader("🔥 TOP AI TRADES")
 top = df[df["Score"]>=3]
-
 st.dataframe(top.style.apply(highlight_signal, axis=1), use_container_width=True)
+
+# =============================
+# EXPORT OPTION
+# =============================
+st.download_button("⬇️ Download Excel", df.to_csv(index=False).encode('utf-8'), "scanner_results.csv", "text/csv")
+
+# =============================
+# CHARTS
+# =============================
+st.subheader("📈 Trend Chart (Sample Stock)")
+sample = df.iloc[0]["Stock"] if not df.empty else None
+if sample:
+    data = get_data([sample])[sample].dropna()
+    st.line_chart(data[['Close']])
