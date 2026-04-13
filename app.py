@@ -9,8 +9,8 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG + AUTO REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Big Movers + Big Player)", layout="wide")
-st_autorefresh(interval=60000, key="refresh")  # safer refresh (1 min)
+st.set_page_config(page_title="🔥 NSE AI Scanner (Support + Resistance)", layout="wide")
+st_autorefresh(interval=60000, key="refresh")  # auto refresh every 1 min
 
 # =============================
 # NSE SECTORS
@@ -19,8 +19,8 @@ sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
     "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],  # removed TATAMOTORS.NS
-    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],  # ✅ fixed string literal
+    "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
     "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
     "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
     "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
@@ -70,6 +70,15 @@ def analyze(df):
     return df, vol_ratio, ai_signal, acc
 
 # =============================
+# SUPPORT & RESISTANCE FUNCTION
+# =============================
+def support_resistance(df):
+    closes = df['Close'].tail(50)  # last 50 candles
+    support = round(closes.min(),2)
+    resistance = round(closes.max(),2)
+    return support, resistance
+
+# =============================
 # RUN SCANNER
 # =============================
 def run_scanner(tickers):
@@ -90,8 +99,12 @@ def run_scanner(tickers):
             change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
             trend = "UP" if change_pct>0 else "DOWN"
             big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
+            support, resistance = support_resistance(df)
             results.append({
                 "Ticker": s,
+                "Price": round(df['Close'].iloc[-1],2),
+                "Support": support,
+                "Resistance": resistance,
                 "Change %": round(change_pct,2),
                 "Trend": trend,
                 "AI Signal": ai_signal,
@@ -104,7 +117,7 @@ def run_scanner(tickers):
     return pd.DataFrame(results)
 
 # =============================
-# DISPLAY FUNCTION (NO Styler)
+# DISPLAY FUNCTION
 # =============================
 def show_table(df, title):
     st.subheader(title)
@@ -116,24 +129,4 @@ def show_table(df, title):
             lambda x: "🟢 BUY" if x=="BUY" else "🔴 SELL"
         )
         df_display['Trend'] = df_display['Trend'].apply(
-            lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
-        )
-        df_display['Player'] = df_display['Player'].apply(
-            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
-        )
-        st.dataframe(df_display, hide_index=True)
-
-# =============================
-# MAIN DISPLAY
-# =============================
-if manual_symbol:
-    df = run_scanner([manual_symbol])
-    show_table(df, f"📌 Manual Symbol Analysis: {manual_symbol}")
-else:
-    tickers = sectors[sector_name]
-    df = run_scanner(tickers)
-    show_table(df, f"📌 Sector Analysis: {sector_name}")
-    if show_big:
-        all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        top10 = all_df.sort_values(by="Change %", ascending=False).head(10)
-        show_table(top10, "🔥 Top 10 Movers Across All Sectors")
+            lambda x: "🟢 UP" if x
