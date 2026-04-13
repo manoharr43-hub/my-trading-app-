@@ -62,4 +62,50 @@ def analyze(df):
     df['RSI'] = 100 - (100 / (1 + rs))
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-    df['Target'] = (df['Close'].shift(-1
+
+    # ✅ Corrected line (bracket closed properly)
+    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+
+    df.dropna(inplace=True)
+
+    if len(df) < 20:
+        return None
+
+    features = ['EMA20','EMA50','RSI','VWAP','MACD']
+    X = df[features]
+    y = df['Target']
+
+    # ✅ Corrected line (bracket closed properly)
+    X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
+    model = train_model(X_train, y_train)
+    pred = model.predict(X.iloc[[-1]])[0]
+
+    # SMART SIGNAL
+    if pred == 1 and df['RSI'].iloc[-1] < 65 and df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
+        signal = "BUY"
+    elif pred == 0 and df['RSI'].iloc[-1] > 35 and df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
+        signal = "SELL"
+    else:
+        signal = "SIDEWAYS"
+
+    # Big Player
+    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+    vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
+    if vol_ratio > 2:
+        big = "Big Buyer"
+    elif vol_ratio < 0.5:
+        big = "Big Seller"
+    else:
+        big = ""
+
+    return df, signal, big
+
+# =============================
+# SUPPORT / RESISTANCE
+# =============================
+def levels(df):
+    support = round(df['Low'].tail(50).min(),2)
+    resistance = round(df['High'].tail(50).max(),2)
+    return support, resistance
+
+# =================
