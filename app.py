@@ -9,8 +9,8 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG + AUTO REFRESH (5 sec)
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Trading View Style)", layout="wide")
-st_autorefresh(interval=5000, key="refresh")
+st.set_page_config(page_title="🔥 NSE AI Scanner (Entry/Exit/Targets)", layout="wide")
+st_autorefresh(interval=5000, key="refresh")  # auto refresh every 5 seconds
 
 # =============================
 # NSE SECTORS
@@ -68,21 +68,21 @@ def support_resistance(df):
     return support, resistance
 
 # =============================
-# ENTRY/STOPLOSS/TARGETS + BASE CONFIRMATION
+# ENTRY/EXIT/TARGETS
 # =============================
 def trade_levels(price, support, resistance, ai_signal):
     entry = price
     if ai_signal=="BUY":
-        stop_loss = support
+        exit_point = support
         target1 = round(price + (resistance-support)*0.5,2)
         target2 = round(resistance,2)
-        base = "✅ BUY BASE (Confirmed)"
+        base = "BUY BASE"
     else:
-        stop_loss = resistance
+        exit_point = resistance
         target1 = round(price - (resistance-support)*0.5,2)
         target2 = round(support,2)
-        base = "❌ SELL BASE (Confirmed)"
-    return entry, stop_loss, target1, target2, base
+        base = "SELL BASE"
+    return entry, exit_point, target1, target2, base
 
 # =============================
 # RUN SCANNER
@@ -106,7 +106,7 @@ def run_scanner(tickers):
             change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
             trend = "UP" if change_pct>0 else "DOWN"
             support, resistance = support_resistance(df)
-            entry, stop_loss, target1, target2, base = trade_levels(price, support, resistance, ai_signal)
+            entry, exit_point, target1, target2, base = trade_levels(price, support, resistance, ai_signal)
             results.append({
                 "Ticker": s,
                 "Price": price,
@@ -115,7 +115,7 @@ def run_scanner(tickers):
                 "Trend": trend,
                 "AI Signal": ai_signal,
                 "Entry Point": entry,
-                "Stop Loss": stop_loss,
+                "Exit Point": exit_point,
                 "Target1": target1,
                 "Target2": target2,
                 "Base": base,
@@ -149,7 +149,7 @@ def show_table(df, title):
 # =============================
 # MAIN DISPLAY
 # =============================
-st.title("🔥 NSE AI Scanner (Trading View Style: Entry/StopLoss/Targets + Base Confirmation + Big Player)")
+st.title("🔥 NSE AI Scanner (5s Auto Refresh + Entry/Exit/Targets + Big Player)")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -167,62 +167,4 @@ with col2:
 with col3:
     if st.button("📊 Show All Stocks"):
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        show_table(all_df, "📌 All NSE Stocks with Entry/StopLoss/Targets + Base Confirmation + Big Player")
-def run_scanner(tickers):
-    results=[]
-
-    for s in tickers:
-        try:
-            df = yf.download(
-                s,
-                period="2d",   # 🔥 stable
-                interval="5m",
-                progress=False
-            )
-
-            if df is None or df.empty:
-                st.write(f"❌ No data: {s}")
-                continue
-
-            df = df.dropna()
-
-            analyzed = analyze(df)
-            if analyzed is None:
-                continue
-
-            df, ai_signal, big_player = analyzed
-
-            price = round(df['Close'].iloc[-1],2)
-
-            change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
-            trend = "UP" if change_pct>0 else "DOWN"
-
-            support, resistance = support_resistance(df)
-
-            entry, stop_loss, target1, target2, base = trade_levels(
-                price, support, resistance, ai_signal
-            )
-
-            results.append({
-                "Ticker": s,
-                "Price": price,
-                "Support": support,
-                "Resistance": resistance,
-                "Trend": trend,
-                "AI Signal": ai_signal,
-                "Entry Point": entry,
-                "Stop Loss": stop_loss,
-                "Target1": target1,
-                "Target2": target2,
-                "Base": base,
-                "Big Player": big_player,
-                "Highlight": "🟢 Near Support" if abs(price-support)<2 else (
-                    "🔴 Near Resistance" if abs(price-resistance)<2 else ""
-                )
-            })
-
-        except Exception as e:
-            st.write(f"⚠️ Error in {s}: {e}")   # 🔥 DEBUG visible
-            continue
-
-    return pd.DataFrame(results)
+        show_table(all_df, "📌 All NSE Stocks with Entry/Exit/Targets + Big Player")
