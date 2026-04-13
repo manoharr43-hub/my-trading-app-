@@ -168,3 +168,61 @@ with col3:
     if st.button("📊 Show All Stocks"):
         all_df = run_scanner([t for sec in sectors.values() for t in sec])
         show_table(all_df, "📌 All NSE Stocks with Entry/StopLoss/Targets + Base Confirmation + Big Player")
+def run_scanner(tickers):
+    results=[]
+
+    for s in tickers:
+        try:
+            df = yf.download(
+                s,
+                period="2d",   # 🔥 stable
+                interval="5m",
+                progress=False
+            )
+
+            if df is None or df.empty:
+                st.write(f"❌ No data: {s}")
+                continue
+
+            df = df.dropna()
+
+            analyzed = analyze(df)
+            if analyzed is None:
+                continue
+
+            df, ai_signal, big_player = analyzed
+
+            price = round(df['Close'].iloc[-1],2)
+
+            change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+            trend = "UP" if change_pct>0 else "DOWN"
+
+            support, resistance = support_resistance(df)
+
+            entry, stop_loss, target1, target2, base = trade_levels(
+                price, support, resistance, ai_signal
+            )
+
+            results.append({
+                "Ticker": s,
+                "Price": price,
+                "Support": support,
+                "Resistance": resistance,
+                "Trend": trend,
+                "AI Signal": ai_signal,
+                "Entry Point": entry,
+                "Stop Loss": stop_loss,
+                "Target1": target1,
+                "Target2": target2,
+                "Base": base,
+                "Big Player": big_player,
+                "Highlight": "🟢 Near Support" if abs(price-support)<2 else (
+                    "🔴 Near Resistance" if abs(price-resistance)<2 else ""
+                )
+            })
+
+        except Exception as e:
+            st.write(f"⚠️ Error in {s}: {e}")   # 🔥 DEBUG visible
+            continue
+
+    return pd.DataFrame(results)
