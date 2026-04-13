@@ -11,212 +11,155 @@ from sklearn.model_selection import train_test_split
 st.set_page_config(page_title="🔥 NSE AI Scanner PRO MAX", layout="wide")
 
 # =============================
-# MODE SELECTION (NEW)
+# MODE
 # =============================
-st.sidebar.title("⚙️ Mode Selection")
+st.sidebar.title("⚙️ Mode")
 
-mode = st.sidebar.radio(
-    "Select Mode",
-    ["🔴 Live (Today)", "📊 Backtest"]
-)
+mode = st.sidebar.radio("Select Mode", ["🔴 Live", "📊 Backtest"])
 
-# =============================
-# BACKTEST SETTINGS (ONLY FOR BACKTEST)
-# =============================
 if mode == "📊 Backtest":
-    days = st.sidebar.selectbox("Select Period", ["5d", "7d", "1mo", "3mo"])
-    interval = st.sidebar.selectbox("Select Interval", ["5m", "15m", "30m", "1h"])
+    days = st.sidebar.selectbox("Period", ["5d","7d","1mo","3mo"])
+    interval = st.sidebar.selectbox("Interval", ["5m","15m","30m","1h"])
 else:
     days = "1d"
     interval = "5m"
 
 # =============================
-# NSE SECTORS
+# STOCK LIST
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
     "Banking": ["SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS","TECHM.NS"],
     "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","HEROMOTOCO.NS"],
-    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","DIVISLAB.NS"],
-    "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS","BRITANNIA.NS"],
-    "Energy": ["RELIANCE.NS","ONGC.NS","BPCL.NS","IOC.NS"],
-    "Metal": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS","COALINDIA.NS"]
 }
 
 # =============================
-# AI ANALYSIS
+# AI
 # =============================
 def analyze(df):
-    if df is None or len(df) < 40:
+    if len(df) < 40:
         return None
 
     df = df.copy()
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-
-    delta = df['Close'].diff()
-    gain = (delta.where(delta>0,0)).rolling(14).mean()
-    loss = (-delta.where(delta<0,0)).rolling(14).mean()
-    rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100/(1+rs))
 
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-
     df.dropna(inplace=True)
 
     if len(df) < 10:
         return None
 
-    X = df[['EMA20','EMA50','RSI','VWAP']]
+    X = df[['EMA20','EMA50']]
     y = df['Target']
 
-    X_train, _, y_train, _ = train_test_split(X,y,test_size=0.2,shuffle=False)
-
-    model = RandomForestClassifier(n_estimators=50,max_depth=5,random_state=42)
-    model.fit(X_train,y_train)
+    model = RandomForestClassifier(n_estimators=20)
+    model.fit(X,y)
 
     pred = model.predict(X.iloc[[-1]])[0]
-    signal = "BUY" if pred==1 else "SELL"
-
-    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
-
-    big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
-
-    return df, signal, big_player
+    return "BUY" if pred==1 else "SELL"
 
 # =============================
-# SUPPORT & RESISTANCE
+# SUPPORT RESISTANCE
 # =============================
 def support_resistance(df):
-    closes = df['Close'].tail(50)
-    return round(closes.min(),2), round(closes.max(),2)
+    return round(df['Close'].tail(50).min(),2), round(df['Close'].tail(50).max(),2)
 
 # =============================
-# HIGHLIGHT
+# TRADE
 # =============================
-def get_highlight(price, support, resistance, signal):
-    range_val = price * 0.01
+def trade_levels(price,support,resistance,signal):
 
-    if abs(price-support) <= range_val and signal=="BUY":
-        return "🟢 Near Support"
-    elif abs(price-resistance) <= range_val and signal=="SELL":
-        return "🔴 Near Resistance"
+    if signal=="BUY":
+        entry = price+0.5
+        sl = support
+        t1 = entry+(price-support)
+        t2 = entry+(price-support)*2
     else:
+        entry = price-0.5
+        sl = resistance
+        t1 = entry-(resistance-price)
+        t2 = entry-(resistance-price)*2
+
+    return round(entry,2),round(sl,2),round(t1,2),round(t2,2)
+
+# =============================
+# CONFIRM
+# =============================
+def confirm_tf(ticker):
+    try:
+        df5 = yf.download(ticker, period="1d", interval="5m", progress=False)
+        df15 = yf.download(ticker, period="1d", interval="15m", progress=False)
+
+        s1 = analyze(df5)
+        s2 = analyze(df15)
+
+        if s1==s2:
+            return "✅"
+        else:
+            return "⚠️"
+    except:
         return ""
 
 # =============================
-# TRADE LEVELS
-# =============================
-def trade_levels(price, support, resistance, signal):
-
-    if signal=="BUY":
-        risk = price - support
-        entry = round(price + 0.5,2)
-        stoploss = round(support,2)
-        target1 = round(entry + risk,2)
-        target2 = round(entry + (risk*2),2)
-
-    else:
-        risk = resistance - price
-        entry = round(price - 0.5,2)
-        stoploss = round(resistance,2)
-        target1 = round(entry - risk,2)
-        target2 = round(entry - (risk*2),2)
-
-    return entry, stoploss, target1, target2
-
-# =============================
-# SCANNER
+# SCANNER (FIXED)
 # =============================
 def run_scanner(tickers):
 
     results=[]
 
-    try:
-        data = yf.download(
-            tickers,
-            period=days,
-            interval=interval,
-            group_by='ticker',
-            progress=False
-        )
-    except:
-        return pd.DataFrame()
-
     for s in tickers:
         try:
-            df = data.copy() if len(tickers)==1 else data[s].copy()
-            df = df.dropna()
+            df = yf.download(s, period=days, interval=interval, progress=False)
 
-            if df.empty or "Close" not in df.columns:
+            if df.empty:
+                results.append({"Ticker":s,"AI Signal":"NO DATA"})
                 continue
-
-            result = analyze(df)
-            if result is None:
-                continue
-
-            df, signal, big_player = result
 
             price = round(df['Close'].iloc[-1],2)
+            signal = analyze(df)
 
-            change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
-            trend = "UP" if change_pct>0 else "DOWN"
+            support,resistance = support_resistance(df)
 
-            support, resistance = support_resistance(df)
+            entry,sl,t1,t2 = trade_levels(price,support,resistance,signal if signal else "SELL")
 
-            entry, stoploss, target1, target2 = trade_levels(price, support, resistance, signal)
-            highlight = get_highlight(price, support, resistance, signal)
+            time = df.index[-1]
+
+            confirm = confirm_tf(s)
 
             results.append({
-                "Ticker": s,
-                "Price": price,
-                "AI Signal": signal,
-                "Trend": trend,
-                "Support": support,
-                "Resistance": resistance,
-                "Entry": entry,
-                "Stoploss": stoploss,
-                "Target1": target1,
-                "Target2": target2,
-                "Big Player": big_player,
-                "Highlight": highlight
+                "Ticker":s,
+                "Price":price,
+                "Time":time,
+                "Signal":signal if signal else "NO DATA",
+                "Support":support,
+                "Resistance":resistance,
+                "Entry":entry,
+                "Stoploss":sl,
+                "Target1":t1,
+                "Target2":t2,
+                "Confirm":confirm
             })
 
         except:
-            continue
+            results.append({"Ticker":s,"AI Signal":"ERROR"})
 
     return pd.DataFrame(results)
 
 # =============================
-# DISPLAY
+# UI
 # =============================
-def show_table(df, title):
-    st.subheader(title)
-
-    if df.empty:
-        st.warning("⚠️ No data found.")
-    else:
-        df_display = df.copy()
-        df_display['AI Signal'] = df_display['AI Signal'].apply(lambda x: "🟢 BUY" if x=="BUY" else "🔴 SELL")
-        df_display['Trend'] = df_display['Trend'].apply(lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN")
-        st.dataframe(df_display, hide_index=True)
-
-# =============================
-# MAIN UI
-# =============================
-st.title("🔥 NSE AI Scanner PRO MAX")
-
-if mode == "🔴 Live (Today)":
-    st.success("📡 Showing LIVE Market (Today Only)")
-else:
-    st.info("📊 Showing Backtest Data")
+st.title("🔥 NSE AI Scanner FINAL")
 
 all_stocks = [t for sec in sectors.values() for t in sec]
 
 if st.button("🚀 Run Scanner"):
+
     df = run_scanner(all_stocks)
-    show_table(df, "📊 AI Signals")
+
+    if not df.empty:
+        df['Time'] = pd.to_datetime(df['Time'], errors='coerce').dt.strftime('%d-%m %H:%M')
+        st.dataframe(df, use_container_width=True)
+
+    st.write("Total Stocks:", len(df))
