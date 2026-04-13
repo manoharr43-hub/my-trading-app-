@@ -11,12 +11,24 @@ from sklearn.model_selection import train_test_split
 st.set_page_config(page_title="🔥 NSE AI Scanner PRO MAX", layout="wide")
 
 # =============================
-# BACKTEST SETTINGS (NEW)
+# MODE SELECTION (NEW)
 # =============================
-st.sidebar.title("📅 Data Settings")
+st.sidebar.title("⚙️ Mode Selection")
 
-days = st.sidebar.selectbox("Select Period", ["5d", "7d", "1mo", "3mo"])
-interval = st.sidebar.selectbox("Select Interval", ["5m", "15m", "30m", "1h"])
+mode = st.sidebar.radio(
+    "Select Mode",
+    ["🔴 Live (Today)", "📊 Backtest"]
+)
+
+# =============================
+# BACKTEST SETTINGS (ONLY FOR BACKTEST)
+# =============================
+if mode == "📊 Backtest":
+    days = st.sidebar.selectbox("Select Period", ["5d", "7d", "1mo", "3mo"])
+    interval = st.sidebar.selectbox("Select Interval", ["5m", "15m", "30m", "1h"])
+else:
+    days = "1d"
+    interval = "5m"
 
 # =============================
 # NSE SECTORS
@@ -77,14 +89,14 @@ def analyze(df):
     return df, signal, big_player
 
 # =============================
-# SUPPORT RESISTANCE
+# SUPPORT & RESISTANCE
 # =============================
 def support_resistance(df):
     closes = df['Close'].tail(50)
     return round(closes.min(),2), round(closes.max(),2)
 
 # =============================
-# HIGHLIGHT FIX
+# HIGHLIGHT
 # =============================
 def get_highlight(price, support, resistance, signal):
     range_val = price * 0.01
@@ -125,7 +137,13 @@ def run_scanner(tickers):
     results=[]
 
     try:
-        data = yf.download(tickers, period=days, interval=interval, group_by='ticker', progress=False)
+        data = yf.download(
+            tickers,
+            period=days,
+            interval=interval,
+            group_by='ticker',
+            progress=False
+        )
     except:
         return pd.DataFrame()
 
@@ -190,10 +208,15 @@ def show_table(df, title):
 # =============================
 # MAIN UI
 # =============================
-st.title("🔥 NSE AI Scanner PRO MAX (Backtest Enabled)")
+st.title("🔥 NSE AI Scanner PRO MAX")
+
+if mode == "🔴 Live (Today)":
+    st.success("📡 Showing LIVE Market (Today Only)")
+else:
+    st.info("📊 Showing Backtest Data")
 
 all_stocks = [t for sec in sectors.values() for t in sec]
 
 if st.button("🚀 Run Scanner"):
     df = run_scanner(all_stocks)
-    show_table(df, "📊 AI Signals with Backtest Data")
+    show_table(df, "📊 AI Signals")
