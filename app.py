@@ -9,8 +9,8 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG + AUTO REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Support + Resistance)", layout="wide")
-st_autorefresh(interval=60000, key="refresh")  # auto refresh every 1 min
+st.set_page_config(page_title="🔥 NSE AI Scanner (Support/Resistance Filter)", layout="wide")
+st_autorefresh(interval=60000, key="refresh")
 
 # =============================
 # NSE SECTORS
@@ -32,10 +32,13 @@ sectors = {
 with st.sidebar:
     st.header("📊 Select NSE Sector")
     sector_name = st.selectbox("Sector", list(sectors.keys()))
-    st.header("📌 Top 10 Big Movers")
+    st.header("📌 Top 10 Movers")
     show_big = st.checkbox("Show Top 10 Movers Across All Sectors")
     st.header("🔎 Manual Symbol Entry")
     manual_symbol = st.text_input("Enter NSE Symbol (use .NS)", "")
+    st.header("⚡ Quick Filter (Support/Resistance)")
+    filter_choice = st.radio("Select Condition", ["🟢 Support Near", "🔴 Resistance Near"])
+    run_filter = st.button("Apply Filter")
 
 # =============================
 # AI ANALYSIS FUNCTION
@@ -73,7 +76,7 @@ def analyze(df):
 # SUPPORT & RESISTANCE FUNCTION
 # =============================
 def support_resistance(df):
-    closes = df['Close'].tail(50)  # last 50 candles
+    closes = df['Close'].tail(50)
     support = round(closes.min(),2)
     resistance = round(closes.max(),2)
     return support, resistance
@@ -139,9 +142,21 @@ def show_table(df, title):
 # =============================
 # MAIN DISPLAY
 # =============================
-if manual_symbol:
+if run_filter:
+    all_df = run_scanner([t for sec in sectors.values() for t in sec])
+    if not all_df.empty:
+        if filter_choice == "🟢 Support Near":
+            filtered = all_df[abs(all_df["Price"] - all_df["Support"]) < 2]
+        else:
+            filtered = all_df[abs(all_df["Price"] - all_df["Resistance"]) < 2]
+        show_table(filtered, f"📌 Stocks near {filter_choice}")
+    else:
+        st.warning("⚠️ No data found.")
+
+elif manual_symbol:
     df = run_scanner([manual_symbol])
     show_table(df, f"📌 Manual Symbol Analysis: {manual_symbol}")
+
 else:
     tickers = sectors[sector_name]
     df = run_scanner(tickers)
