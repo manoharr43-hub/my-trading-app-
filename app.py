@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI Scanner (Entry/Exit/Targets + Big Player)", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI Scanner PRO", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -27,136 +27,154 @@ sectors = {
 }
 
 # =============================
-# AI ANALYSIS FUNCTION
+# AI ANALYSIS
 # =============================
 def analyze(df):
-    if df is None or len(df)<40:
+    if df is None or len(df) < 40:
         return None
+
     df = df.copy()
+
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+
+    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+
     delta = df['Close'].diff()
-    gain = (delta.where(delta>0,0)).rolling(14).mean()
-    loss = (-delta.where(delta<0,0)).rolling(14).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100/(1+rs))
-    df['Target'] = (df['Close'].shift(-1).values > df['Close'].values).astype(int)
+    df['RSI'] = 100 - (100 / (1 + rs))
+
+    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+
     df.dropna(inplace=True)
-    if len(df)<10:
+
+    if len(df) < 10:
         return None
-    features = ['EMA20','EMA50','RSI','VWAP']
-    X = df[features]
+
+    X = df[['EMA20','EMA50','RSI','VWAP']]
     y = df['Target']
-    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.2,shuffle=False)
-    model = RandomForestClassifier(n_estimators=50,max_depth=5,random_state=42)
-    model.fit(X_train,y_train)
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+    model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
+    model.fit(X_train, y_train)
+
     pred = model.predict(X.iloc[[-1]])[0]
-    ai_signal = "BUY" if pred==1 else "SELL"
+    signal = "BUY" if pred == 1 else "SELL"
+
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    vol_ratio = df['Volume'].iloc[-1]/avg_vol if avg_vol>0 else 1
-    big_player = "Big Buyer" if vol_ratio>2 else ("Big Seller" if vol_ratio<0.5 else "")
-    return df, ai_signal, big_player
+    vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
+
+    big_player = "Big Buyer" if vol_ratio > 2 else ("Big Seller" if vol_ratio < 0.5 else "")
+
+    return df, signal, big_player
 
 # =============================
-# SUPPORT & RESISTANCE
+# SUPPORT RESISTANCE
 # =============================
 def support_resistance(df):
     closes = df['Close'].tail(50)
-    support = round(closes.min(),2)
-    resistance = round(closes.max(),2)
-    return support, resistance
+    return round(closes.min(),2), round(closes.max(),2)
 
 # =============================
-# ENTRY/EXIT/TARGETS
+# SMART TRADE LEVELS 🔥
 # =============================
-def trade_levels(price, support, resistance):
-    entry = price
-    exit_point = support if price < resistance else resistance
-    target1 = round((price + (resistance-support)*0.5),2)
-    target2 = round(resistance,2)
-    return entry, exit_point, target1, target2
+def trade_levels(price, support, resistance, signal):
+
+    if signal == "BUY":
+        risk = price - support
+        entry = round(price + 0.5, 2)
+        stoploss = round(support, 2)
+        target1 = round(entry + risk, 2)
+        target2 = round(entry + (risk * 2), 2)
+
+    else:  # SELL
+        risk = resistance - price
+        entry = round(price - 0.5, 2)
+        stoploss = round(resistance, 2)
+        target1 = round(entry - risk, 2)
+        target2 = round(entry - (risk * 2), 2)
+
+    return entry, stoploss, target1, target2
 
 # =============================
-# RUN SCANNER
+# SCANNER
 # =============================
 def run_scanner(tickers):
-    results=[]
+
+    results = []
+
     try:
         data = yf.download(tickers, period="5d", interval="5m", group_by='ticker', progress=False)
     except:
         return pd.DataFrame()
+
     for s in tickers:
         try:
-            df = data.copy() if len(tickers)==1 else data[s].copy()
+            df = data.copy() if len(tickers) == 1 else data[s].copy()
             df = df.dropna()
+
             if df.empty or "Close" not in df.columns:
                 continue
-            df, ai_signal, big_player = analyze(df)
-            if df is None:
+
+            result = analyze(df)
+            if result is None:
                 continue
-            price = round(df['Close'].iloc[-1],2)
+
+            df, signal, big_player = result
+
+            price = round(df['Close'].iloc[-1], 2)
+
             change_pct = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
-            trend = "UP" if change_pct>0 else "DOWN"
+            trend = "UP" if change_pct > 0 else "DOWN"
+
             support, resistance = support_resistance(df)
-            entry, exit_point, target1, target2 = trade_levels(price, support, resistance)
+
+            # ✅ NEW LOGIC
+            entry, stoploss, target1, target2 = trade_levels(price, support, resistance, signal)
+
             results.append({
                 "Ticker": s,
                 "Price": price,
+                "Signal": signal,
+                "Trend": trend,
                 "Support": support,
                 "Resistance": resistance,
-                "Trend": trend,
-                "AI Signal": ai_signal,
-                "Entry Point": entry,
-                "Exit Point": exit_point,
+                "Entry": entry,
+                "Stoploss": stoploss,
                 "Target1": target1,
                 "Target2": target2,
-                "Big Player": big_player,
-                "Highlight": "🟢 Near Support" if abs(price-support)<2 else ("🔴 Near Resistance" if abs(price-resistance)<2 else "")
+                "Big Player": big_player
             })
-        except Exception:
+
+        except:
             continue
+
     return pd.DataFrame(results)
 
 # =============================
-# DISPLAY FUNCTION
+# DISPLAY
 # =============================
-def show_table(df, title):
+def show(df, title):
     st.subheader(title)
+
     if df.empty:
-        st.warning("⚠️ No data found.")
-    else:
-        df_display = df.copy()
-        df_display['AI Signal'] = df_display['AI Signal'].apply(
-            lambda x: "🟢 BUY" if x=="BUY" else "🔴 SELL"
-        )
-        df_display['Trend'] = df_display['Trend'].apply(
-            lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN"
-        )
-        df_display['Big Player'] = df_display['Big Player'].apply(
-            lambda x: "🟠 Big Buyer" if x=="Big Buyer" else ("🟣 Big Seller" if x=="Big Seller" else "")
-        )
-        st.dataframe(df_display, hide_index=True)
+        st.warning("No Data")
+        return
+
+    df['Signal'] = df['Signal'].apply(lambda x: "🟢 BUY" if x=="BUY" else "🔴 SELL")
+    df['Trend'] = df['Trend'].apply(lambda x: "🟢 UP" if x=="UP" else "🔴 DOWN")
+
+    st.dataframe(df, use_container_width=True)
 
 # =============================
-# MAIN DISPLAY
+# UI
 # =============================
-st.title("🔥 NSE AI Scanner (Entry/Exit/Targets + Big Player)")
+st.title("🔥 NSE AI Scanner PRO (Smart Entry/Exit/Target)")
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("🟢 Stocks near Support"):
-        all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        filtered = all_df[all_df["Highlight"]=="🟢 Near Support"]
-        show_table(filtered, "📌 Stocks near Support")
-
-with col2:
-    if st.button("🔴 Stocks near Resistance"):
-        all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        filtered = all_df[all_df["Highlight"]=="🔴 Near Resistance"]
-        show_table(filtered, "📌 Stocks near Resistance")
-
-with col3:
-    if st.button("📊 Show All Stocks"):
-        all_df = run_scanner([t for sec in sectors.values() for t in sec])
-        show_table(all_df, "📌 All NSE Stocks with Entry/Exit/Targets + Big Player")
+if st.button("🚀 Run Scanner"):
+    all_stocks = [t for sec in sectors.values() for t in sec]
+    df = run_scanner(all_stocks)
+    show(df, "📊 AI Trading Signals")
