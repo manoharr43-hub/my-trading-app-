@@ -12,7 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
 st_autorefresh(interval=5000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER (Smart Entry/Exit + AI + Filters)")
+st.title("🔥 PRO NSE AI SCANNER (Smart Entry/Exit + AI + Filters + SuperTrend)")
 
 # =============================
 # NSE STOCK LIST
@@ -29,7 +29,7 @@ sectors = {
 all_stocks = list(set([s for sec in sectors.values() for s in sec]))
 
 # =============================
-# CACHE DATA
+# DATA
 # =============================
 @st.cache_data(ttl=60)
 def get_data(tickers):
@@ -43,6 +43,37 @@ def train_model(X, y):
     model = RandomForestClassifier(n_estimators=80, max_depth=6, random_state=42)
     model.fit(X, y)
     return model
+
+# =============================
+# SUPER TREND (FIXED 🔥)
+# =============================
+def add_supertrend(df, period=10, multiplier=3):
+    df = df.copy()
+
+    hl2 = (df['High'] + df['Low']) / 2
+    tr = df['High'] - df['Low']
+    atr = tr.rolling(period).mean()
+
+    upperband = hl2 + (multiplier * atr)
+    lowerband = hl2 - (multiplier * atr)
+
+    supertrend = [0]*len(df)
+    trend = ["DOWN"]*len(df)
+
+    for i in range(1, len(df)):
+        if df['Close'].iloc[i] > upperband.iloc[i-1]:
+            trend[i] = "UP"
+        elif df['Close'].iloc[i] < lowerband.iloc[i-1]:
+            trend[i] = "DOWN"
+        else:
+            trend[i] = trend[i-1]
+
+        supertrend[i] = lowerband.iloc[i] if trend[i] == "UP" else upperband.iloc[i]
+
+    df['SuperTrend'] = supertrend
+    df['ST_Trend'] = trend
+
+    return df
 
 # =============================
 # ANALYSIS
@@ -65,12 +96,21 @@ def analyze(df):
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
+    # ✅ FIXED ATR
+    df['ATR'] = (df[['High','Low','Close']].max(axis=1) - df[['High','Low','Close']].min(axis=1)).rolling(14).mean()
+
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
-    features = ['EMA20','EMA50','RSI','VWAP','MACD']
+    # ✅ SUPER TREND ADD
+    df = add_supertrend(df)
+
+    if len(df) < 20:
+        return None
+
+    features = ['EMA20','EMA50','RSI','VWAP','MACD','ATR']
     X = df[features]
     y = df['Target']
 
@@ -79,15 +119,22 @@ def analyze(df):
 
     pred = model.predict(X.iloc[[-1]])[0]
 
-    # SIGNAL
-    if pred == 1 and df['RSI'].iloc[-1] < 65 and df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
+    # 🔥 SUPER TREND FILTER ADDED
+    if (pred == 1 and df['RSI'].iloc[-1] < 65 and 
+        df['Close'].iloc[-1] > df['EMA20'].iloc[-1] and 
+        df['ST_Trend'].iloc[-1] == "UP"):
+
         signal = "BUY"
-    elif pred == 0 and df['RSI'].iloc[-1] > 35 and df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
+
+    elif (pred == 0 and df['RSI'].iloc[-1] > 35 and 
+          df['Close'].iloc[-1] < df['EMA20'].iloc[-1] and 
+          df['ST_Trend'].iloc[-1] == "DOWN"):
+
         signal = "SELL"
+
     else:
         signal = "SIDEWAYS"
 
-    # VOLUME
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
 
@@ -109,17 +156,6 @@ def levels(df):
     return support, resistance
 
 # =============================
-# NEAR LEVEL DETECTION 🔥
-# =============================
-def near_levels(price, support, resistance):
-    if abs(price - support) / price < 0.01:
-        return "🟢 Near Support"
-    elif abs(price - resistance) / price < 0.01:
-        return "🔴 Near Resistance"
-    else:
-        return ""
-
-# =============================
 # TRADE
 # =============================
 def trade(price, support, resistance, signal):
@@ -135,7 +171,7 @@ def trade(price, support, resistance, signal):
     return sl, t1, t2
 
 # =============================
-# COLOR STYLE 🔥
+# STYLE
 # =============================
 def highlight_signal(row):
     if row["Signal"] == "BUY":
@@ -163,8 +199,6 @@ def scanner():
 
             price = round(df['Close'].iloc[-1],2)
             support, resistance = levels(df)
-            near = near_levels(price, support, resistance)
-
             sl, t1, t2 = trade(price, support, resistance, signal)
 
             trend = "UP" if df['Close'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
@@ -192,7 +226,6 @@ def scanner():
                 "Trend": trend,
                 "Support": support,
                 "Resistance": resistance,
-                "Near Level": near,
                 "SL": sl,
                 "Target1": t1,
                 "Target2": t2,
