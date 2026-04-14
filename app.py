@@ -12,10 +12,10 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
 st_autorefresh(interval=5000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER (Smart Entry/Exit + AI + Filters)")
+st.title("🔥 PRO NSE AI SCANNER (SuperTrend + AI)")
 
 # =============================
-# NSE STOCK LIST
+# STOCK LIST
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
@@ -29,11 +29,11 @@ sectors = {
 all_stocks = list(set([s for sec in sectors.values() for s in sec]))
 
 # =============================
-# CACHE DATA
+# DATA
 # =============================
 @st.cache_data(ttl=60)
 def get_data(tickers):
-    return yf.download(tickers, period="30d", interval="5m", group_by='ticker', progress=False)
+    return yf.download(tickers, period="20d", interval="5m", group_by='ticker', progress=False)
 
 # =============================
 # MODEL
@@ -43,6 +43,35 @@ def train_model(X, y):
     model = RandomForestClassifier(n_estimators=80, max_depth=6, random_state=42)
     model.fit(X, y)
     return model
+
+# =============================
+# SUPER TREND 🔥
+# =============================
+def supertrend(df, period=10, multiplier=3):
+    df = df.copy()
+
+    hl2 = (df['High'] + df['Low']) / 2
+
+    df['TR'] = np.maximum(df['High'] - df['Low'],
+                 np.maximum(abs(df['High'] - df['Close'].shift()),
+                            abs(df['Low'] - df['Close'].shift())))
+
+    df['ATR'] = df['TR'].rolling(period).mean()
+
+    df['UpperBand'] = hl2 + (multiplier * df['ATR'])
+    df['LowerBand'] = hl2 - (multiplier * df['ATR'])
+
+    df['SuperTrend'] = 0.0
+
+    for i in range(1, len(df)):
+        if df['Close'].iloc[i] > df['UpperBand'].iloc[i-1]:
+            df.loc[df.index[i], 'SuperTrend'] = df['LowerBand'].iloc[i]
+        elif df['Close'].iloc[i] < df['LowerBand'].iloc[i-1]:
+            df.loc[df.index[i], 'SuperTrend'] = df['UpperBand'].iloc[i]
+        else:
+            df.loc[df.index[i], 'SuperTrend'] = df['SuperTrend'].iloc[i-1]
+
+    return df
 
 # =============================
 # ANALYSIS
@@ -55,39 +84,46 @@ def analyze(df):
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['EMA12'] = df['Close'].ewm(span=12).mean()
-    df['EMA26'] = df['Close'].ewm(span=26).mean()
-    df['MACD'] = df['EMA12'] - df['EMA26']
 
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
+    # 🔥 SUPER TREND ADD
+    df = supertrend(df)
+
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
-    features = ['EMA20','EMA50','RSI','VWAP','MACD']
+    features = ['EMA20','EMA50','RSI','VWAP']
     X = df[features]
     y = df['Target']
+
+    if len(X) < 30:
+        return None
 
     X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
     model = train_model(X_train, y_train)
 
     pred = model.predict(X.iloc[[-1]])[0]
 
-    # SIGNAL
-    if pred == 1 and df['RSI'].iloc[-1] < 65 and df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
+    price = df['Close'].iloc[-1]
+    st_value = df['SuperTrend'].iloc[-1]
+
+    # 🔥 FINAL SIGNAL (AI + SUPER TREND)
+    if pred == 1 and price > st_value:
         signal = "BUY"
-    elif pred == 0 and df['RSI'].iloc[-1] > 35 and df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
+    elif pred == 0 and price < st_value:
         signal = "SELL"
     else:
         signal = "SIDEWAYS"
 
-    # VOLUME
+    # Volume
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     vol_ratio = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1
 
@@ -101,7 +137,7 @@ def analyze(df):
     return df, signal, big
 
 # =============================
-# SUPPORT / RESISTANCE
+# LEVELS
 # =============================
 def levels(df):
     support = round(df['Low'].tail(50).min(),2)
@@ -109,21 +145,11 @@ def levels(df):
     return support, resistance
 
 # =============================
-# NEAR LEVEL DETECTION 🔥
-# =============================
-def near_levels(price, support, resistance):
-    if abs(price - support) / price < 0.01:
-        return "🟢 Near Support"
-    elif abs(price - resistance) / price < 0.01:
-        return "🔴 Near Resistance"
-    else:
-        return ""
-
-# =============================
 # TRADE
 # =============================
 def trade(price, support, resistance, signal):
     sl = round(price * 0.98,2)
+
     if signal == "BUY":
         t1 = round(price + (resistance - support) * 0.5,2)
         t2 = resistance
@@ -132,12 +158,13 @@ def trade(price, support, resistance, signal):
         t2 = support
     else:
         t1, t2 = "-", "-"
+
     return sl, t1, t2
 
 # =============================
-# COLOR STYLE 🔥
+# STYLE
 # =============================
-def highlight_signal(row):
+def highlight(row):
     if row["Signal"] == "BUY":
         return ['background-color: #2196F3; color: white'] * len(row)
     elif row["Signal"] == "SELL":
@@ -163,21 +190,17 @@ def scanner():
 
             price = round(df['Close'].iloc[-1],2)
             support, resistance = levels(df)
-            near = near_levels(price, support, resistance)
-
             sl, t1, t2 = trade(price, support, resistance, signal)
 
-            trend = "UP" if df['Close'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
+            trend = "UP" if price > df['EMA50'].iloc[-1] else "DOWN"
 
             score = 0
-
             if signal == "BUY":
                 score += 2
                 if trend == "UP":
                     score += 1
                 if big == "Big Buyer":
                     score += 2
-
             elif signal == "SELL":
                 score += 2
                 if trend == "DOWN":
@@ -192,11 +215,10 @@ def scanner():
                 "Trend": trend,
                 "Support": support,
                 "Resistance": resistance,
-                "Near Level": near,
                 "SL": sl,
-                "Target1": t1,
-                "Target2": t2,
-                "Big Player": big,
+                "T1": t1,
+                "T2": t2,
+                "Volume": big,
                 "Score": score
             })
 
@@ -214,27 +236,28 @@ tabs = st.tabs(list(sectors.keys()))
 
 for i, sector in enumerate(sectors.keys()):
     with tabs[i]:
-        sector_df = df[df["Stock"].isin(sectors[sector])]
-        st.dataframe(sector_df.style.apply(highlight_signal, axis=1), use_container_width=True)
+        st.dataframe(df[df["Stock"].isin(sectors[sector])]
+                     .style.apply(highlight, axis=1),
+                     use_container_width=True)
 
 # =============================
 # TOP TRADES
 # =============================
-st.subheader("🔥 TOP AI TRADES")
-top = df[df["Score"]>=3]
-st.dataframe(top.style.apply(highlight_signal, axis=1), use_container_width=True)
+st.subheader("🔥 TOP TRADES")
+top = df[df["Score"] >= 3]
+st.dataframe(top.style.apply(highlight, axis=1), use_container_width=True)
 
 # =============================
-# DOWNLOAD
+# CHART (SUPER TREND) 🔥
 # =============================
-st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode('utf-8'), "scanner.csv", "text/csv")
+st.subheader("📈 SuperTrend Chart")
 
-# =============================
-# CHART
-# =============================
-st.subheader("📈 Trend Chart")
-sample = df.iloc[0]["Stock"] if not df.empty else None
+if not df.empty:
+    stock = st.selectbox("Select Stock", df["Stock"])
 
-if sample:
-    data = get_data([sample])[sample].dropna()
-    st.line_chart(data[['Close']])
+    data = get_data([stock])
+    if data is not None:
+        chart_df = data[stock].dropna()
+        chart_df = supertrend(chart_df)
+
+        st.line_chart(chart_df[['Close', 'SuperTrend']])
