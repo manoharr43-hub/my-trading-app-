@@ -10,9 +10,9 @@ from streamlit_autorefresh import st_autorefresh
 # PAGE CONFIG
 # =============================
 st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
-st_autorefresh(interval=5000, key="refresh")
+st_autorefresh(interval=8000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER (Smart Entry/Exit + AI + Filters + SuperTrend)")
+st.title("🔥 PRO NSE AI SCANNER (AI + SuperTrend + Debug Mode)")
 
 # =============================
 # NSE STOCK LIST
@@ -29,11 +29,28 @@ sectors = {
 all_stocks = list(set([s for sec in sectors.values() for s in sec]))
 
 # =============================
-# DATA
+# DATA FETCH (DEBUG VERSION 🔥)
 # =============================
 @st.cache_data(ttl=60)
 def get_data(tickers):
-    return yf.download(tickers, period="30d", interval="5m", group_by='ticker', progress=False)
+    all_data = {}
+    debug_info = []
+
+    for ticker in tickers:
+        try:
+            df = yf.download(ticker, period="7d", interval="5m", progress=False)
+
+            if df is None or df.empty:
+                debug_info.append((ticker, "❌ Empty"))
+                continue
+
+            all_data[ticker] = df
+            debug_info.append((ticker, "✅ Loaded"))
+
+        except Exception as e:
+            debug_info.append((ticker, f"❌ Error"))
+
+    return all_data, debug_info
 
 # =============================
 # MODEL
@@ -45,7 +62,7 @@ def train_model(X, y):
     return model
 
 # =============================
-# SUPER TREND (FIXED 🔥)
+# SUPER TREND
 # =============================
 def add_supertrend(df, period=10, multiplier=3):
     df = df.copy()
@@ -96,7 +113,7 @@ def analyze(df):
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # ✅ FIXED ATR
+    # FIXED ATR
     df['ATR'] = (df[['High','Low','Close']].max(axis=1) - df[['High','Low','Close']].min(axis=1)).rolling(14).mean()
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
@@ -104,7 +121,6 @@ def analyze(df):
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
-    # ✅ SUPER TREND ADD
     df = add_supertrend(df)
 
     if len(df) < 20:
@@ -119,7 +135,7 @@ def analyze(df):
 
     pred = model.predict(X.iloc[[-1]])[0]
 
-    # 🔥 SUPER TREND FILTER ADDED
+    # SUPER TREND FILTER
     if (pred == 1 and df['RSI'].iloc[-1] < 65 and 
         df['Close'].iloc[-1] > df['EMA20'].iloc[-1] and 
         df['ST_Trend'].iloc[-1] == "UP"):
@@ -186,11 +202,27 @@ def highlight_signal(row):
 # =============================
 def scanner():
     results = []
-    data = get_data(all_stocks)
+
+    data, debug_info = get_data(all_stocks)
+
+    # DEBUG PANEL
+    with st.expander("🛠 Debug Data Loading"):
+        debug_df = pd.DataFrame(debug_info, columns=["Stock", "Status"])
+        st.dataframe(debug_df, use_container_width=True)
+
+        ok = len([x for x in debug_info if "✅" in x[1]])
+        fail = len(debug_info) - ok
+        st.write(f"✅ Loaded: {ok} | ❌ Failed: {fail}")
 
     for s in all_stocks:
         try:
-            df = data[s].dropna()
+            df = data.get(s)
+
+            if df is None or df.empty:
+                continue
+
+            df = df.dropna()
+
             out = analyze(df)
             if out is None:
                 continue
@@ -233,7 +265,8 @@ def scanner():
                 "Score": score
             })
 
-        except:
+        except Exception as e:
+            st.warning(f"⚠️ Error in {s}")
             continue
 
     return pd.DataFrame(results).sort_values(by="Score", ascending=False)
@@ -269,5 +302,5 @@ st.subheader("📈 Trend Chart")
 sample = df.iloc[0]["Stock"] if not df.empty else None
 
 if sample:
-    data = get_data([sample])[sample].dropna()
+    data = get_data([sample])[0][sample]
     st.line_chart(data[['Close']])
