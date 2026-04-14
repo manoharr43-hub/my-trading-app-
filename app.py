@@ -10,9 +10,9 @@ from streamlit_autorefresh import st_autorefresh
 # PAGE CONFIG
 # =============================
 st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
-st_autorefresh(interval=8000, key="refresh")
+st_autorefresh(interval=5000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER (AI + SuperTrend + Debug Mode)")
+st.title("🔥 PRO NSE AI SCANNER (Smart Entry/Exit + AI + Filters + SuperTrend)")
 
 # =============================
 # NSE STOCK LIST
@@ -29,31 +29,14 @@ sectors = {
 all_stocks = list(set([s for sec in sectors.values() for s in sec]))
 
 # =============================
-# DATA FETCH (DEBUG VERSION 🔥)
+# CACHE DATA
 # =============================
 @st.cache_data(ttl=60)
 def get_data(tickers):
-    all_data = {}
-    debug_info = []
-
-    for ticker in tickers:
-        try:
-            df = yf.download(ticker, period="7d", interval="5m", progress=False)
-
-            if df is None or df.empty:
-                debug_info.append((ticker, "❌ Empty"))
-                continue
-
-            all_data[ticker] = df
-            debug_info.append((ticker, "✅ Loaded"))
-
-        except Exception as e:
-            debug_info.append((ticker, f"❌ Error"))
-
-    return all_data, debug_info
+    return yf.download(tickers, period="30d", interval="5m", group_by='ticker', progress=False)
 
 # =============================
-# MODEL
+# CACHE MODEL
 # =============================
 @st.cache_resource
 def train_model(X, y):
@@ -62,34 +45,15 @@ def train_model(X, y):
     return model
 
 # =============================
-# SUPER TREND
+# SUPER TREND FUNCTION
 # =============================
 def add_supertrend(df, period=10, multiplier=3):
-    df = df.copy()
-
     hl2 = (df['High'] + df['Low']) / 2
-    tr = df['High'] - df['Low']
-    atr = tr.rolling(period).mean()
-
-    upperband = hl2 + (multiplier * atr)
-    lowerband = hl2 - (multiplier * atr)
-
-    supertrend = [0]*len(df)
-    trend = ["DOWN"]*len(df)
-
-    for i in range(1, len(df)):
-        if df['Close'].iloc[i] > upperband.iloc[i-1]:
-            trend[i] = "UP"
-        elif df['Close'].iloc[i] < lowerband.iloc[i-1]:
-            trend[i] = "DOWN"
-        else:
-            trend[i] = trend[i-1]
-
-        supertrend[i] = lowerband.iloc[i] if trend[i] == "UP" else upperband.iloc[i]
-
-    df['SuperTrend'] = supertrend
-    df['ST_Trend'] = trend
-
+    atr = (df['High'] - df['Low']).rolling(period).mean()
+    df['UpperBand'] = hl2 + (multiplier * atr)
+    df['LowerBand'] = hl2 - (multiplier * atr)
+    df['SuperTrend'] = np.where(df['Close'] > df['UpperBand'], df['LowerBand'], df['UpperBand'])
+    df['ST_Trend'] = np.where(df['Close'] > df['SuperTrend'], "UP", "DOWN")
     return df
 
 # =============================
@@ -100,7 +64,6 @@ def analyze(df):
         return None
 
     df = df.copy()
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
     df['EMA12'] = df['Close'].ewm(span=12).mean()
@@ -113,11 +76,11 @@ def analyze(df):
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # FIXED ATR
-    df['ATR'] = (df[['High','Low','Close']].max(axis=1) - df[['High','Low','Close']].min(axis=1)).rolling(14).mean()
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
+    df['BB_upper'] = df['Close'].rolling(20).mean() + 2*df['Close'].rolling(20).std()
+    df['BB_lower'] = df['Close'].rolling(20).mean() - 2*df['Close'].rolling(20).std()
 
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
@@ -132,22 +95,12 @@ def analyze(df):
 
     X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
     model = train_model(X_train, y_train)
-
     pred = model.predict(X.iloc[[-1]])[0]
 
-    # SUPER TREND FILTER
-    if (pred == 1 and df['RSI'].iloc[-1] < 65 and 
-        df['Close'].iloc[-1] > df['EMA20'].iloc[-1] and 
-        df['ST_Trend'].iloc[-1] == "UP"):
-
+    if pred == 1 and df['RSI'].iloc[-1] < 65 and df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
         signal = "BUY"
-
-    elif (pred == 0 and df['RSI'].iloc[-1] > 35 and 
-          df['Close'].iloc[-1] < df['EMA20'].iloc[-1] and 
-          df['ST_Trend'].iloc[-1] == "DOWN"):
-
+    elif pred == 0 and df['RSI'].iloc[-1] > 35 and df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
         signal = "SELL"
-
     else:
         signal = "SIDEWAYS"
 
@@ -162,145 +115,3 @@ def analyze(df):
         big = ""
 
     return df, signal, big
-
-# =============================
-# SUPPORT / RESISTANCE
-# =============================
-def levels(df):
-    support = round(df['Low'].tail(50).min(),2)
-    resistance = round(df['High'].tail(50).max(),2)
-    return support, resistance
-
-# =============================
-# TRADE
-# =============================
-def trade(price, support, resistance, signal):
-    sl = round(price * 0.98,2)
-    if signal == "BUY":
-        t1 = round(price + (resistance - support) * 0.5,2)
-        t2 = resistance
-    elif signal == "SELL":
-        t1 = round(price - (resistance - support) * 0.5,2)
-        t2 = support
-    else:
-        t1, t2 = "-", "-"
-    return sl, t1, t2
-
-# =============================
-# STYLE
-# =============================
-def highlight_signal(row):
-    if row["Signal"] == "BUY":
-        return ['background-color: #2196F3; color: white'] * len(row)
-    elif row["Signal"] == "SELL":
-        return ['background-color: #f44336; color: white'] * len(row)
-    else:
-        return [''] * len(row)
-
-# =============================
-# SCANNER
-# =============================
-def scanner():
-    results = []
-
-    data, debug_info = get_data(all_stocks)
-
-    # DEBUG PANEL
-    with st.expander("🛠 Debug Data Loading"):
-        debug_df = pd.DataFrame(debug_info, columns=["Stock", "Status"])
-        st.dataframe(debug_df, use_container_width=True)
-
-        ok = len([x for x in debug_info if "✅" in x[1]])
-        fail = len(debug_info) - ok
-        st.write(f"✅ Loaded: {ok} | ❌ Failed: {fail}")
-
-    for s in all_stocks:
-        try:
-            df = data.get(s)
-
-            if df is None or df.empty:
-                continue
-
-            df = df.dropna()
-
-            out = analyze(df)
-            if out is None:
-                continue
-
-            df, signal, big = out
-
-            price = round(df['Close'].iloc[-1],2)
-            support, resistance = levels(df)
-            sl, t1, t2 = trade(price, support, resistance, signal)
-
-            trend = "UP" if df['Close'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
-
-            score = 0
-
-            if signal == "BUY":
-                score += 2
-                if trend == "UP":
-                    score += 1
-                if big == "Big Buyer":
-                    score += 2
-
-            elif signal == "SELL":
-                score += 2
-                if trend == "DOWN":
-                    score += 1
-                if big == "Big Seller":
-                    score += 2
-
-            results.append({
-                "Stock": s,
-                "Price": price,
-                "Signal": signal,
-                "Trend": trend,
-                "Support": support,
-                "Resistance": resistance,
-                "SL": sl,
-                "Target1": t1,
-                "Target2": t2,
-                "Big Player": big,
-                "Score": score
-            })
-
-        except Exception as e:
-            st.warning(f"⚠️ Error in {s}")
-            continue
-
-    return pd.DataFrame(results).sort_values(by="Score", ascending=False)
-
-# =============================
-# UI
-# =============================
-df = scanner()
-
-tabs = st.tabs(list(sectors.keys()))
-
-for i, sector in enumerate(sectors.keys()):
-    with tabs[i]:
-        sector_df = df[df["Stock"].isin(sectors[sector])]
-        st.dataframe(sector_df.style.apply(highlight_signal, axis=1), use_container_width=True)
-
-# =============================
-# TOP TRADES
-# =============================
-st.subheader("🔥 TOP AI TRADES")
-top = df[df["Score"]>=3]
-st.dataframe(top.style.apply(highlight_signal, axis=1), use_container_width=True)
-
-# =============================
-# DOWNLOAD
-# =============================
-st.download_button("⬇️ Download CSV", df.to_csv(index=False).encode('utf-8'), "scanner.csv", "text/csv")
-
-# =============================
-# CHART
-# =============================
-st.subheader("📈 Trend Chart")
-sample = df.iloc[0]["Stock"] if not df.empty else None
-
-if sample:
-    data = get_data([sample])[0][sample]
-    st.line_chart(data[['Close']])
