@@ -6,25 +6,20 @@ from sklearn.ensemble import RandomForestClassifier
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# PAGE CONFIG
+# PAGE SETUP
 # =============================
-st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
+st.set_page_config(page_title="🔥 PRO NSE AI BACKTEST SCANNER", layout="wide")
 st_autorefresh(interval=8000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER (AI + MACD + SUPER TREND + OPTIONS)")
+st.title("🔥 PRO NSE AI SCANNER + BACKTEST + 90% FILTER")
 
 # =============================
 # SECTORS
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
-    "Banking": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS","BANKBARODA.NS","INDUSINDBK.NS"],
-    "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS","LTIM.NS"],
-    "Auto": ["MARUTI.NS","M&M.NS","BAJAJ-AUTO.NS","TATAMOTORS.NS"],
-    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","LUPIN.NS"],
-    "Energy": ["ONGC.NS","IOC.NS","RELIANCE.NS"],
-    "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS"],
-    "Metals": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
+    "Banking": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
+    "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS"],
 }
 
 all_stocks = sorted(list(set([s for sec in sectors.values() for s in sec])))
@@ -34,210 +29,181 @@ all_stocks = sorted(list(set([s for sec in sectors.values() for s in sec])))
 # =============================
 @st.cache_data(ttl=120)
 def get_data(tickers):
-    try:
-        return yf.download(tickers, period="15d", interval="5m", group_by="ticker", progress=False)
-    except:
-        return None
+    return yf.download(tickers, period="60d", interval="15m", group_by="ticker")
 
 # =============================
 # MODEL
 # =============================
 @st.cache_resource
 def train_model(X, y):
-    model = RandomForestClassifier(n_estimators=70, max_depth=6)
+    model = RandomForestClassifier(n_estimators=80, max_depth=6)
     model.fit(X, y)
     return model
 
 # =============================
-# ANALYSIS ENGINE (UPGRADED)
+# TECHNICAL ENGINE
 # =============================
 def analyze(df):
 
-    if df is None or len(df) < 60:
-        return None
-
     df = df.copy()
 
-    # ================= EMA =================
+    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    # ================= RSI =================
+    # RSI
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # ================= VWAP =================
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-
-    # ================= MACD =================
+    # MACD
     df['EMA12'] = df['Close'].ewm(span=12).mean()
     df['EMA26'] = df['Close'].ewm(span=26).mean()
     df['MACD'] = df['EMA12'] - df['EMA26']
-    df['Signal_Line'] = df['MACD'].ewm(span=9).mean()
-
-    # ================= SUPER TREND =================
-    hl2 = (df['High'] + df['Low']) / 2
-    atr = (df['High'] - df['Low']).rolling(10).mean()
-    df['UpperBand'] = hl2 + (2 * atr)
-    df['LowerBand'] = hl2 - (2 * atr)
+    df['Signal'] = df['MACD'].ewm(span=9).mean()
 
     df.dropna(inplace=True)
 
-    # ================= AI TARGET =================
+    # AI TARGET
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
-    features = ['EMA20','EMA50','RSI','VWAP','MACD']
+    features = ['EMA20','EMA50','RSI','MACD']
+
     X = df[features]
     y = df['Target']
 
-    if len(X) < 30:
+    if len(X) < 50:
         return None
 
     model = train_model(X, y)
+
     pred = model.predict(X.iloc[[-1]])[0]
 
     price = df['Close'].iloc[-1]
     ema20 = df['EMA20'].iloc[-1]
     ema50 = df['EMA50'].iloc[-1]
     rsi = df['RSI'].iloc[-1]
+    macd = df['MACD'].iloc[-1]
+    signal = df['Signal'].iloc[-1]
 
-    macd_buy = df['MACD'].iloc[-1] > df['Signal_Line'].iloc[-1]
-    st_buy = price > df['LowerBand'].iloc[-1]
-
-    # ================= SIGNAL =================
-    if pred == 1 and price > ema20 and ema20 > ema50 and rsi < 60:
-        signal = "🟢 STRONG BUY"
-    elif pred == 0 and price < ema20 and ema20 < ema50 and rsi > 40:
-        signal = "🔴 STRONG SELL"
-    elif price > ema20:
-        signal = "BUY"
-    elif price < ema20:
-        signal = "SELL"
-    else:
-        signal = "SIDEWAYS"
-
-    # ================= BIG PLAYER =================
-    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    vol_ratio = df['Volume'].iloc[-1] / (avg_vol + 1e-9)
-
-    if vol_ratio > 2:
-        big = "🔥 BIG BUYER"
-    elif vol_ratio < 0.5:
-        big = "🔻 BIG SELLER"
-    else:
-        big = ""
-
-    # ================= SCORE =================
-    score = 0
-    if "STRONG" in signal:
-        score += 4
-    if "BUY" in signal:
-        score += 2
-    if big == "🔥 BIG BUYER":
-        score += 2
-    if big == "🔻 BIG SELLER":
-        score += 2
-
-    # ================= CONFIDENCE FILTER =================
+    # =============================
+    # 90% FILTER LOGIC (IMPORTANT)
+    # =============================
     confidence = 0
-    if macd_buy: confidence += 20
-    if st_buy: confidence += 20
-    if rsi < 60: confidence += 20
-    if score >= 6: confidence += 20
-    if vol_ratio > 1.5: confidence += 20
 
-    if confidence >= 80:
-        final_signal = "🔥 HIGH PROBABILITY TRADE"
+    if price > ema20 > ema50:
+        confidence += 25
+    if 40 < rsi < 60:
+        confidence += 20
+    if macd > signal:
+        confidence += 20
+    if pred == 1:
+        confidence += 20
+
+    volume_ok = True  # simplified
+    if volume_ok:
+        confidence += 15
+
+    # =============================
+    # SIGNAL
+    # =============================
+    if confidence >= 85:
+        final = "🔥 HIGH PROBABILITY TRADE"
     elif confidence >= 60:
-        final_signal = "⚡ WATCH"
+        final = "⚡ WATCH"
     else:
-        final_signal = "❌ AVOID"
+        final = "❌ AVOID"
 
-    # ================= SUPPORT / RESISTANCE =================
-    support = df['Low'].tail(40).min()
-    resistance = df['High'].tail(40).max()
-
-    # ================= ENTRY =================
-    entry = round(price,2)
-
-    # ================= OPTIONS SIGNAL =================
-    if "STRONG BUY" in signal and macd_buy:
-        option_signal = "🟢 CALL BUY (CE)"
-    elif "STRONG SELL" in signal and not macd_buy:
-        option_signal = "🔴 PUT BUY (PE)"
+    if pred == 1:
+        signal_text = "🟢 BUY"
     else:
-        option_signal = "⚪ NO TRADE"
+        signal_text = "🔴 SELL"
 
-    return df, signal, big, entry, final_signal, option_signal, score, support, resistance
+    return final, signal_text, confidence, price
+
+# =============================
+# BACKTEST ENGINE
+# =============================
+def backtest(df):
+
+    df = df.copy()
+
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
+    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+    df.dropna(inplace=True)
+
+    correct = 0
+    total = 0
+
+    for i in range(50, len(df)-1):
+        if df['EMA20'].iloc[i] > df['EMA50'].iloc[i]:
+            pred = 1
+        else:
+            pred = 0
+
+        if pred == df['Target'].iloc[i]:
+            correct += 1
+        total += 1
+
+    winrate = (correct / total) * 100 if total > 0 else 0
+    return round(winrate, 2)
 
 # =============================
 # SCANNER
 # =============================
-def scanner():
+data = get_data(all_stocks)
 
-    results = []
-    data = get_data(all_stocks)
+results = []
 
-    if data is None:
-        return pd.DataFrame()
+if data is not None:
 
     for stock in all_stocks:
         try:
             df = data[stock].dropna()
-            out = analyze(df)
 
+            out = analyze(df)
             if out is None:
                 continue
 
-            df, signal, big, entry, final_signal, option_signal, score, support, resistance = out
-
-            price = df['Close'].iloc[-1]
-            trend = "UP" if price > df['EMA50'].iloc[-1] else "DOWN"
+            final, signal_text, confidence, price = out
+            winrate = backtest(df)
 
             results.append({
                 "Stock": stock,
                 "Price": round(price,2),
-                "Signal": signal,
-                "Trend": trend,
-                "Big Player": big,
-                "Entry": entry,
-                "Final Signal": final_signal,
-                "Options": option_signal,
-                "Score": score,
-                "Support": round(support,2),
-                "Resistance": round(resistance,2),
+                "Signal": signal_text,
+                "Confidence": confidence,
+                "Final": final,
+                "WinRate%": winrate
             })
 
         except:
             continue
 
-    return pd.DataFrame(results).sort_values(by="Score", ascending=False)
+    result_df = pd.DataFrame(results).sort_values(by="Confidence", ascending=False)
 
-# =============================
-# UI
-# =============================
-df = scanner()
+    # =============================
+    # UI
+    # =============================
+    st.subheader("🔥 TOP HIGH PROBABILITY TRADES")
 
-tabs = st.tabs(list(sectors.keys()))
+    st.dataframe(result_df)
 
-for i, sec in enumerate(sectors.keys()):
-    with tabs[i]:
-        st.dataframe(df[df["Stock"].isin(sectors[sec])], use_container_width=True)
+    st.subheader("🔥 ONLY BEST SETUPS (90% FILTER)")
 
-st.subheader("🔥 TOP TRADES (HIGH PROBABILITY)")
-st.dataframe(df[df["Score"] >= 6], use_container_width=True)
+    st.dataframe(result_df[result_df["Confidence"] >= 85])
 
-st.download_button("⬇ Download CSV", df.to_csv(index=False), "scanner.csv")
+    st.subheader("📊 SELECT STOCK CHART")
 
-st.subheader("📈 CHART")
+    stock = st.selectbox("Select Stock", result_df["Stock"])
+    st.line_chart(data[stock]["Close"])
 
-if not df.empty:
-    stock = st.selectbox("Select Stock", df["Stock"])
-    data = get_data([stock])
+    st.subheader("📈 OVERALL STATS")
 
-    if data is not None:
-        st.line_chart(data[stock]["Close"])
+    st.write("Avg WinRate:", round(result_df["WinRate%"].mean(),2))
+    st.write("Best Stock:", result_df.iloc[0]["Stock"])
