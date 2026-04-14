@@ -6,26 +6,41 @@ from sklearn.ensemble import RandomForestClassifier
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# PAGE SETUP
+# PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 PRO NSE AI BACKTEST SCANNER", layout="wide")
+st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
 st_autorefresh(interval=8000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER + BACKTEST + 90% FILTER")
+st.title("🔥 PRO NSE AI SCANNER (AI + BACKTEST + 90% FILTER)")
 
 # =============================
-# SECTORS
+# SECTORS (ALL MAJOR NSE)
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
-    "Banking": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
-    "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS"],
+    "Banking": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS","BANKBARODA.NS"],
+    "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS","LTIM.NS"],
+    "Auto": ["MARUTI.NS","M&M.NS","TATAMOTORS.NS"],
+    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS"],
+    "Energy": ["ONGC.NS","IOC.NS","RELIANCE.NS"],
+    "FMCG": ["HINDUNILVR.NS","ITC.NS","NESTLEIND.NS"],
+    "Metals": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
+    "Power": ["NTPC.NS","POWERGRID.NS","TATAPOWER.NS"],
+    "Telecom": ["BHARTIARTL.NS","IDEA.NS"],
+    "Finance": ["BAJFINANCE.NS","BAJAJFINSV.NS"],
+    "Infra": ["LT.NS","ADANIPORTS.NS"],
+    "Defence": ["HAL.NS","BEL.NS"],
+    "Railways": ["IRCTC.NS","IRFC.NS"]
 }
 
-all_stocks = sorted(list(set([s for sec in sectors.values() for s in sec])))
+# =============================
+# SELECT SECTOR (SPEED CONTROL)
+# =============================
+selected_sector = st.selectbox("📊 Select Sector", list(sectors.keys()))
+stocks_to_scan = sectors[selected_sector]
 
 # =============================
-# DATA
+# DATA FETCH
 # =============================
 @st.cache_data(ttl=120)
 def get_data(tickers):
@@ -41,24 +56,21 @@ def train_model(X, y):
     return model
 
 # =============================
-# TECHNICAL ENGINE
+# ANALYSIS ENGINE
 # =============================
 def analyze(df):
 
     df = df.copy()
 
-    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    # RSI
     delta = df['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # MACD
     df['EMA12'] = df['Close'].ewm(span=12).mean()
     df['EMA26'] = df['Close'].ewm(span=26).mean()
     df['MACD'] = df['EMA12'] - df['EMA26']
@@ -66,12 +78,10 @@ def analyze(df):
 
     df.dropna(inplace=True)
 
-    # AI TARGET
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
     features = ['EMA20','EMA50','RSI','MACD']
-
     X = df[features]
     y = df['Target']
 
@@ -79,7 +89,6 @@ def analyze(df):
         return None
 
     model = train_model(X, y)
-
     pred = model.predict(X.iloc[[-1]])[0]
 
     price = df['Close'].iloc[-1]
@@ -90,7 +99,7 @@ def analyze(df):
     signal = df['Signal'].iloc[-1]
 
     # =============================
-    # 90% FILTER LOGIC (IMPORTANT)
+    # 90% FILTER
     # =============================
     confidence = 0
 
@@ -103,34 +112,28 @@ def analyze(df):
     if pred == 1:
         confidence += 20
 
-    volume_ok = True  # simplified
-    if volume_ok:
-        confidence += 15
+    confidence += 15
 
     # =============================
-    # SIGNAL
+    # FINAL SIGNAL
     # =============================
     if confidence >= 85:
-        final = "🔥 HIGH PROBABILITY TRADE"
+        final = "🔥 HIGH PROBABILITY"
     elif confidence >= 60:
         final = "⚡ WATCH"
     else:
         final = "❌ AVOID"
 
-    if pred == 1:
-        signal_text = "🟢 BUY"
-    else:
-        signal_text = "🔴 SELL"
+    signal_text = "🟢 BUY" if pred == 1 else "🔴 SELL"
 
     return final, signal_text, confidence, price
 
 # =============================
-# BACKTEST ENGINE
+# BACKTEST
 # =============================
 def backtest(df):
 
     df = df.copy()
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
@@ -141,28 +144,23 @@ def backtest(df):
     total = 0
 
     for i in range(50, len(df)-1):
-        if df['EMA20'].iloc[i] > df['EMA50'].iloc[i]:
-            pred = 1
-        else:
-            pred = 0
-
+        pred = 1 if df['EMA20'].iloc[i] > df['EMA50'].iloc[i] else 0
         if pred == df['Target'].iloc[i]:
             correct += 1
         total += 1
 
-    winrate = (correct / total) * 100 if total > 0 else 0
-    return round(winrate, 2)
+    return round((correct/total)*100,2) if total > 0 else 0
 
 # =============================
 # SCANNER
 # =============================
-data = get_data(all_stocks)
+data = get_data(stocks_to_scan)
 
 results = []
 
 if data is not None:
 
-    for stock in all_stocks:
+    for stock in stocks_to_scan:
         try:
             df = data[stock].dropna()
 
@@ -188,22 +186,18 @@ if data is not None:
     result_df = pd.DataFrame(results).sort_values(by="Confidence", ascending=False)
 
     # =============================
-    # UI
+    # UI OUTPUT
     # =============================
-    st.subheader("🔥 TOP HIGH PROBABILITY TRADES")
+    st.subheader(f"🔥 {selected_sector} TOP TRADES")
+    st.dataframe(result_df, use_container_width=True)
 
-    st.dataframe(result_df)
+    st.subheader("🔥 HIGH PROBABILITY (90% FILTER)")
+    st.dataframe(result_df[result_df["Confidence"] >= 85], use_container_width=True)
 
-    st.subheader("🔥 ONLY BEST SETUPS (90% FILTER)")
-
-    st.dataframe(result_df[result_df["Confidence"] >= 85])
-
-    st.subheader("📊 SELECT STOCK CHART")
-
+    st.subheader("📈 STOCK CHART")
     stock = st.selectbox("Select Stock", result_df["Stock"])
     st.line_chart(data[stock]["Close"])
 
-    st.subheader("📈 OVERALL STATS")
-
+    st.subheader("📊 PERFORMANCE")
     st.write("Avg WinRate:", round(result_df["WinRate%"].mean(),2))
-    st.write("Best Stock:", result_df.iloc[0]["Stock"])
+    st.write("Top Stock:", result_df.iloc[0]["Stock"])
