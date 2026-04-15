@@ -2,50 +2,54 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
 from sklearn.ensemble import RandomForestClassifier
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# PAGE CONFIG
+# CONFIG
 # =============================
-st.set_page_config(page_title="⚡ ULTRA FAST NSE AI SCANNER", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI SCANNER STABLE", layout="wide")
 st_autorefresh(interval=5000, key="refresh")
 
-st.title("⚡ PRO NSE AI SCANNER (ULTRA FAST)")
+st.title("🔥 NSE AI SCANNER (STABLE VERSION)")
 st.markdown("---")
 
 # =============================
-# NSE SECTORS
+# SECTORS
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
     "Banking": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["MARUTI.NS","TATAMOTORS.NS","M&M.NS"],
-    "FMCG": ["ITC.NS","HINDUNILVR.NS","NESTLEIND.NS"]
+    "Auto": ["MARUTI.NS","TATAMOTORS.NS","M&M.NS"]
 }
 
-selected_sector = st.selectbox("📊 Sector", list(sectors.keys()))
+selected_sector = st.selectbox("📊 Select Sector", list(sectors.keys()))
 stocks = sectors[selected_sector]
 
-# 🔥 LIMIT CONTROL
-limit = st.slider("📌 Stocks Limit", 3, 15, 5)
+# LIMIT CONTROL
+limit = st.slider("📌 Stocks Limit", 3, 10, 5)
 stocks = stocks[:limit]
 
 # =============================
-# DATA CACHE
+# SAFE DATA FETCH
 # =============================
 @st.cache_data(ttl=60)
-def get_data(tickers):
-    return yf.download(tickers, period="60d", interval="15m", group_by="ticker")
+def get_data_safe(tickers):
+    data_dict = {}
+    for t in tickers:
+        try:
+            df = yf.download(t, period="60d", interval="15m")
+            if df is not None and not df.empty:
+                data_dict[t] = df
+        except:
+            continue
+    return data_dict
 
-@st.cache_data(ttl=60)
-def get_bn_data():
-    return yf.download("^NSEBANK", period="5d", interval="5m")
+data = get_data_safe(stocks)
 
-data = get_data(stocks)
-bn_df = get_bn_data()
+# DEBUG
+st.write("Loaded Stocks:", list(data.keys()))
 
 # =============================
 # FUNCTIONS
@@ -56,6 +60,9 @@ def get_trend(df):
     return "UP" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
 
 def get_entry(df, signal):
+    if len(df) < 2:
+        return None, None, None
+
     prev = df.iloc[-2]
 
     if "BUY" in signal:
@@ -69,22 +76,6 @@ def get_entry(df, signal):
 
     return round(entry,2), round(sl,2), round(target,2)
 
-def candle(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    if last['Close'] > last['Open'] and last['Close'] > prev['High']:
-        return "BUY"
-    elif last['Close'] < last['Open'] and last['Close'] < prev['Low']:
-        return "SELL"
-    else:
-        return "WEAK"
-
-def bn_scalp(df):
-    df['EMA5'] = df['Close'].ewm(span=5).mean()
-    df['EMA13'] = df['Close'].ewm(span=13).mean()
-    return "BUY" if df['EMA5'].iloc[-1] > df['EMA13'].iloc[-1] else "SELL"
-
 @st.cache_resource
 def train(X,y):
     model = RandomForestClassifier(n_estimators=50)
@@ -92,13 +83,19 @@ def train(X,y):
     return model
 
 # =============================
-# ANALYZE
+# ANALYSIS
 # =============================
 results = []
 
 for stock in stocks:
     try:
-        df = data[stock].dropna()
+        if stock not in data:
+            continue
+
+        df = data[stock].copy()
+
+        if df.empty or len(df) < 30:
+            continue
 
         df['EMA20'] = df['Close'].ewm(span=20).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
@@ -106,28 +103,27 @@ for stock in stocks:
         df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
         df.dropna(inplace=True)
 
+        if len(df) < 30:
+            continue
+
         X = df[['EMA20','EMA50']]
         y = df['Target']
-
-        if len(X) < 50:
-            continue
 
         model = train(X,y)
         pred = model.predict(X.iloc[[-1]])[0]
 
         signal = "BUY" if pred==1 else "SELL"
-
         price = df['Close'].iloc[-1]
 
         entry, sl, target = get_entry(df, signal)
+
+        if entry is None:
+            continue
 
         # FAST MULTI TF
         t5 = get_trend(df.tail(50))
         t15 = get_trend(df)
         t1h = get_trend(df.resample("1H").last())
-
-        cndl = candle(df)
-        bn = bn_scalp(bn_df)
 
         results.append({
             "Stock": stock,
@@ -138,24 +134,24 @@ for stock in stocks:
             "Target": target,
             "5M": t5,
             "15M": t15,
-            "1H": t1h,
-            "Candle": cndl,
-            "BN": bn
+            "1H": t1h
         })
 
-    except:
-        continue
+    except Exception as e:
+        st.write(f"Error in {stock}:", e)
 
 df_res = pd.DataFrame(results)
 
 # =============================
-# UI
+# OUTPUT
 # =============================
-st.subheader("🔥 FAST TRADING TABLE")
-st.dataframe(df_res, use_container_width=True)
+if df_res.empty:
+    st.error("❌ No Stocks Data Available (Check Internet / API)")
+else:
+    st.subheader("🔥 TRADING TABLE")
+    st.dataframe(df_res, use_container_width=True)
 
-# MULTI BOX
-if not df_res.empty:
+    # MULTI TF
     stock_sel = st.selectbox("Select Stock", df_res["Stock"])
     row = df_res[df_res["Stock"] == stock_sel].iloc[0]
 
@@ -164,14 +160,6 @@ if not df_res.empty:
     c2.metric("15M", row["15M"])
     c3.metric("1H", row["1H"])
 
-# CHART
-if not df_res.empty:
+    # CHART
     st.subheader("📈 Chart")
-    chart_stock = st.selectbox("Chart Stock", df_res["Stock"], key="chart")
-    st.line_chart(data[chart_stock]["Close"].resample("1D").last())
-
-# DAILY PLAN
-st.subheader("💰 Daily Plan")
-capital = st.number_input("Capital", value=10000)
-st.write("Risk:", capital*0.02)
-st.write("Target:", capital*0.03)
+    st.line_chart(data[stock_sel]["Close"].resample("1D").last())
