@@ -2,35 +2,42 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
+import time
 from sklearn.ensemble import RandomForestClassifier
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # PAGE CONFIG
 # =============================
-st.set_page_config(page_title="🔥 PRO NSE AI SCANNER", layout="wide")
-st_autorefresh(interval=8000, key="refresh")
+st.set_page_config(page_title="🔥 PRO NSE AI SCANNER ULTIMATE", layout="wide")
+st_autorefresh(interval=5000, key="refresh")
 
-st.title("🔥 PRO NSE AI SCANNER (FULL UPGRADE VERSION)")
+st.title("🔥 PRO NSE AI SCANNER (ULTIMATE PRO VERSION)")
+st.markdown("---")
+
+headers = {"User-Agent": "Mozilla/5.0"}
 
 # =============================
-# SECTORS
+# NSE SECTORS
 # =============================
 sectors = {
     "Nifty 50": ["RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS"],
     "Banking": ["SBIN.NS","AXISBANK.NS","KOTAKBANK.NS","PNB.NS"],
     "IT": ["WIPRO.NS","HCLTECH.NS","TECHM.NS"],
-    "Auto": ["MARUTI.NS","M&M.NS","TATAMOTORS.NS"],
-    "Pharma": ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS"],
-    "Energy": ["ONGC.NS","IOC.NS"],
-    "FMCG": ["ITC.NS","NESTLEIND.NS"],
-    "Metals": ["TATASTEEL.NS","JSWSTEEL.NS"],
-    "Power": ["NTPC.NS","POWERGRID.NS"],
-    "Finance": ["BAJFINANCE.NS","BAJAJFINSV.NS"]
+    "Auto": ["MARUTI.NS","TATAMOTORS.NS","M&M.NS"],
+    "Pharma": ["SUNPHARMA.NS","CIPLA.NS","DRREDDY.NS"],
+    "Energy": ["ONGC.NS","IOC.NS","BPCL.NS"],
+    "FMCG": ["ITC.NS","HINDUNILVR.NS","NESTLEIND.NS"],
+    "Metals": ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"],
+    "Power": ["NTPC.NS","POWERGRID.NS","ADANIPOWER.NS"],
+    "Infra": ["LT.NS","IRCTC.NS","NBCC.NS"],
+    "Telecom": ["BHARTIARTL.NS","IDEA.NS"],
+    "Finance": ["BAJFINANCE.NS","BAJAJFINSV.NS","HDFCLIFE.NS"]
 }
 
 selected_sector = st.selectbox("📊 Select Sector", list(sectors.keys()))
-stocks_to_scan = sectors[selected_sector]
+stocks = sectors[selected_sector]
 
 # =============================
 # DATA
@@ -40,200 +47,194 @@ def get_data(tickers):
     return yf.download(tickers, period="60d", interval="15m", group_by="ticker")
 
 # =============================
+# LIVE PRICE
+# =============================
+def get_live_price(symbol):
+    try:
+        s = requests.Session()
+        s.get("https://www.nseindia.com", headers=headers)
+        url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol.replace('.NS','')}"
+        return s.get(url, headers=headers).json()['priceInfo']['lastPrice']
+    except:
+        return None
+
+# =============================
+# TREND
+# =============================
+def get_trend(df):
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    return "UP" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWN"
+
+# =============================
+# ENTRY
+# =============================
+def get_entry_point(df, signal):
+    prev = df.iloc[-2]
+
+    if "BUY" in signal:
+        entry = round(prev['High'], 2)
+        sl = round(prev['Low'], 2)
+        target = round(entry + (entry - sl)*1.5, 2)
+    else:
+        entry = round(prev['Low'], 2)
+        sl = round(prev['High'], 2)
+        target = round(entry - (sl - entry)*1.5, 2)
+
+    return entry, sl, target
+
+# =============================
+# CANDLE CONFIRM
+# =============================
+def candle_confirmation(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if last['Close'] > last['Open'] and last['Close'] > prev['High']:
+        return "✅ STRONG BUY"
+    elif last['Close'] < last['Open'] and last['Close'] < prev['Low']:
+        return "🔻 STRONG SELL"
+    else:
+        return "⚖️ WEAK"
+
+# =============================
+# BANKNIFTY SCALPING
+# =============================
+def banknifty_scalping():
+    df = yf.download("^NSEBANK", period="5d", interval="5m")
+
+    df['EMA5'] = df['Close'].ewm(span=5).mean()
+    df['EMA13'] = df['Close'].ewm(span=13).mean()
+
+    last = df.iloc[-1]
+
+    if last['EMA5'] > last['EMA13']:
+        return "⚡ BN BUY"
+    else:
+        return "⚡ BN SELL"
+
+# =============================
 # MODEL
 # =============================
 @st.cache_resource
-def train_model(X, y):
-    model = RandomForestClassifier(n_estimators=80, max_depth=6)
-    model.fit(X, y)
+def train(X,y):
+    model = RandomForestClassifier(n_estimators=80)
+    model.fit(X,y)
     return model
 
 # =============================
-# ANALYSIS ENGINE
+# ANALYZE
 # =============================
-def analyze(df):
-
+def analyze(df, stock):
     df = df.copy()
 
-    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    # RSI
-    delta = df['Close'].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
-    rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100 / (1 + rs))
-
-    # MACD
-    df['EMA12'] = df['Close'].ewm(span=12).mean()
-    df['EMA26'] = df['Close'].ewm(span=26).mean()
-    df['MACD'] = df['EMA12'] - df['EMA26']
-    df['Signal'] = df['MACD'].ewm(span=9).mean()
-
-    df.dropna(inplace=True)
-
-    # AI Target
     df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
     df.dropna(inplace=True)
 
-    features = ['EMA20','EMA50','RSI','MACD']
-    X = df[features]
+    X = df[['EMA20','EMA50']]
     y = df['Target']
 
     if len(X) < 50:
         return None
 
-    model = train_model(X, y)
+    model = train(X,y)
     pred = model.predict(X.iloc[[-1]])[0]
 
-    price = df['Close'].iloc[-1]
-    ema20 = df['EMA20'].iloc[-1]
-    ema50 = df['EMA50'].iloc[-1]
-    rsi = df['RSI'].iloc[-1]
-    macd = df['MACD'].iloc[-1]
-    signal = df['Signal'].iloc[-1]
+    signal = "🟢 BUY" if pred==1 else "🔴 SELL"
 
-    # =============================
-    # SUPPORT / RESISTANCE
-    # =============================
-    support = df['Low'].tail(40).min()
-    resistance = df['High'].tail(40).max()
+    price = get_live_price(stock)
+    if not price:
+        price = df['Close'].iloc[-1]
 
-    near_support = price <= support * 1.02
-    near_resistance = price >= resistance * 0.98
+    entry, sl, target = get_entry_point(df, signal)
 
-    # =============================
-    # BIG PLAYER
-    # =============================
-    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    vol_ratio = df['Volume'].iloc[-1] / (avg_vol + 1e-9)
+    # MULTI TF
+    df5 = yf.download(stock, period="10d", interval="5m")
+    df1h = yf.download(stock, period="60d", interval="1h")
 
-    if vol_ratio > 2:
-        big = "🔥 BIG BUYER"
-    elif vol_ratio < 0.5:
-        big = "🔻 BIG SELLER"
-    else:
-        big = ""
+    t5 = get_trend(df5)
+    t15 = get_trend(df)
+    t1h = get_trend(df1h)
 
-    # =============================
-    # 90% FILTER
-    # =============================
-    confidence = 0
+    candle = candle_confirmation(df)
+    bn_signal = banknifty_scalping()
 
-    if price > ema20 > ema50:
-        confidence += 20
-    if 40 < rsi < 60:
-        confidence += 15
-    if macd > signal:
-        confidence += 20
-    if pred == 1:
-        confidence += 20
-    if vol_ratio > 1.5:
-        confidence += 15
-    if near_support or near_resistance:
-        confidence += 10
-
-    # =============================
-    # FINAL SIGNAL
-    # =============================
-    if confidence >= 85:
-        final = "🔥 HIGH PROBABILITY"
-    elif confidence >= 60:
-        final = "⚡ WATCH"
-    else:
-        final = "❌ AVOID"
-
-    signal_text = "🟢 BUY" if pred == 1 else "🔴 SELL"
-
-    # =============================
-    # ENTRY + STOPLOSS
-    # =============================
-    entry = round(price,2)
-
-    if "BUY" in signal_text:
-        stoploss = round(support,2)
-    else:
-        stoploss = round(resistance,2)
-
-    return final, signal_text, confidence, price, support, resistance, big, entry, stoploss
+    return signal, price, entry, sl, target, t5, t15, t1h, candle, bn_signal
 
 # =============================
-# BACKTEST
+# RUN
 # =============================
-def backtest(df):
-
-    df = df.copy()
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-
-    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
-    df.dropna(inplace=True)
-
-    correct = 0
-    total = 0
-
-    for i in range(50, len(df)-1):
-        pred = 1 if df['EMA20'].iloc[i] > df['EMA50'].iloc[i] else 0
-        if pred == df['Target'].iloc[i]:
-            correct += 1
-        total += 1
-
-    return round((correct/total)*100,2) if total > 0 else 0
-
-# =============================
-# SCANNER
-# =============================
-data = get_data(stocks_to_scan)
-
+data = get_data(stocks)
 results = []
 
-if data is not None:
+for stock in stocks:
+    try:
+        df = data[stock].dropna()
+        out = analyze(df, stock)
+        if out is None: continue
 
-    for stock in stocks_to_scan:
-        try:
-            df = data[stock].dropna()
+        signal, price, entry, sl, target, t5, t15, t1h, candle, bn_signal = out
 
-            out = analyze(df)
-            if out is None:
-                continue
+        results.append({
+            "Stock": stock,
+            "Signal": signal,
+            "Price": round(price,2),
+            "Entry": entry,
+            "Stoploss": sl,
+            "Target": target,
+            "5M": t5,
+            "15M": t15,
+            "1H": t1h,
+            "Candle": candle,
+            "BankNifty": bn_signal
+        })
 
-            final, signal_text, confidence, price, support, resistance, big, entry, stoploss = out
-            winrate = backtest(df)
+        time.sleep(0.3)
 
-            results.append({
-                "Stock": stock,
-                "Price": round(price,2),
-                "Signal": signal_text,
-                "Confidence": confidence,
-                "Final": final,
-                "Big Player": big,
-                "Support": round(support,2),
-                "Resistance": round(resistance,2),
-                "Entry": entry,
-                "Stoploss": stoploss,
-                "WinRate%": winrate
-            })
+    except:
+        continue
 
-        except:
-            continue
+df_res = pd.DataFrame(results)
 
-    result_df = pd.DataFrame(results).sort_values(by="Confidence", ascending=False)
+st.subheader("🔥 TRADING TABLE")
+st.dataframe(df_res, use_container_width=True)
 
-    # =============================
-    # UI
-    # =============================
-    st.subheader(f"🔥 {selected_sector} TOP TRADES")
-    st.dataframe(result_df, use_container_width=True)
+# =============================
+# MULTI TF BOX
+# =============================
+st.subheader("📦 Multi Timeframe")
 
-    st.subheader("🔥 HIGH PROBABILITY ONLY")
-    st.dataframe(result_df[result_df["Confidence"] >= 85], use_container_width=True)
+if not df_res.empty:
+    stock_sel = st.selectbox("Select Stock", df_res["Stock"])
+    row = df_res[df_res["Stock"] == stock_sel].iloc[0]
 
-    st.subheader("📈 CHART")
-    stock = st.selectbox("Select Stock", result_df["Stock"])
-    st.line_chart(data[stock]["Close"])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("5 MIN", row["5M"])
+    c2.metric("15 MIN", row["15M"])
+    c3.metric("1 HOUR", row["1H"])
 
-    st.subheader("📊 PERFORMANCE")
-    st.write("Avg WinRate:", round(result_df["WinRate%"].mean(),2))
-    st.write("Top Stock:", result_df.iloc[0]["Stock"])
+# =============================
+# CHART
+# =============================
+st.subheader("📈 Chart")
+
+if not df_res.empty:
+    chart_stock = st.selectbox("Chart Stock", df_res["Stock"], key="chart")
+    chart_data = data[chart_stock]["Close"].resample("1D").last()
+    st.line_chart(chart_data)
+
+# =============================
+# DAILY PLAN
+# =============================
+st.subheader("💰 DAILY PLAN")
+
+capital = st.number_input("Capital", value=10000)
+risk = capital * 0.02
+target_daily = capital * 0.03
+
+st.write(f"Risk per trade: ₹{risk}")
+st.write(f"Daily Target: ₹{target_daily}")
+st.write("Trades per day: 2-3 only")
