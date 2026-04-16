@@ -6,52 +6,54 @@ from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# CONFIG
+# CONFIG & UI SETUP
 # =============================
 st.set_page_config(page_title="🔥 MANOHAR NSE AI PRO V2", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-# Custom CSS for better look
+# Custom Styling
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    .stMetric { background-color: #1e2130; padding: 10px; border-radius: 10px; }
+    div[data-testid="stMetricValue"] { font-size: 28px; color: #00ffcc; }
+    .stDataFrame { border: 1px solid #333; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 MANOHAR NSE AI PRO - ADVANCED TERMINAL")
+st.title("🚀 MANOHAR NSE AI PRO - SMART TERMINAL")
+st.write(f"**Live Market Feed** | Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 st.markdown("---")
 
 # =============================
-# DIRECTION FUNCTION
+# DIRECTION LOGIC
 # =============================
 def get_direction(signal):
-    if "BUY" in signal or "UP" in signal:
+    if "BUY" in signal:
         return "🟢 UP"
-    elif "SELL" in signal or "DOWN" in signal:
+    elif "SELL" in signal:
         return "🔴 DOWN"
     else:
         return "⚪ WAIT"
 
 # =============================
-# ANALYSIS FUNCTION (UPDATED WITH RSI & SMC LOGIC)
+# CORE AI ANALYSIS FUNCTION
 # =============================
 def analyze_data(df):
-    if df is None or len(df) < 25:
+    if df is None or len(df) < 30:
         return None
 
-    # EMA Calculations
+    # Indicators
     e20 = df['Close'].ewm(span=20).mean()
     e50 = df['Close'].ewm(span=50).mean()
-
-    # RSI Calculation (New)
+    
+    # RSI Calculation
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
+    rsi = 100 - (100 / (1 + rs))
 
-    # Volume & SMC Logic
+    # Volume Analysis
     vol = df['Volume']
     avg_vol = vol.rolling(window=20).mean()
     
@@ -60,149 +62,120 @@ def analyze_data(df):
     curr_e50 = e50.iloc[-1]
     curr_vol = vol.iloc[-1]
     curr_avg_vol = avg_vol.iloc[-1]
-    curr_rsi = df['RSI'].iloc[-1]
+    curr_rsi = rsi.iloc[-1]
 
-    if pd.isna(curr_avg_vol) or curr_avg_vol == 0:
-        return None
-
-    # Trend Strength
-    cp_strength = "🔵 CALL STRONG" if curr_e20 > curr_e50 else "🔴 PUT STRONG"
-
-    # Institutional Activity (SMC)
+    # Smart Money Activity
     if curr_vol > curr_avg_vol * 2.5:
-        big_player = "🐋 INSTITUTIONAL ENTRY"
+        big_player = "🐋 INSTITUTIONAL"
     elif curr_vol > curr_avg_vol * 1.5:
-        big_player = "🔥 BIG PLAYER ACTIVE"
+        big_player = "🔥 BIG PLAYER"
     else:
-        big_player = "💤 RETAIL VOLUME"
+        big_player = "💤 RETAIL"
 
     observation = "WAIT"
     entry, sl, target = 0, 0, 0
 
+    # Risk Management (ATR based simplified)
     recent_high = df['High'].iloc[-10:].max()
     recent_low = df['Low'].iloc[-10:].min()
-    risk = (recent_high - recent_low) if (recent_high - recent_low) > 0 else curr_price * 0.01
+    volatility_range = (recent_high - recent_low) if (recent_high - recent_low) > 0 else curr_price * 0.01
 
-    # Signal Logic with RSI Filter
+    # Strategy: EMA Cross + RSI Filter
     if curr_e20 > curr_e50 and curr_vol > curr_avg_vol:
-        if curr_rsi < 75: # Overbought filter
+        if curr_rsi < 70: # Avoid overbought
             observation = "🚀 CONFIRMED BUY"
             entry = curr_price
-            sl = curr_price - (risk * 0.5)
-            target = curr_price + risk
+            sl = curr_price - (volatility_range * 0.5)
+            target = curr_price + volatility_range
         else:
-            observation = "⚠️ OVERBOUGHT - WAIT"
+            observation = "⚠️ RSI OVERBOUGHT"
 
     elif curr_e20 < curr_e50 and curr_vol > curr_avg_vol:
-        if curr_rsi > 25: # Oversold filter
+        if curr_rsi > 30: # Avoid oversold
             observation = "💀 CONFIRMED SELL"
             entry = curr_price
-            sl = curr_price + (risk * 0.5)
-            target = curr_price - risk
+            sl = curr_price + (volatility_range * 0.5)
+            target = curr_price - volatility_range
         else:
-            observation = "⚠️ OVERSOLD - WAIT"
+            observation = "⚠️ RSI OVERSOLD"
 
-    # Trend Score Calculation
-    try:
-        ema_score = abs(curr_e20 - curr_e50) / curr_price * 100
-        vol_score = curr_vol / curr_avg_vol
-        momentum = (curr_price - df['Close'].iloc[-5]) / curr_price * 100
-        
-        trend_score = (ema_score * 30) + (vol_score * 10) + (abs(momentum) * 20)
-        trend_score = min(100, round(trend_score, 2))
-    except:
-        trend_score = 0
+    # Strength Score (0-100)
+    score = min(100, round((abs(curr_e20 - curr_e50)/curr_price * 5000) + (curr_vol/curr_avg_vol * 10), 2))
 
-    return (cp_strength, observation, big_player, round(entry, 2), round(sl, 2), round(target, 2), trend_score, round(curr_rsi, 2))
+    return (observation, big_player, round(entry, 2), round(sl, 2), round(target, 2), score, round(curr_rsi, 2))
 
 # =============================
-# SECTORS
+# DATA SOURCE
 # =============================
-all_sectors = {
+sectors = {
     "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
     "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK","PNB","CANBK","FEDERALBNK"],
     "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","EICHERMOT","ASHOKLEY","TVSMOTOR"],
-    "IT Sector": ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","COFORGE"]
+    "IT": ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM"]
 }
 
 # =============================
-# MAIN INTERFACE
+# SIDEBAR & BACKTEST
 # =============================
-col1, col2 = st.columns([2, 1])
-with col1:
-    selected_sector = st.selectbox("📂 Select Sector to Scan", list(all_sectors.keys()))
-with col2:
-    st.write(f"**Last Sync:** {datetime.now().strftime('%H:%M:%S')}")
+st.sidebar.title("🛠️ Control Panel")
+selected_sector = st.sidebar.selectbox("Select Sector", list(sectors.keys()))
+bt_date = st.sidebar.date_input("Backtest Date", datetime.now() - timedelta(days=1))
 
-stocks = all_sectors[selected_sector]
-
-if st.button("🔍 START AI SCANNER", use_container_width=True):
+# =============================
+# MAIN SCANNER EXECUTION
+# =============================
+if st.button("🔍 START LIVE AI SCAN", use_container_width=True):
     results = []
-    breakout_list = []
-
-    with st.spinner("Analyzing Market Cycles..."):
-        for s in stocks:
+    
+    with st.spinner(f"Scanning {selected_sector} Stocks..."):
+        for s in sectors[selected_sector]:
             try:
-                # Intraday 15m data
-                df = yf.Ticker(s + ".NS").history(period="5d", interval="15m")
-                if df.empty: continue
-
-                res = analyze_data(df)
-                if res:
+                data = yf.Ticker(s + ".NS").history(period="5d", interval="15m")
+                if data.empty: continue
+                
+                analysis = analyze_data(data)
+                if analysis:
                     results.append({
                         "Stock": s,
-                        "Price": round(df['Close'].iloc[-1], 2),
-                        "Signal": res[1],
-                        "RSI": res[7],
-                        "Volume Profile": res[2],
-                        "Entry": res[3],
-                        "SL": res[4],
-                        "Target": res[5],
-                        "Trend %": res[6],
-                        "Direction": get_direction(res[1])
+                        "Price": round(data['Close'].iloc[-1], 2),
+                        "Signal": analysis[0],
+                        "RSI": analysis[6],
+                        "Player": analysis[1],
+                        "Entry": analysis[2],
+                        "StopLoss": analysis[3],
+                        "Target": analysis[4],
+                        "Score": analysis[5],
+                        "Direction": get_direction(analysis[0])
                     })
-
-                # Opening Breakout Logic (9:15-9:30)
-                today_df = df.between_time("09:15", "15:30")
-                if not today_df.empty:
-                    open_range = today_df.iloc[:2] # First two 15m candles
-                    or_high = open_range['High'].max()
-                    or_low = open_range['Low'].min()
-                    
-                    curr_close = today_df['Close'].iloc[-1]
-                    if curr_close > or_high:
-                        breakout_list.append({"Stock": s, "Type": "🚀 BULLISH BREAKOUT", "Level": round(or_high, 2)})
-                    elif curr_close < or_low:
-                        breakout_list.append({"Stock": s, "Type": "💀 BEARISH BREAKDOWN", "Level": round(or_low, 2)})
-            except:
+            except Exception as e:
                 continue
 
-    # UI DISPLAY
     if results:
-        df_res = pd.DataFrame(results)
+        df_final = pd.DataFrame(results)
         
-        # Display Metrics
-        m_col1, m_col2, m_col3 = st.columns(3)
-        bulls = len(df_res[df_res['Direction'] == "🟢 UP"])
-        bears = len(df_res[df_res['Direction'] == "🔴 DOWN"])
+        # Summary Metrics
+        c1, c2, c3 = st.columns(3)
+        up_count = len(df_final[df_final['Direction'] == "🟢 UP"])
+        down_count = len(df_final[df_final['Direction'] == "🔴 DOWN"])
         
-        m_col1.metric("Bullish Stocks", bulls, delta=f"{bulls} Active")
-        m_col2.metric("Bearish Stocks", bears, delta=f"-{bears} Active", delta_color="inverse")
-        m_col3.metric("Total Scanned", len(stocks))
+        c1.metric("Bullish 📈", up_count)
+        c2.metric("Bearish 📉", down_count)
+        c3.metric("Scanned", len(results))
 
-        st.subheader("📊 Live Trading Signals")
-        st.dataframe(df_res.style.applymap(lambda x: 'color: #00ff00' if x == "🟢 UP" else ('color: #ff4b4b' if x == "🔴 DOWN" else ''), subset=['Direction']), use_container_width=True)
-    
-    if breakout_list:
-        st.markdown("---")
-        st.subheader("⚡ High-Probability Breakouts (ORB)")
-        st.table(pd.DataFrame(breakout_list))
+        st.subheader("📊 Trade Signals Table")
+        
+        # FIXED: Using .map() instead of .applymap() to avoid AttributeError
+        styled_df = df_final.style.map(
+            lambda x: 'color: #00ff00; font-weight: bold' if x == "🟢 UP" else ('color: #ff4b4b; font-weight: bold' if x == "🔴 DOWN" else ''),
+            subset=['Direction']
+        )
+        
+        st.dataframe(styled_df, use_container_width=True)
+    else:
+        st.error("No signals found at this moment.")
 
 # =============================
-# BACKTEST (SIDEBAR)
+# FOOTER
 # =============================
-st.sidebar.header("🧪 Backtest Panel")
-bt_date = st.sidebar.date_input("Analysis Date", datetime.now() - timedelta(days=1))
-if st.sidebar.button("Run Historical Backtest"):
-    st.sidebar.info("Backtest results will appear in the main console...")
-    # (Existing backtest logic remains compatible)
+st.markdown("---")
+st.caption("Developed for Manohar | NSE AI Pro Terminal | 2026")
