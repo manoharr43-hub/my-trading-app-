@@ -6,49 +6,55 @@ from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# CONFIG
+# 1. CONFIGURATION
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO FINAL", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
+st.set_page_config(page_title="MANOHAR NSE AI PRO", layout="wide")
+st_autorefresh(interval=60000, key="refresh") # ప్రతి నిమిషానికి అప్‌డేట్ అవుతుంది
 
 st.title("🚀 MANOHAR NSE AI PRO - SMART SCANNER")
-st.markdown(f"**Live Market Data | 15m Chart | Time:** {datetime.now().strftime('%H:%M:%S')}")
+st.write(f"అప్‌డేట్ సమయం: {datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
 # =============================
-# DATA LOADER & ANALYTICS
+# 2. ANALYSIS FUNCTION
 # =============================
 @st.cache_data(ttl=60)
-def load_and_analyze(symbol):
+def analyze_stock(symbol):
     try:
+        # 1-Day డేటా, 15 నిమిషాల ఇంటర్వల్
         df = yf.download(symbol + ".NS", period="1d", interval="15m", progress=False)
+        
         if df.empty or len(df) < 14:
             return None
-        
-        # 1. VWAP Calculation
+
+        # VWAP Calculation
         v_price = df['Close'] * df['Volume']
         df['VWAP'] = v_price.cumsum() / df['Volume'].cumsum()
-        
-        # 2. 9 EMA
-        df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
-        
-        # 3. RSI (14 Period)
+
+        # RSI (14) Calculation
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
-        
-        # 4. Volume Spike Logic (ప్రస్తుత వాల్యూమ్ మునుపటి 5 క్యాండిల్స్ సగటు కంటే 2 రెట్లు ఎక్కువ ఉంటే)
-        df['Avg_Vol'] = df['Volume'].rolling(window=5).mean()
-        df['Vol_Spike'] = df['Volume'] > (df['Avg_Vol'] * 2)
-        
-        return df.iloc[-1], df['High'].max()
+
+        # Volume Spike (గత 5 క్యాండిల్స్ సగటు కంటే 2 రెట్లు ఎక్కువ)
+        avg_vol = df['Volume'].iloc[-6:-1].mean()
+        curr_vol = df['Volume'].iloc[-1]
+        vol_spike = curr_vol > (avg_vol * 2)
+
+        return {
+            "LTP": df['Close'].iloc[-1],
+            "VWAP": df['VWAP'].iloc[-1],
+            "RSI": df['RSI'].iloc[-1],
+            "High": df['High'].max(),
+            "Vol_Spike": vol_spike
+        }
     except:
         return None
 
 # =============================
-# SECTORS
+# 3. SECTORS
 # =============================
 sectors = {
     "NIFTY 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
@@ -58,39 +64,27 @@ sectors = {
 }
 
 # =============================
-# DASHBOARD DISPLAY
+# 4. DISPLAY DASHBOARD
 # =============================
-selected_sector = st.sidebar.selectbox("Select Sector", list(sectors.keys()))
-cols = st.columns(4)
+selected_sector = st.sidebar.selectbox("Sector ఎంచుకోండి", list(sectors.keys()))
+stocks = sectors[selected_sector]
 
-for i, stock in enumerate(sectors[selected_sector]):
-    result = load_and_analyze(stock)
+cols = st.columns(4) # 4 కాలమ్స్ గా చూపిస్తుంది
+
+for i, stock in enumerate(stocks):
+    res = analyze_stock(stock)
     
-    if result:
-        data, day_high = result
-        last_price = data['Close']
-        rsi_val = data['RSI']
-        vwap_val = data['VWAP']
-        vol_spike = data['Vol_Spike']
-        
+    if res:
         with cols[i % 4]:
+            # బాక్స్ డిజైన్
             with st.container(border=True):
-                # ధర ట్రెండ్ బట్టి రంగు మారుతుంది
-                color = "green" if last_price > vwap_val else "red"
-                st.markdown(f"### :{color}[{stock}]")
-                st.metric("LTP", f"₹{last_price:.2f}")
+                # ధర VWAP పైన ఉంటే గ్రీన్, కింద ఉంటే రెడ్
+                header_color = "green" if res['LTP'] > res['VWAP'] else "red"
+                st.markdown(f"### :{header_color}[{stock}]")
                 
-                # RSI Indicator
-                st.write(f"📊 **RSI:** {rsi_val:.1f}")
-                if rsi_val > 70: st.warning("Overbought")
-                elif rsi_val < 30: st.info("Oversold")
+                st.metric("ధర (LTP)", f"₹{res['LTP']:.2f}")
+                st.write(f"📊 **RSI:** {res['RSI']:.1f}")
                 
-                # Alerts
-                if vol_spike:
-                    st.error("🔊 VOLUME SPIKE!")
-                
-                if last_price >= day_high:
-                    st.success("🎯 DAY HIGH BREAKOUT")
-                
-                if last_price > vwap_val and rsi_val > 55:
-                    st.write("✅ **Signal: Strong Buy**")
+                # ముఖ్యమైన అలర్ట్స్
+                if res['Vol_Spike']:
+                    st.error("🔊 VOLUME SPIKE
