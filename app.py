@@ -2,31 +2,30 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V8 STABLE", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V8 ZERO ERROR", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO V8 - STABLE TERMINAL")
+st.title("🚀 MANOHAR NSE AI PRO V8 - ZERO ERROR TERMINAL")
 st.markdown("---")
 
 # =============================
-# DATA LOADER (SAFE)
+# DATA LOADER
 # =============================
 @st.cache_data(ttl=60)
 def load_stock(symbol):
     try:
-        df = yf.download(symbol + ".NS", period="5d", interval="15m", progress=False)
-        return df
+        return yf.download(symbol + ".NS", period="5d", interval="15m", progress=False)
     except:
         return None
 
 # =============================
-# SECTORS (FULL SAFE FIXED)
+# SECTORS (FULL SAFE CLEAN)
 # =============================
 sectors = {
     "📊 NIFTY 50": [
@@ -67,9 +66,4 @@ sectors = {
         "ADANIGREEN","ADANIPOWER","NTPC","POWERGRID","TATAPOWER"
     ],
 
-    "🏗️ INFRA": [
-        "LT","IRB","NBCC","DLF","GMRINFRA"
-    ],
-
-    "🧪 CHEMICALS": [
-        "PID
+    "🏗️ INF
