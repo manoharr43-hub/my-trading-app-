@@ -8,14 +8,14 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V8 FINAL", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V8 STABLE", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO V8 FINAL TERMINAL")
+st.title("🚀 MANOHAR NSE AI PRO V8 - STABLE TERMINAL")
 st.markdown("---")
 
 # =============================
-# SAFE DATA LOADER
+# DATA LOADER (SAFE)
 # =============================
 @st.cache_data(ttl=60)
 def load_stock(symbol):
@@ -26,7 +26,7 @@ def load_stock(symbol):
         return None
 
 # =============================
-# SECTORS (FULL SAFE LIST)
+# SECTORS (FULL SAFE FIXED)
 # =============================
 sectors = {
     "📊 NIFTY 50": [
@@ -63,4 +63,13 @@ sectors = {
         "RELIANCE","ONGC","IOC","BPCL","GAIL"
     ],
 
-    "⚡ ENERGY
+    "⚡ ENERGY": [
+        "ADANIGREEN","ADANIPOWER","NTPC","POWERGRID","TATAPOWER"
+    ],
+
+    "🏗️ INFRA": [
+        "LT","IRB","NBCC","DLF","GMRINFRA"
+    ],
+
+    "🧪 CHEMICALS": [
+        "PID
