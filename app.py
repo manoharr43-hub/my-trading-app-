@@ -6,108 +6,165 @@ from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# CONFIG & UI SETUP
+# CONFIG
 # =============================
-st.set_page_config(page_title="🔥 MANOHAR NSE AI PRO V2", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V8", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO - LIVE TERMINAL")
+st.title("🚀 MANOHAR NSE AI PRO V8 TERMINAL")
 st.markdown("---")
 
 # =============================
-# SIDEBAR - SETTINGS
+# FAST DATA LOADER (CACHE)
 # =============================
-st.sidebar.header("⚙️ Breakout Detection Settings")
-duration_mins = st.sidebar.selectbox("Range Setup (Mins)", [15, 30, 45, 60], index=1)
-st.sidebar.info(f"Detecting breakouts based on first {duration_mins}m range across the day.")
+@st.cache_data(ttl=60)
+def get_data(symbol):
+    try:
+        return yf.download(symbol + ".NS", period="5d", interval="15m", progress=False)
+    except:
+        return None
 
 # =============================
-# DIRECTION LOGIC
+# DIRECTION ENGINE
 # =============================
 def get_direction(signal):
-    if "BUY" in signal or "UP" in signal:
+    if signal == "🚀 CONFIRMED BUY":
         return "🟢 UP"
-    elif "SELL" in signal or "DOWN" in signal:
+    elif signal == "💀 CONFIRMED SELL":
+        return "🔴 DOWN"
+    elif "FAILED SELL" in signal:
+        return "🟢 UP"
+    elif "FAILED BUY" in signal:
         return "🔴 DOWN"
     else:
         return "⚪ WAIT"
 
 # =============================
-# SCANNER EXECUTION
+# AI ANALYSIS ENGINE
 # =============================
-all_sectors = {
-    "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
-    "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK","PNB","CANBK","FEDERALBNK"],
-    "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","EICHERMOT","ASHOKLEY","TVSMOTOR"]
+def analyze(df):
+
+    if df is None or len(df) < 20:
+        return None
+
+    close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
+    vol = df["Volume"]
+
+    e20 = close.ewm(span=20).mean()
+    e50 = close.ewm(span=50).mean()
+
+    price = float(close.iloc[-1])
+    e20_v = float(e20.iloc[-1])
+    e50_v = float(e50.iloc[-1])
+
+    avg_vol = vol.rolling(20).mean().iloc[-1]
+    curr_vol = vol.iloc[-1]
+
+    if pd.isna(avg_vol) or avg_vol == 0:
+        avg_vol = curr_vol
+
+    # ================= TREND =================
+    trend = "🟢 BULLISH" if e20_v > e50_v else "🔴 BEARISH"
+
+    # ================= BIG PLAYER =================
+    if curr_vol > avg_vol * 2:
+        player = "🔥 INSTITUTIONAL ENTRY"
+    elif curr_vol > avg_vol * 1.5:
+        player = "🐋 SMART MONEY"
+    else:
+        player = "💤 NORMAL"
+
+    # ================= RISK =================
+    recent_high = high.iloc[-10:].max()
+    recent_low = low.iloc[-10:].min()
+
+    risk = recent_high - recent_low
+    if risk <= 0:
+        risk = price * 0.01
+
+    # ================= SIGNAL =================
+    signal = "WAIT"
+    entry = sl = target = 0
+
+    if e20_v > e50_v and curr_vol > avg_vol:
+        signal = "🚀 CONFIRMED BUY"
+        entry = price
+        sl = price - risk * 0.5
+        target = price + risk
+
+    elif e20_v < e50_v and curr_vol > avg_vol:
+        signal = "💀 CONFIRMED SELL"
+        entry = price
+        sl = price + risk * 0.5
+        target = price - risk
+
+    # ================= MOMENTUM SCORE =================
+    try:
+        momentum = (price - close.iloc[-5]) / price * 100
+        vol_score = curr_vol / avg_vol
+        ema_gap = abs(e20_v - e50_v) / price * 100
+
+        score = (momentum * 0.3) + (vol_score * 20 * 0.4) + (ema_gap * 0.3)
+        score = min(100, round(score, 2))
+    except:
+        score = 0
+
+    return trend, signal, player, round(entry,2), round(sl,2), round(target,2), score
+
+# =============================
+# SECTORS
+# =============================
+sectors = {
+    "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN"],
+    "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK"],
+    "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO"],
+    "IT": ["TCS","INFY","WIPRO","HCLTECH"],
+    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA"]
 }
 
-selected_sector = st.selectbox("📂 Select Sector", list(all_sectors.keys()))
-stocks = all_sectors[selected_sector]
+# =============================
+# UI
+# =============================
+sector = st.selectbox("📂 Select Sector", list(sectors.keys()))
+stocks = sectors[sector]
 
-if st.button("🔍 START FULL DAY SCANNER", use_container_width=True):
-    breakout_history = []
+if st.button("🔍 START PRO V8 SCANNER", use_container_width=True):
 
-    with st.spinner("Scanning Full Day Price Action..."):
+    results = []
+    breakout = []
+
+    with st.spinner("AI Scanning Market..."):
+
         for s in stocks:
+
+            df = get_data(s)
+
+            if df is None or df.empty:
+                continue
+
+            res = analyze(df)
+
+            if res:
+                trend, signal, player, entry, sl, target, score = res
+
+                results.append({
+                    "Stock": s,
+                    "Price": round(df["Close"].iloc[-1],2),
+                    "Trend": trend,
+                    "Signal": signal,
+                    "Big Player": player,
+                    "Entry": entry,
+                    "SL": sl,
+                    "Target": target,
+                    "Score": score,
+                    "Direction": get_direction(signal),
+                    "Time": df.index[-1].strftime("%H:%M")
+                })
+
+            # ================= BREAKOUT ENGINE =================
             try:
-                # 1 నిమిషం డేటా తీసుకుంటే బ్రేక్-అవుట్ టైమ్ ఖచ్చితంగా తెలుస్తుంది
-                df = yf.Ticker(s + ".NS").history(period="1d", interval="5m")
-                if df.empty: continue
+                opening = df.between_time("09:15", "09:30")
 
-                # మార్నింగ్ రేంజ్ లెక్కించడం (First X mins)
-                num_candles = duration_mins // 5
-                range_df = df.iloc[0:num_candles]
-                orb_high = range_df['High'].max()
-                orb_low = range_df['Low'].min()
-
-                # రోజంతా చెక్ చేయడం
-                for i in range(num_candles, len(df)):
-                    curr_row = df.iloc[i]
-                    prev_row = df.iloc[i-1]
-                    curr_time = df.index[i].strftime('%H:%M')
-
-                    # Bullish Breakout Check
-                    if prev_row['Close'] <= orb_high and curr_row['Close'] > orb_high:
-                        breakout_history.append({
-                            "Stock": s,
-                            "Breakout Time": curr_time,
-                            "Signal": "🚀 BULLISH BREAK",
-                            "Level": round(orb_high, 2),
-                            "Current Price": round(curr_row['Close'], 2),
-                            "Direction": "🟢 UP"
-                        })
-                        break # ఒక స్టాక్‌కి ఒకసారి బ్రేక్ చూపిస్తే చాలు
-
-                    # Bearish Breakdown Check
-                    elif prev_row['Close'] >= orb_low and curr_row['Close'] < orb_low:
-                        breakout_history.append({
-                            "Stock": s,
-                            "Breakout Time": curr_time,
-                            "Signal": "💀 BEARISH BREAK",
-                            "Level": round(orb_low, 2),
-                            "Current Price": round(curr_row['Close'], 2),
-                            "Direction": "🔴 DOWN"
-                        })
-                        break
-            except: continue
-
-    # DISPLAY TABLE
-    st.subheader(f"📅 Full Day Breakout History ({duration_mins}m Range)")
-    if breakout_history:
-        df_final = pd.DataFrame(breakout_history)
-        
-        # టైమ్ ప్రకారం సార్ట్ చేయడం (Latest breakouts first)
-        df_final = df_final.sort_values(by="Breakout Time", ascending=False)
-        
-        st.dataframe(
-            df_final.style.map(
-                lambda x: 'color: #00ff00; font-weight: bold' if x == "🟢 UP" else ('color: #ff4b4b; font-weight: bold' if x == "🔴 DOWN" else ''), 
-                subset=['Direction']
-            ), 
-            use_container_width=True
-        )
-    else:
-        st.info("No breakouts detected yet today.")
-
-st.markdown("---")
-st.caption("Note: This scans 5-minute intervals to find the exact minute of the breakout.")
+                if
