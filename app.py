@@ -1,93 +1,286 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# 1. CONFIGURATION
+# CONFIG
 # =============================
-st.set_page_config(page_title="MANOHAR NSE AI PRO", layout="wide")
+st.set_page_config(page_title="🔥 MANOHAR NSE AI PRO", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO - SMART SCANNER")
-st.write(f"అప్‌డేట్ సమయం: {datetime.now().strftime('%H:%M:%S')}")
+st.title("🚀 MANOHAR NSE AI PRO TERMINAL")
 st.markdown("---")
 
 # =============================
-# 2. ANALYSIS FUNCTION
+# DIRECTION FUNCTION (FIXED)
 # =============================
-@st.cache_data(ttl=60)
-def analyze_stock(symbol):
-    try:
-        df = yf.download(symbol + ".NS", period="1d", interval="15m", progress=False)
-        
-        if df.empty or len(df) < 14:
-            return None
+def get_direction(signal):
+    if signal == "🚀 CONFIRMED BUY":
+        return "🟢 UP"
+    elif signal == "💀 CONFIRMED SELL":
+        return "🔴 DOWN"
+    elif signal == "⚠️ FAILED SELL → BUY":
+        return "🟢 UP"
+    elif signal == "⚠️ FAILED BUY → SELL":
+        return "🔴 DOWN"
+    else:
+        return "⚪ WAIT"
 
-        # VWAP
-        v_price = df['Close'] * df['Volume']
-        df['VWAP'] = v_price.cumsum() / df['Volume'].cumsum()
-
-        # RSI (14)
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-
-        # Volume Spike (Check last candle)
-        avg_vol = df['Volume'].rolling(window=5).mean().iloc[-2]
-        curr_vol = df['Volume'].iloc[-1]
-        vol_spike = curr_vol > (avg_vol * 2)
-
-        return {
-            "LTP": float(df['Close'].iloc[-1]),
-            "VWAP": float(df['VWAP'].iloc[-1]),
-            "RSI": float(df['RSI'].iloc[-1]),
-            "High": float(df['High'].max()),
-            "Vol_Spike": bool(vol_spike)
-        }
-    except Exception as e:
+# =============================
+# ANALYSIS FUNCTION
+# =============================
+def analyze_data(df):
+    if df is None or len(df) < 20:
         return None
 
+    e20 = df['Close'].ewm(span=20).mean()
+    e50 = df['Close'].ewm(span=50).mean()
+
+    vol = df['Volume']
+    avg_vol = vol.rolling(window=20).mean()
+
+    curr_price = df['Close'].iloc[-1]
+    curr_e20 = e20.iloc[-1]
+    curr_e50 = e50.iloc[-1]
+    curr_vol = vol.iloc[-1]
+    curr_avg_vol = avg_vol.iloc[-1]
+
+    if pd.isna(curr_avg_vol) or curr_avg_vol == 0:
+        return None
+
+    cp_strength = "🔵 CALL STRONG" if curr_e20 > curr_e50 else "🔴 PUT STRONG"
+
+    if curr_vol > curr_avg_vol * 2:
+        big_player = "🔥 EXTREME INSTITUTIONAL"
+    elif curr_vol > curr_avg_vol * 1.5:
+        big_player = "🐋 BIG PLAYER ACTIVE"
+    else:
+        big_player = "💤 NORMAL"
+
+    observation = "WAIT"
+    entry, sl, target = 0, 0, 0
+
+    recent_high = df['High'].iloc[-10:].max()
+    recent_low = df['Low'].iloc[-10:].min()
+    risk = (recent_high - recent_low) if (recent_high - recent_low) > 0 else curr_price * 0.01
+
+    if curr_e20 > curr_e50 and curr_vol > curr_avg_vol:
+        observation = "🚀 CONFIRMED BUY"
+        entry = curr_price
+        sl = curr_price - (risk * 0.5)
+        target = curr_price + risk
+
+    elif curr_e20 < curr_e50 and curr_vol > curr_avg_vol:
+        observation = "💀 CONFIRMED SELL"
+        entry = curr_price
+        sl = curr_price + (risk * 0.5)
+        target = curr_price - risk
+
+    # =============================
+    # TREND SCORE
+    # =============================
+    try:
+        ema_score = abs(curr_e20 - curr_e50) / curr_price * 100
+        vol_score = curr_vol / curr_avg_vol
+        momentum = (curr_price - df['Close'].iloc[-5]) / curr_price * 100
+        range_strength = (recent_high - recent_low) / curr_price * 100
+
+        trend_score = (
+            ema_score * 0.3 +
+            vol_score * 20 * 0.3 +
+            abs(momentum) * 0.2 +
+            range_strength * 0.2
+        )
+
+        trend_score = min(100, round(trend_score, 2))
+
+    except:
+        trend_score = 0
+
+    return (
+        cp_strength,
+        observation,
+        big_player,
+        round(entry, 2),
+        round(sl, 2),
+        round(target, 2),
+        trend_score
+    )
+
 # =============================
-# 3. SECTORS
+# SECTORS
 # =============================
-sectors = {
-    "NIFTY 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
-    "BANKING": ["SBIN","HDFCBANK","ICICIBANK","AXISBANK","KOTAKBANK","PNB","BANKBARODA","CANBK"],
-    "AUTO": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","ASHOKLEY","TVSMOTOR"],
-    "METAL": ["TATASTEEL","JSWSTEEL","HINDALCO","JINDALSTEL","SAIL","VEDL"]
+all_sectors = {
+    "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
+    "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK","PNB","CANBK","FEDERALBNK"],
+    "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","EICHERMOT","ASHOKLEY","TVSMOTOR"],
+    "Metal": ["TATASTEEL","JINDALSTEL","HINDALCO","JSWSTEEL","NATIONALUM","SAIL","VEDL"],
+    "IT Sector": ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","COFORGE"],
+    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA","APOLLOHOSP","DIVISLAB"]
 }
 
 # =============================
-# 4. DISPLAY DASHBOARD
+# SIDEBAR
 # =============================
-selected_sector = st.sidebar.selectbox("Sector ఎంచుకోండి", list(sectors.keys()))
-stocks = sectors[selected_sector]
+st.sidebar.title("📂 Backtest Panel")
+bt_date = st.sidebar.date_input("Select Date", datetime.now() - timedelta(days=1))
+bt_stock_input = st.sidebar.text_input("Stock (optional)", "").upper()
 
-cols = st.columns(4)
+# =============================
+# MAIN SCANNER
+# =============================
+selected_sector = st.selectbox("📂 Select Sector", list(all_sectors.keys()))
+stocks = all_sectors[selected_sector]
 
-for i, stock in enumerate(stocks):
-    res = analyze_stock(stock)
-    
-    if res:
-        with cols[i % 4]:
-            with st.container(border=True):
-                header_color = "green" if res['LTP'] > res['VWAP'] else "red"
-                st.markdown(f"### :{header_color}[{stock}]")
-                
-                st.metric("ధర (LTP)", f"₹{res['LTP']:.2f}")
-                st.write(f"📊 **RSI:** {res['RSI']:.1f}")
-                
-                # ఇక్కడ కొటేషన్ మార్క్స్ సరిగ్గా ఉన్నాయో లేదో చూసుకోండి
-                if res['Vol_Spike']:
-                    st.error("🔊 VOLUME SPIKE!")
-                
-                if res['LTP'] >= res['High']:
-                    st.success("🎯 DAY HIGH BREAKOUT")
-                
-                if res['LTP'] > res['VWAP'] and res['RSI'] > 55:
-                    st.info("✅ BUY SIGNAL")
+if st.button("🔍 START LIVE SCANNER", use_container_width=True):
+
+    results = []
+    breakout_day_list = []
+
+    with st.spinner("AI Scanning Market..."):
+        for s in stocks:
+            try:
+                df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
+                if df is None or df.empty:
+                    continue
+
+                res = analyze_data(df)
+
+                if res:
+                    signal = res[1]
+
+                    results.append({
+                        "Stock": s,
+                        "Price": round(df['Close'].iloc[-1], 2),
+                        "Trend": res[0],
+                        "Signal": signal,
+                        "Big Player": res[2],
+                        "Entry": res[3],
+                        "SL": res[4],
+                        "Target": res[5],
+                        "Trend Score": res[6],
+                        "Direction": get_direction(signal),   # ✅ FIXED HERE
+                        "Time": df.index[-1].strftime('%H:%M')
+                    })
+
+                # =============================
+                # BREAKOUT (UNCHANGED)
+                # =============================
+                opening_data = df.between_time("09:15", "09:30")
+
+                if not opening_data.empty:
+
+                    opening_high = opening_data['High'].max()
+                    opening_low = opening_data['Low'].min()
+
+                    for i in range(1, len(df)-3):
+
+                        prev = df.iloc[i-1]
+                        curr = df.iloc[i]
+                        time = df.index[i]
+
+                        if prev['Close'] <= opening_high and curr['Close'] > opening_high:
+
+                            future = df.iloc[i+1:i+4]
+
+                            up = sum(future['Close'] > curr['Close'])
+                            down = sum(future['Close'] <= curr['Close'])
+
+                            signal_type = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
+
+                            breakout_day_list.append({
+                                "Stock": s,
+                                "Type": signal_type,
+                                "Level": round(opening_high, 2),
+                                "Time": time.strftime('%H:%M')
+                            })
+                            break
+
+                        elif prev['Close'] >= opening_low and curr['Close'] < opening_low:
+
+                            future = df.iloc[i+1:i+4]
+
+                            down = sum(future['Close'] < curr['Close'])
+                            up = sum(future['Close'] >= curr['Close'])
+
+                            signal_type = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
+
+                            breakout_day_list.append({
+                                "Stock": s,
+                                "Type": signal_type,
+                                "Level": round(opening_low, 2),
+                                "Time": time.strftime('%H:%M')
+                            })
+                            break
+
+            except:
+                continue
+
+    # =============================
+    # TABLE OUTPUT
+    # =============================
+    if results:
+        st.dataframe(pd.DataFrame(results), use_container_width=True)
+    else:
+        st.error("No Data Found")
+
+    st.markdown("---")
+    st.subheader("🔥 SMART BREAKOUT STOCKS (DIRECTION CONFIRMED)")
+
+    if breakout_day_list:
+        st.dataframe(pd.DataFrame(breakout_day_list), use_container_width=True)
+    else:
+        st.info("No Breakout Stocks Today")
+
+# =============================
+# BACKTEST
+# =============================
+st.markdown("---")
+st.subheader(f"📅 Backtest Report - {bt_date}")
+
+if st.sidebar.button("📊 RUN BACKTEST"):
+
+    bt_results = []
+    target_list = [bt_stock_input] if bt_stock_input else stocks
+
+    with st.spinner("Running Backtest..."):
+
+        for s in target_list:
+            try:
+                df_hist = yf.Ticker(s + ".NS").history(
+                    start=bt_date,
+                    end=bt_date + timedelta(days=1),
+                    interval="15m"
+                )
+
+                df_hist = df_hist.between_time("09:15", "15:30")
+
+                if not df_hist.empty:
+                    for i in range(20, len(df_hist)):
+                        sub_df = df_hist.iloc[:i+1]
+                        res = analyze_data(sub_df)
+
+                        if res:
+                            signal = res[1]
+
+                            bt_results.append({
+                                "Time": sub_df.index[-1].strftime('%H:%M'),
+                                "Stock": s,
+                                "Signal": signal,
+                                "Big Player": res[2],
+                                "Entry": res[3],
+                                "SL": res[4],
+                                "Target": res[5],
+                                "Trend Score": res[6],
+                                "Direction": get_direction(signal)
+                            })
+
+            except:
+                continue
+
+    if bt_results:
+        st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
+    else:
+        st.warning("No Signals Found")
