@@ -14,7 +14,7 @@ st.title("🚀 MANOHAR NSE AI PRO TERMINAL")
 st.markdown("---")
 
 # =============================
-# STOCK LIST
+# NSE STOCK LIST
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
@@ -39,7 +39,7 @@ def analyze_data(df):
     if pd.isna(avg_vol.iloc[-1]) or avg_vol.iloc[-1] == 0:
         return None
 
-    trend = "🔵 CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "🔴 PUT STRONG"
+    trend = "CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "PUT STRONG"
 
     signal = "WAIT"
     if e20.iloc[-1] > e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
@@ -59,22 +59,22 @@ bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - ti
 # =============================
 if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
 
-    results = []
-    breakout_results = []
+    live_results = []
+    live_breakout = []
 
     for s in stocks:
         try:
             df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
 
-            if df is None or df.empty:
+            if df.empty:
                 continue
 
-            df = df.between_time("09:15","15:30")
+            df = df.between_time("09:15", "15:30")
 
             res = analyze_data(df)
 
             if res:
-                results.append({
+                live_results.append({
                     "Stock": s,
                     "Price": df['Close'].iloc[-1],
                     "Trend": res[0],
@@ -85,7 +85,7 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
             # =============================
             # SMART BREAKOUT LIVE
             # =============================
-            opening = df.between_time("09:15","09:30")
+            opening = df.between_time("09:15", "09:30")
 
             if not opening.empty:
                 high = opening['High'].max()
@@ -95,23 +95,24 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
 
                     prev = df.iloc[i-1]
                     curr = df.iloc[i]
+                    t = df.index[i]
 
                     if prev['Close'] <= high and curr['Close'] > high:
 
-                        breakout_results.append({
-                            "Time": df.index[i],   # FIXED
+                        live_breakout.append({
+                            "Time": t,
                             "Stock": s,
-                            "Type": "🚀 CONFIRMED BUY",
+                            "Type": "🚀 BUY BREAKOUT",
                             "Level": round(high,2)
                         })
                         break
 
                     elif prev['Close'] >= low and curr['Close'] < low:
 
-                        breakout_results.append({
-                            "Time": df.index[i],   # FIXED
+                        live_breakout.append({
+                            "Time": t,
                             "Stock": s,
-                            "Type": "💀 CONFIRMED SELL",
+                            "Type": "💀 SELL BREAKOUT",
                             "Level": round(low,2)
                         })
                         break
@@ -119,18 +120,21 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
         except:
             continue
 
-    # SORT LIVE BREAKOUT TIME
-    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
+    # SORT LIVE BREAKOUT
+    live_breakout = sorted(live_breakout, key=lambda x: x["Time"])
+
+    for x in live_breakout:
+        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
 
     st.subheader("📊 LIVE SIGNALS (9:15–3:30)")
-    st.dataframe(pd.DataFrame(results), use_container_width=True)
+    st.dataframe(pd.DataFrame(live_results), use_container_width=True)
 
     st.markdown("---")
     st.subheader("🔥 SMART BREAKOUT STOCKS (TIME ORDER FIXED)")
-    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
+    st.dataframe(pd.DataFrame(live_breakout), use_container_width=True)
 
 # =============================
-# BACKTEST PANEL (FIXED TIME ORDER)
+# BACKTEST PANEL (FULL FIXED)
 # =============================
 st.markdown("---")
 st.subheader(f"📅 BACKTEST PANEL - {bt_date}")
@@ -148,7 +152,7 @@ if st.button("📊 RUN BACKTEST"):
                 interval="15m"
             )
 
-            df = df.between_time("09:15","15:30")
+            df = df.between_time("09:15", "15:30")
 
             if df.empty:
                 continue
@@ -168,9 +172,9 @@ if st.button("📊 RUN BACKTEST"):
                     })
 
             # =============================
-            # SMART BREAKOUT BACKTEST (FIXED TIME)
+            # SMART BREAKOUT BACKTEST
             # =============================
-            opening = df.between_time("09:15","09:30")
+            opening = df.between_time("09:15", "09:30")
 
             if not opening.empty:
                 high = opening['High'].max()
@@ -180,11 +184,12 @@ if st.button("📊 RUN BACKTEST"):
 
                     prev = df.iloc[i-1]
                     curr = df.iloc[i]
+                    t = df.index[i]
 
                     if prev['Close'] <= high and curr['Close'] > high:
 
                         bt_breakout.append({
-                            "Time": df.index[i],   # FIXED
+                            "Time": t,
                             "Stock": s,
                             "Type": "🚀 BUY BREAKOUT",
                             "Level": round(high,2)
@@ -194,7 +199,7 @@ if st.button("📊 RUN BACKTEST"):
                     elif prev['Close'] >= low and curr['Close'] < low:
 
                         bt_breakout.append({
-                            "Time": df.index[i],   # FIXED
+                            "Time": t,
                             "Stock": s,
                             "Type": "💀 SELL BREAKOUT",
                             "Level": round(low,2)
@@ -205,21 +210,20 @@ if st.button("📊 RUN BACKTEST"):
             continue
 
     # =============================
-    # FINAL SORT (VERY IMPORTANT)
+    # FINAL SORT FIX (IMPORTANT)
     # =============================
     bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
     bt_signals = sorted(bt_signals, key=lambda x: x["Time"])
 
-    # FORMAT TIME CLEAN
     for x in bt_breakout:
         x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
 
     for x in bt_signals:
         x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
 
-    st.subheader("📊 BACKTEST SIGNALS (TIME ORDER FIXED)")
+    st.subheader("📊 BACKTEST SIGNALS (ORDER FIXED)")
     st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
 
     st.markdown("---")
-    st.subheader("🔥 BACKTEST SMART BREAKOUT (9:15–3:30 ORDER)")
+    st.subheader("🔥 SMART BREAKOUT BACKTEST (9:15–3:30 ORDER)")
     st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
