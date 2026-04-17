@@ -105,7 +105,7 @@ def analyze_data(df):
     )
 
 # =============================
-# SECTORS (Clean, Error-Free)
+# SECTORS
 # =============================
 all_sectors = {
     "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
@@ -192,15 +192,11 @@ if st.sidebar.button("📊 RUN BACKTEST"):
                                     "Entry": round(price, 2),
                                     "Stoploss": round(price - (price * 0.01), 2),
                                     "Exit": round(price + (price * 0.02), 2)
-                                })
+                                })   # ✅ properly closed dictionary + append
                                 break
 
                             elif prev['Close'] >= opening_low and curr['Close'] < opening_low:
                                 future = df_hist.iloc[i+1:i+4]
                                 down = sum(future['Close'] < curr['Close'])
                                 up = sum(future['Close'] >= curr['Close'])
-                                signal_type = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
-
-                                breakout_bt_list.append({
-                                    "Stock": s,
-                                    "Price": round(price, 2),
+                                signal_type = "💀 CONFIRMED SELL" if down > up else "
