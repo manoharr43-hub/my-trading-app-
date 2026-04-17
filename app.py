@@ -126,7 +126,7 @@ selected_bt_sector = st.sidebar.selectbox("📂 Select Sector for Backtest", lis
 bt_stocks = all_sectors[selected_bt_sector]
 
 # =============================
-# BACKTEST PANEL (Selected Date Data)
+# BACKTEST PANEL
 # =============================
 st.markdown("---")
 st.subheader(f"📅 Backtest Report - {bt_date}")
@@ -166,7 +166,7 @@ if st.sidebar.button("📊 RUN BACKTEST"):
                                 "Direction": get_direction(signal)
                             })
 
-                    # 🔥 Breakout Logic (Backtest)
+                    # 🔥 Breakout Logic
                     opening_data = df_hist.between_time("09:15", "09:30")
                     if not opening_data.empty:
                         opening_high = opening_data['High'].max()
@@ -192,11 +192,19 @@ if st.sidebar.button("📊 RUN BACKTEST"):
                                     "Entry": round(price, 2),
                                     "Stoploss": round(price - (price * 0.01), 2),
                                     "Exit": round(price + (price * 0.02), 2)
-                                })   # ✅ properly closed dictionary + append
+                                })
                                 break
 
                             elif prev['Close'] >= opening_low and curr['Close'] < opening_low:
                                 future = df_hist.iloc[i+1:i+4]
                                 down = sum(future['Close'] < curr['Close'])
                                 up = sum(future['Close'] >= curr['Close'])
-                                signal_type = "💀 CONFIRMED SELL" if down > up else "
+                                signal_type = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
+
+                                breakout_bt_list.append({
+                                    "Stock": s,
+                                    "Price": round(price, 2),
+                                    "Type": signal_type,
+                                    "Time": time.strftime('%H:%M'),
+                                    "Entry": round(price, 2),
+                                    "Stoploss": round(price + (price *
