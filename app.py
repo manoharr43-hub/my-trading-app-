@@ -101,19 +101,19 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
     for x in breakout_results: x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
 
     st.subheader(f"📊 LIVE SIGNALS ({sector_choice})")
-    st.dataframe(pd.DataFrame(live_results).style.applymap(
+    st.write(pd.DataFrame(live_results).style.applymap(
         lambda v: "background-color:lightgreen" if "BUY" in str(v) else
                   "background-color:salmon" if "SELL" in str(v) else
                   "background-color:khaki" if "FAILED" in str(v) else ""
-    , subset=["Signal"]), use_container_width=True)
+    , subset=["Signal"]))
 
     st.markdown("---")
     st.subheader(f"🔥 SMART BREAKOUT ({sector_choice})")
-    st.dataframe(pd.DataFrame(breakout_results).style.applymap(
+    st.write(pd.DataFrame(breakout_results).style.applymap(
         lambda v: "background-color:lightgreen" if "BUY" in str(v) else
                   "background-color:salmon" if "SELL" in str(v) else
                   "background-color:khaki" if "FAILED" in str(v) else ""
-    , subset=["Type"]), use_container_width=True)
+    , subset=["Type"]))
 
 # =============================
 # BACKTEST PANEL (UNCHANGED DATE)
@@ -141,16 +141,16 @@ if st.button("📊 RUN BACKTEST"):
     for x in bt_signals: x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
 
     st.subheader(f"📊 BACKTEST SIGNALS ({sector_choice})")
-    st.dataframe(pd.DataFrame(bt_signals).style.applymap(
+    st.write(pd.DataFrame(bt_signals).style.applymap(
         lambda v: "background-color:lightgreen" if "BUY" in str(v) else
                   "background-color:salmon" if "SELL" in str(v) else
                   "background-color:khaki" if "FAILED" in str(v) else ""
-    , subset=["Signal"]), use_container_width=True)
+    , subset=["Signal"]))
 
     st.markdown("---")
     st.subheader(f"🔥 BACKTEST SMART BREAKOUT ({sector_choice})")
-    st.dataframe(pd.DataFrame(bt_breakout).style.applymap(
+    st.write(pd.DataFrame(bt_breakout).style.applymap(
         lambda v: "background-color:lightgreen" if "BUY" in str(v) else
                   "background-color:salmon" if "SELL" in str(v) else
                   "background-color:khaki" if "FAILED" in str(v) else ""
-    , subset=["Type"]), use_container_width=True)
+    , subset=["Type"]))
