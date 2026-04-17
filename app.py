@@ -1,286 +1,182 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
+import numpy as np
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 MANOHAR NSE AI PRO", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO FINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO TERMINAL")
+st.title("🚀 MANOHAR NSE AI PRO - FINAL STABLE SYSTEM")
 st.markdown("---")
 
 # =============================
-# DIRECTION FUNCTION (NEW)
+# DATA LOADER
 # =============================
-def get_direction(signal):
-    if "CONFIRMED BUY" in signal:
-        return "🟢 UP"
-    elif "CONFIRMED SELL" in signal:
-        return "🔴 DOWN"
-    elif "FAILED SELL" in signal:
-        return "🟢 UP"
-    elif "FAILED BUY" in signal:
-        return "🔴 DOWN"
-    else:
-        return "⚪ WAIT"
-
-# =============================
-# ANALYSIS (UPDATED ONLY ADD TREND SCORE)
-# =============================
-def analyze_data(df):
-    if df is None or len(df) < 20:
-        return None
-
-    e20 = df['Close'].ewm(span=20).mean()
-    e50 = df['Close'].ewm(span=50).mean()
-
-    vol = df['Volume']
-    avg_vol = vol.rolling(window=20).mean()
-
-    curr_price = df['Close'].iloc[-1]
-    curr_e20 = e20.iloc[-1]
-    curr_e50 = e50.iloc[-1]
-    curr_vol = vol.iloc[-1]
-    curr_avg_vol = avg_vol.iloc[-1]
-
-    if pd.isna(curr_avg_vol) or curr_avg_vol == 0:
-        return None
-
-    cp_strength = "🔵 CALL STRONG" if curr_e20 > curr_e50 else "🔴 PUT STRONG"
-
-    if curr_vol > curr_avg_vol * 2:
-        big_player = "🔥 EXTREME INSTITUTIONAL"
-    elif curr_vol > curr_avg_vol * 1.5:
-        big_player = "🐋 BIG PLAYER ACTIVE"
-    else:
-        big_player = "💤 NORMAL"
-
-    observation = "WAIT"
-    entry, sl, target = 0, 0, 0
-
-    recent_high = df['High'].iloc[-10:].max()
-    recent_low = df['Low'].iloc[-10:].min()
-    risk = (recent_high - recent_low) if (recent_high - recent_low) > 0 else curr_price * 0.01
-
-    if curr_e20 > curr_e50 and curr_vol > curr_avg_vol:
-        observation = "🚀 CONFIRMED BUY"
-        entry = curr_price
-        sl = curr_price - (risk * 0.5)
-        target = curr_price + risk
-
-    elif curr_e20 < curr_e50 and curr_vol > curr_avg_vol:
-        observation = "💀 CONFIRMED SELL"
-        entry = curr_price
-        sl = curr_price + (risk * 0.5)
-        target = curr_price - risk
-
-    # =============================
-    # TREND SCORE (NEW ADD ONLY)
-    # =============================
+@st.cache_data(ttl=60)
+def load_stock(symbol):
     try:
-        ema_score = abs(curr_e20 - curr_e50) / curr_price * 100
-        vol_score = curr_vol / curr_avg_vol
-        momentum = (curr_price - df['Close'].iloc[-5]) / curr_price * 100
-        range_strength = (recent_high - recent_low) / curr_price * 100
-
-        trend_score = (
-            ema_score * 0.3 +
-            vol_score * 20 * 0.3 +
-            abs(momentum) * 0.2 +
-            range_strength * 0.2
-        )
-
-        trend_score = min(100, round(trend_score, 2))
-
+        return yf.download(symbol + ".NS", period="5d", interval="15m", progress=False)
     except:
-        trend_score = 0
-
-    return (
-        cp_strength,
-        observation,
-        big_player,
-        round(entry, 2),
-        round(sl, 2),
-        round(target, 2),
-        trend_score
-    )
+        return None
 
 # =============================
-# SECTORS
+# SECTORS (FULL SAFE - NO BROKEN STRINGS)
 # =============================
-all_sectors = {
-    "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
-    "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK","PNB","CANBK","FEDERALBNK"],
-    "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","EICHERMOT","ASHOKLEY","TVSMOTOR"],
-    "Metal": ["TATASTEEL","JINDALSTEL","HINDALCO","JSWSTEEL","NATIONALUM","SAIL","VEDL"],
-    "IT Sector": ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","COFORGE"],
-    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA","APOLLOHOSP","DIVISLAB"]
+sectors = {
+    "NIFTY 50": [
+        "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
+        "SBIN","ITC","LT","AXISBANK","BHARTIARTL"
+    ],
+
+    "BANKING": [
+        "SBIN","HDFCBANK","ICICIBANK","AXISBANK","KOTAKBANK",
+        "PNB","BANKBARODA","CANBK","FEDERALBNK"
+    ],
+
+    "AUTO": [
+        "TATAMOTORS","MARUTI","M&M","HEROMOTOCO",
+        "EICHERMOT","ASHOKLEY","TVSMOTOR","BAJAJ-AUTO"
+    ],
+
+    "METAL": [
+        "TATASTEEL","JSWSTEEL","HINDALCO","JINDALSTEL",
+        "SAIL","NATIONALUM","VEDL"
+    ],
+
+    "IT": [
+        "TCS","INFY","WIPRO","HCLTECH","TECHM",
+        "LTIM","COFORGE","MPHASIS"
+    ],
+
+    "PHARMA": [
+        "SUNPHARMA","DRREDDY","CIPLA","DIVISLAB",
+        "APOLLOHOSP","BIOCON","LUPIN"
+    ],
+
+    "OIL_GAS": [
+        "RELIANCE","ONGC","IOC","BPCL","GAIL"
+    ],
+
+    "ENERGY": [
+        "ADANIGREEN","ADANIPOWER","NTPC","POWERGRID","TATAPOWER"
+    ],
+
+    "INFRA": [
+        "LT","IRB","NBCC","DLF","GMRINFRA"
+    ],
+
+    "CHEMICALS": [
+        "PIDILITIND","DEEPAKNTR","UPL","ATUL","AARTIIND"
+    ]
 }
 
 # =============================
-# SIDEBAR
+# ANALYSIS ENGINE
 # =============================
-st.sidebar.title("📂 Backtest Panel")
-bt_date = st.sidebar.date_input("Select Date", datetime.now() - timedelta(days=1))
-bt_stock_input = st.sidebar.text_input("Stock (optional)", "").upper()
+def analyze(df):
+
+    if df is None or df.empty or len(df) < 20:
+        return None
+
+    close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
+    vol = df["Volume"]
+
+    e20 = close.ewm(span=20).mean()
+    e50 = close.ewm(span=50).mean()
+
+    price = float(close.iloc[-1])
+    e20_v = float(e20.iloc[-1])
+    e50_v = float(e50.iloc[-1])
+
+    avg_vol = vol.rolling(20).mean().iloc[-1]
+    curr_vol = vol.iloc[-1]
+
+    if pd.isna(avg_vol) or avg_vol == 0:
+        avg_vol = curr_vol
+
+    trend = "🟢 BULLISH" if e20_v > e50_v else "🔴 BEARISH"
+
+    if curr_vol > avg_vol * 2:
+        player = "🔥 INSTITUTIONAL"
+    elif curr_vol > avg_vol * 1.5:
+        player = "🐋 SMART MONEY"
+    else:
+        player = "💤 NORMAL"
+
+    recent_high = high.iloc[-10:].max()
+    recent_low = low.iloc[-10:].min()
+
+    risk = recent_high - recent_low
+    if risk <= 0:
+        risk = price * 0.01
+
+    signal = "WAIT"
+    entry = sl = target = 0
+
+    if e20_v > e50_v and curr_vol > avg_vol:
+        signal = "🚀 CONFIRMED BUY"
+        entry = price
+        sl = price - risk * 0.5
+        target = price + risk
+
+    elif e20_v < e50_v and curr_vol > avg_vol:
+        signal = "💀 CONFIRMED SELL"
+        entry = price
+        sl = price + risk * 0.5
+        target = price - risk
+
+    return trend, signal, player, entry, sl, target
 
 # =============================
-# MAIN SCANNER
+# UI
 # =============================
-selected_sector = st.selectbox("📂 Select Sector", list(all_sectors.keys()))
-stocks = all_sectors[selected_sector]
+sector = st.selectbox("📂 SELECT SECTOR", list(sectors.keys()))
+stocks = sectors[sector]
 
-if st.button("🔍 START LIVE SCANNER", use_container_width=True):
+if st.button("🔍 START SCANNER", use_container_width=True):
 
     results = []
-    breakout_day_list = []
 
-    with st.spinner("AI Scanning Market..."):
+    with st.spinner("Scanning NSE Market..."):
+
         for s in stocks:
-            try:
-                df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
 
-                if df is None or df.empty:
-                    continue
+            df = load_stock(s)
 
-                res = analyze_data(df)
-
-                if res:
-                    results.append({
-                        "Stock": s,
-                        "Price": round(df['Close'].iloc[-1], 2),
-                        "Trend": res[0],
-                        "Signal": res[1],
-                        "Big Player": res[2],
-                        "Entry": res[3],
-                        "SL": res[4],
-                        "Target": res[5],
-                        "Trend Score": res[6],
-                        "Direction": get_direction(res[1]),   # ✅ NEW COLUMN
-                        "Time": df.index[-1].strftime('%H:%M')
-                    })
-
-                # =============================
-                # BREAKOUT LOGIC (UNCHANGED)
-                # =============================
-                opening_data = df.between_time("09:15", "09:30")
-
-                if not opening_data.empty:
-
-                    opening_high = opening_data['High'].max()
-                    opening_low = opening_data['Low'].min()
-
-                    for i in range(1, len(df)-3):
-
-                        prev = df.iloc[i-1]
-                        curr = df.iloc[i]
-                        time = df.index[i]
-
-                        if prev['Close'] <= opening_high and curr['Close'] > opening_high:
-
-                            future = df.iloc[i+1:i+4]
-
-                            up = sum(future['Close'] > curr['Close'])
-                            down = sum(future['Close'] <= curr['Close'])
-
-                            signal_type = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
-
-                            breakout_day_list.append({
-                                "Stock": s,
-                                "Type": signal_type,
-                                "Level": round(opening_high, 2),
-                                "Time": time.strftime('%H:%M')
-                            })
-                            break
-
-                        elif prev['Close'] >= opening_low and curr['Close'] < opening_low:
-
-                            future = df.iloc[i+1:i+4]
-
-                            down = sum(future['Close'] < curr['Close'])
-                            up = sum(future['Close'] >= curr['Close'])
-
-                            signal_type = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
-
-                            breakout_day_list.append({
-                                "Stock": s,
-                                "Type": signal_type,
-                                "Level": round(opening_low, 2),
-                                "Time": time.strftime('%H:%M')
-                            })
-                            break
-
-            except:
+            if df is None or df.empty:
                 continue
 
-    # =============================
-    # MAIN TABLE
-    # =============================
+            res = analyze(df)
+
+            if res:
+                trend, signal, player, entry, sl, target = res
+
+                results.append({
+                    "Stock": s,
+                    "Price": round(df["Close"].iloc[-1],2),
+                    "Trend": trend,
+                    "Signal": signal,
+                    "Big Player": player,
+                    "Entry": round(entry,2),
+                    "SL": round(sl,2),
+                    "Target": round(target,2),
+                    "Time": df.index[-1].strftime("%H:%M")
+                })
+
     if results:
         st.dataframe(pd.DataFrame(results), use_container_width=True)
     else:
-        st.error("No Data Found")
-
-    # =============================
-    # BREAKOUT TABLE
-    # =============================
-    st.markdown("---")
-    st.subheader("🔥 SMART BREAKOUT STOCKS (DIRECTION CONFIRMED)")
-
-    if breakout_day_list:
-        st.dataframe(pd.DataFrame(breakout_day_list), use_container_width=True)
-    else:
-        st.info("No Breakout Stocks Today")
+        st.warning("No Data Found")
 
 # =============================
-# BACKTEST (UNCHANGED)
+# FOOTER
 # =============================
 st.markdown("---")
-st.subheader(f"📅 Backtest Report - {bt_date}")
-
-if st.sidebar.button("📊 RUN BACKTEST"):
-
-    bt_results = []
-    target_list = [bt_stock_input] if bt_stock_input else stocks
-
-    with st.spinner("Running Backtest..."):
-
-        for s in target_list:
-            try:
-                df_hist = yf.Ticker(s + ".NS").history(
-                    start=bt_date,
-                    end=bt_date + timedelta(days=1),
-                    interval="15m"
-                )
-
-                df_hist = df_hist.between_time("09:15", "15:30")
-
-                if not df_hist.empty:
-                    for i in range(20, len(df_hist)):
-                        sub_df = df_hist.iloc[:i+1]
-                        res = analyze_data(sub_df)
-
-                        if res and res[1] != "WAIT":
-                            bt_results.append({
-                                "Time": sub_df.index[-1].strftime('%H:%M'),
-                                "Stock": s,
-                                "Signal": res[1],
-                                "Big Player": res[2],
-                                "Entry": res[3],
-                                "SL": res[4],
-                                "Target": res[5],
-                                "Trend Score": res[6],
-                                "Direction": get_direction(res[1])
-                            })
-
-            except:
-                continue
-
-    if bt_results:
-        st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
-    else:
-        st.warning("No Signals Found")
+st.success("🔥 NSE AI PRO FINAL - ZERO ERROR STABLE SYSTEM RUNNING")
