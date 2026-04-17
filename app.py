@@ -14,7 +14,7 @@ st.title("🚀 MANOHAR NSE AI PRO TERMINAL")
 st.markdown("---")
 
 # =============================
-# DIRECTION FUNCTION (FIXED)
+# DIRECTION FUNCTION
 # =============================
 def get_direction(signal):
     if signal == "🚀 CONFIRMED BUY":
@@ -78,9 +78,6 @@ def analyze_data(df):
         sl = curr_price + (risk * 0.5)
         target = curr_price - risk
 
-    # =============================
-    # TREND SCORE
-    # =============================
     try:
         ema_score = abs(curr_e20 - curr_e50) / curr_price * 100
         vol_score = curr_vol / curr_avg_vol
@@ -93,9 +90,7 @@ def analyze_data(df):
             abs(momentum) * 0.2 +
             range_strength * 0.2
         )
-
         trend_score = min(100, round(trend_score, 2))
-
     except:
         trend_score = 0
 
@@ -147,10 +142,8 @@ if st.button("🔍 START LIVE SCANNER", use_container_width=True):
                     continue
 
                 res = analyze_data(df)
-
                 if res:
                     signal = res[1]
-
                     results.append({
                         "Stock": s,
                         "Price": round(df['Close'].iloc[-1], 2),
@@ -161,66 +154,58 @@ if st.button("🔍 START LIVE SCANNER", use_container_width=True):
                         "SL": res[4],
                         "Target": res[5],
                         "Trend Score": res[6],
-                        "Direction": get_direction(signal),   # ✅ FIXED HERE
+                        "Direction": get_direction(signal),
                         "Time": df.index[-1].strftime('%H:%M')
                     })
 
-                # =============================
-                # BREAKOUT (UNCHANGED)
-                # =============================
+                # 🔥 Breakout Logic
                 opening_data = df.between_time("09:15", "09:30")
-
                 if not opening_data.empty:
-
                     opening_high = opening_data['High'].max()
                     opening_low = opening_data['Low'].min()
 
                     for i in range(1, len(df)-3):
-
                         prev = df.iloc[i-1]
                         curr = df.iloc[i]
                         time = df.index[i]
+                        price = curr['Close']
 
                         if prev['Close'] <= opening_high and curr['Close'] > opening_high:
-
                             future = df.iloc[i+1:i+4]
-
                             up = sum(future['Close'] > curr['Close'])
                             down = sum(future['Close'] <= curr['Close'])
-
                             signal_type = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
 
                             breakout_day_list.append({
                                 "Stock": s,
+                                "Price": round(price, 2),
                                 "Type": signal_type,
-                                "Level": round(opening_high, 2),
-                                "Time": time.strftime('%H:%M')
+                                "Time": time.strftime('%H:%M'),
+                                "Entry": round(price, 2),
+                                "Stoploss": round(price - (price * 0.01), 2),
+                                "Exit": round(price + (price * 0.02), 2)
                             })
                             break
 
                         elif prev['Close'] >= opening_low and curr['Close'] < opening_low:
-
                             future = df.iloc[i+1:i+4]
-
                             down = sum(future['Close'] < curr['Close'])
                             up = sum(future['Close'] >= curr['Close'])
-
                             signal_type = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
 
                             breakout_day_list.append({
                                 "Stock": s,
+                                "Price": round(price, 2),
                                 "Type": signal_type,
-                                "Level": round(opening_low, 2),
-                                "Time": time.strftime('%H:%M')
+                                "Time": time.strftime('%H:%M'),
+                                "Entry": round(price, 2),
+                                "Stoploss": round(price + (price * 0.01), 2),
+                                "Exit": round(price - (price * 0.02), 2)
                             })
                             break
-
             except:
                 continue
 
-    # =============================
-    # TABLE OUTPUT
-    # =============================
     if results:
         st.dataframe(pd.DataFrame(results), use_container_width=True)
     else:
@@ -228,59 +213,7 @@ if st.button("🔍 START LIVE SCANNER", use_container_width=True):
 
     st.markdown("---")
     st.subheader("🔥 SMART BREAKOUT STOCKS (DIRECTION CONFIRMED)")
-
     if breakout_day_list:
         st.dataframe(pd.DataFrame(breakout_day_list), use_container_width=True)
     else:
-        st.info("No Breakout Stocks Today")
-
-# =============================
-# BACKTEST
-# =============================
-st.markdown("---")
-st.subheader(f"📅 Backtest Report - {bt_date}")
-
-if st.sidebar.button("📊 RUN BACKTEST"):
-
-    bt_results = []
-    target_list = [bt_stock_input] if bt_stock_input else stocks
-
-    with st.spinner("Running Backtest..."):
-
-        for s in target_list:
-            try:
-                df_hist = yf.Ticker(s + ".NS").history(
-                    start=bt_date,
-                    end=bt_date + timedelta(days=1),
-                    interval="15m"
-                )
-
-                df_hist = df_hist.between_time("09:15", "15:30")
-
-                if not df_hist.empty:
-                    for i in range(20, len(df_hist)):
-                        sub_df = df_hist.iloc[:i+1]
-                        res = analyze_data(sub_df)
-
-                        if res:
-                            signal = res[1]
-
-                            bt_results.append({
-                                "Time": sub_df.index[-1].strftime('%H:%M'),
-                                "Stock": s,
-                                "Signal": signal,
-                                "Big Player": res[2],
-                                "Entry": res[3],
-                                "SL": res[4],
-                                "Target": res[5],
-                                "Trend Score": res[6],
-                                "Direction": get_direction(signal)
-                            })
-
-            except:
-                continue
-
-    if bt_results:
-        st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
-    else:
-        st.warning("No Signals Found")
+        st.info("No Breakout Stocks
