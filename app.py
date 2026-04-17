@@ -99,4 +99,16 @@ def analyze_data(df):
         observation,
         big_player,
         round(entry, 2),
-        round
+        round(sl, 2),
+        round(target, 2),
+        trend_score
+    )
+
+# =============================
+# SECTORS
+# =============================
+all_sectors = {
+    "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
+    "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK","PNB","CANBK","FEDERALBNK"],
+    "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","EICHERMOT","ASHOKLEY","TVSMOTOR"],
+    "Metal": ["TATASTEEL","JINDALSTEL","HINDALCO","
