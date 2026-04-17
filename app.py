@@ -216,4 +216,7 @@ if st.button("🔍 START LIVE SCANNER", use_container_width=True):
     if breakout_day_list:
         st.dataframe(pd.DataFrame(breakout_day_list), use_container_width=True)
     else:
-        st.info("No Breakout Stocks
+        st.info("No Breakout Stocks")
+
+# =============================
+# BACK
