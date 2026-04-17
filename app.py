@@ -1,182 +1,188 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
-# CONFIG
+# 1. CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO FINAL", layout="wide")
+st.set_page_config(page_title="🔥 MANOHAR NSE AI PRO", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO - FINAL STABLE SYSTEM")
+st.title("🚀 MANOHAR NSE AI PRO TERMINAL")
 st.markdown("---")
 
 # =============================
-# DATA LOADER
+# 2. RSI CALCULATION
 # =============================
-@st.cache_data(ttl=60)
-def load_stock(symbol):
-    try:
-        return yf.download(symbol + ".NS", period="5d", interval="15m", progress=False)
-    except:
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+# =============================
+# 3. SuperTrend Calculation
+# =============================
+def calculate_supertrend(df, period=10, multiplier=3):
+    hl2 = (df['High'] + df['Low']) / 2
+    atr = df['High'].rolling(period).max() - df['Low'].rolling(period).min()
+    upperband = hl2 + (multiplier * atr)
+    lowerband = hl2 - (multiplier * atr)
+    supertrend = pd.Series(index=df.index, dtype=float)
+    for i in range(len(df)):
+        if df['Close'].iloc[i] > upperband.iloc[i]:
+            supertrend.iloc[i] = 1
+        elif df['Close'].iloc[i] < lowerband.iloc[i]:
+            supertrend.iloc[i] = -1
+        else:
+            supertrend.iloc[i] = 0
+    return supertrend
+
+# =============================
+# 4. Bollinger Bands Calculation
+# =============================
+def calculate_bollinger(df, period=20):
+    sma = df['Close'].rolling(window=period).mean()
+    std = df['Close'].rolling(window=period).std()
+    upper = sma + (2 * std)
+    lower = sma - (2 * std)
+    return sma, upper, lower
+
+# =============================
+# 5. ANALYSIS LOGIC
+# =============================
+def analyze_data(df):
+    if df is None or len(df) < 20:
         return None
 
+    e20 = df['Close'].ewm(span=20).mean()
+    e50 = df['Close'].ewm(span=50).mean()
+
+    rsi_series = calculate_rsi(df['Close'])
+    rsi = rsi_series.iloc[-1]
+    if pd.isna(rsi):
+        return None
+
+    st_signal = calculate_supertrend(df)
+    st_last = st_signal.iloc[-1]
+
+    sma, upper, lower = calculate_bollinger(df)
+    bb_upper, bb_lower = upper.iloc[-1], lower.iloc[-1]
+
+    vol = df['Volume']
+    avg_vol = vol.rolling(window=20).mean()
+
+    curr_price = df['Close'].iloc[-1]
+    curr_e20, curr_e50 = e20.iloc[-1], e50.iloc[-1]
+    curr_vol, curr_avg_vol = vol.iloc[-1], avg_vol.iloc[-1]
+
+    last_candle = df.iloc[-1]
+    candle_signal = "Bullish" if last_candle['Close'] > last_candle['Open'] else "Bearish"
+
+    cp_strength = "🔵 CALL STRONG" if curr_e20 > curr_e50 else "🔴 PUT STRONG"
+    if curr_vol > curr_avg_vol * 2:
+        big_player = "🔥 EXTREME INSTITUTIONAL"
+    elif curr_vol > curr_avg_vol * 1.5:
+        big_player = "🐋 BIG PLAYER ACTIVE"
+    else:
+        big_player = "💤 NORMAL"
+
+    recent_high = df['High'].iloc[-10:].max()
+    recent_low = df['Low'].iloc[-10:].min()
+    risk = (recent_high - recent_low) if (recent_high - recent_low) > 0 else curr_price * 0.01
+
+    observation, entry, sl, target = "WAIT", 0, 0, 0
+    if (curr_e20 > curr_e50 and curr_vol > curr_avg_vol and candle_signal == "Bullish"
+        and rsi > 45 and st_last == 1 and curr_price > bb_upper):
+        observation = "🚀 STRONG BUY"
+        entry = curr_price
+        sl = curr_price - (risk * 0.5)
+        target = curr_price + risk
+    elif (curr_e20 < curr_e50 and curr_vol > curr_avg_vol and candle_signal == "Bearish"
+          and rsi < 55 and st_last == -1 and curr_price < bb_lower):
+        observation = "💀 STRONG SELL"
+        entry = curr_price
+        sl = curr_price + (risk * 0.5)
+        target = curr_price - risk
+
+    return (cp_strength, observation, big_player, round(entry,2), round(sl,2), round(target,2), round(rsi,2))
+
 # =============================
-# SECTORS (FULL SAFE - NO BROKEN STRINGS)
+# 6. NSE SECTORS (Expanded)
 # =============================
-sectors = {
-    "NIFTY 50": [
-        "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
-        "SBIN","ITC","LT","AXISBANK","BHARTIARTL"
-    ],
-
-    "BANKING": [
-        "SBIN","HDFCBANK","ICICIBANK","AXISBANK","KOTAKBANK",
-        "PNB","BANKBARODA","CANBK","FEDERALBNK"
-    ],
-
-    "AUTO": [
-        "TATAMOTORS","MARUTI","M&M","HEROMOTOCO",
-        "EICHERMOT","ASHOKLEY","TVSMOTOR","BAJAJ-AUTO"
-    ],
-
-    "METAL": [
-        "TATASTEEL","JSWSTEEL","HINDALCO","JINDALSTEL",
-        "SAIL","NATIONALUM","VEDL"
-    ],
-
-    "IT": [
-        "TCS","INFY","WIPRO","HCLTECH","TECHM",
-        "LTIM","COFORGE","MPHASIS"
-    ],
-
-    "PHARMA": [
-        "SUNPHARMA","DRREDDY","CIPLA","DIVISLAB",
-        "APOLLOHOSP","BIOCON","LUPIN"
-    ],
-
-    "OIL_GAS": [
-        "RELIANCE","ONGC","IOC","BPCL","GAIL"
-    ],
-
-    "ENERGY": [
-        "ADANIGREEN","ADANIPOWER","NTPC","POWERGRID","TATAPOWER"
-    ],
-
-    "INFRA": [
-        "LT","IRB","NBCC","DLF","GMRINFRA"
-    ],
-
-    "CHEMICALS": [
-        "PIDILITIND","DEEPAKNTR","UPL","ATUL","AARTIIND"
-    ]
+all_sectors = {
+    "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
+    "Banking": ["HDFCBANK","ICICIBANK","AXISBANK","KOTAKBANK","SBIN","PNB","BANKBARODA"],
+    "IT": ["TCS","INFY","WIPRO","HCLTECH","TECHM"],
+    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA","DIVISLAB","APOLLOHOSP"],
+    "FMCG": ["ITC","HINDUNILVR","NESTLEIND","BRITANNIA","DABUR"],
+    "Auto": ["TATAMOTORS","M&M","MARUTI","HEROMOTOCO","BAJAJ-AUTO"],
+    "Metal": ["TATASTEEL","JSWSTEEL","HINDALCO","VEDL","NMDC"],
+    "Energy": ["RELIANCE","ONGC","NTPC","POWERGRID","BPCL","IOC"],
+    "Realty": ["DLF","GODREJPROP","OBEROIRLTY","PHOENIXLTD"],
+    "Media": ["ZEEL","SUNTV","PVRINOX"],
+    "PSU Banks": ["SBIN","PNB","BANKBARODA","CANBK","UNIONBANK"]
 }
 
 # =============================
-# ANALYSIS ENGINE
+# 7. SIDEBAR
 # =============================
-def analyze(df):
-
-    if df is None or df.empty or len(df) < 20:
-        return None
-
-    close = df["Close"]
-    high = df["High"]
-    low = df["Low"]
-    vol = df["Volume"]
-
-    e20 = close.ewm(span=20).mean()
-    e50 = close.ewm(span=50).mean()
-
-    price = float(close.iloc[-1])
-    e20_v = float(e20.iloc[-1])
-    e50_v = float(e50.iloc[-1])
-
-    avg_vol = vol.rolling(20).mean().iloc[-1]
-    curr_vol = vol.iloc[-1]
-
-    if pd.isna(avg_vol) or avg_vol == 0:
-        avg_vol = curr_vol
-
-    trend = "🟢 BULLISH" if e20_v > e50_v else "🔴 BEARISH"
-
-    if curr_vol > avg_vol * 2:
-        player = "🔥 INSTITUTIONAL"
-    elif curr_vol > avg_vol * 1.5:
-        player = "🐋 SMART MONEY"
-    else:
-        player = "💤 NORMAL"
-
-    recent_high = high.iloc[-10:].max()
-    recent_low = low.iloc[-10:].min()
-
-    risk = recent_high - recent_low
-    if risk <= 0:
-        risk = price * 0.01
-
-    signal = "WAIT"
-    entry = sl = target = 0
-
-    if e20_v > e50_v and curr_vol > avg_vol:
-        signal = "🚀 CONFIRMED BUY"
-        entry = price
-        sl = price - risk * 0.5
-        target = price + risk
-
-    elif e20_v < e50_v and curr_vol > avg_vol:
-        signal = "💀 CONFIRMED SELL"
-        entry = price
-        sl = price + risk * 0.5
-        target = price - risk
-
-    return trend, signal, player, entry, sl, target
+st.sidebar.title("📂 Backtest Panel")
+bt_date = st.sidebar.date_input("Select Date", datetime.now() - timedelta(days=1))
+bt_stock_input = st.sidebar.text_input("Stock (optional)", "").upper()
 
 # =============================
-# UI
+# 8. MAIN SCANNER
 # =============================
-sector = st.selectbox("📂 SELECT SECTOR", list(sectors.keys()))
-stocks = sectors[sector]
+selected_sector = st.selectbox("📂 Select Sector", list(all_sectors.keys()))
+stocks = all_sectors[selected_sector]
 
-if st.button("🔍 START SCANNER", use_container_width=True):
-
+if st.button("🔍 START LIVE SCANNER", use_container_width=True):
     results = []
-
-    with st.spinner("Scanning NSE Market..."):
-
+    with st.spinner("AI Scanning Market..."):
         for s in stocks:
-
-            df = load_stock(s)
-
-            if df is None or df.empty:
+            try:
+                t = yf.Ticker(s + ".NS")
+                df = t.history(period="2d", interval="15m")
+                res = analyze_data(df)
+                if res:
+                    results.append({
+                        "Stock": s,
+                        "Price": round(df['Close'].iloc[-1], 2),
+                        "Trend": res[0],
+                        "Signal": res[1],
+                        "Big Player": res[2],
+                        "Entry": res[3],
+                        "SL": res[4],
+                        "Target": res[5],
+                        "RSI": res[6],
+                        "Time": df.index[-1].strftime('%H:%M')
+                    })
+            except:
                 continue
-
-            res = analyze(df)
-
-            if res:
-                trend, signal, player, entry, sl, target = res
-
-                results.append({
-                    "Stock": s,
-                    "Price": round(df["Close"].iloc[-1],2),
-                    "Trend": trend,
-                    "Signal": signal,
-                    "Big Player": player,
-                    "Entry": round(entry,2),
-                    "SL": round(sl,2),
-                    "Target": round(target,2),
-                    "Time": df.index[-1].strftime("%H:%M")
-                })
-
-    if results:
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
-    else:
-        st.warning("No Data Found")
+    st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 # =============================
-# FOOTER
+# 9. BACKTEST (FULL DAY FIX)
 # =============================
 st.markdown("---")
-st.success("🔥 NSE AI PRO FINAL - ZERO ERROR STABLE SYSTEM RUNNING")
+st.subheader(f"📅 Backtest Report - {bt_date}")
+
+if st.sidebar.button("📊 RUN BACKTEST"):
+    bt_results = []
+    target_list = [bt_stock_input] if bt_stock_input else stocks
+    with st.spinner("Running Backtest..."):
+        for s in target_list:
+            try:
+                t = yf.Ticker(s + ".NS")
+                df_hist = t.history(start=bt_date, end=bt_date + timedelta(days=1), interval="15m")
+                if not df_hist.empty:
+                    for i in range(5, len(df_hist)):   # ✅ full-day signals
+                        sub_df = df_hist.iloc[:i+1]
+                        res = analyze
