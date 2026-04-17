@@ -37,37 +37,29 @@ def get_direction(signal):
 def analyze_data(df):
     if df is None or len(df) < 20:
         return None
-
     e20 = df['Close'].ewm(span=20).mean()
     e50 = df['Close'].ewm(span=50).mean()
     vol = df['Volume']
     avg_vol = vol.rolling(window=20).mean()
-
     curr_price = df['Close'].iloc[-1]
     curr_e20 = e20.iloc[-1]
     curr_e50 = e50.iloc[-1]
     curr_vol = vol.iloc[-1]
     curr_avg_vol = avg_vol.iloc[-1]
-
     if pd.isna(curr_avg_vol) or curr_avg_vol == 0:
         return None
-
     cp_strength = "🔵 CALL STRONG" if curr_e20 > curr_e50 else "🔴 PUT STRONG"
-
     if curr_vol > curr_avg_vol * 2:
         big_player = "🔥 EXTREME INSTITUTIONAL"
     elif curr_vol > curr_avg_vol * 1.5:
         big_player = "🐋 BIG PLAYER ACTIVE"
     else:
         big_player = "💤 NORMAL"
-
     observation = "WAIT"
     entry, sl, target = 0, 0, 0
-
     recent_high = df['High'].iloc[-10:].max()
     recent_low = df['Low'].iloc[-10:].min()
     risk = (recent_high - recent_low) if (recent_high - recent_low) > 0 else curr_price * 0.01
-
     if curr_e20 > curr_e50 and curr_vol > curr_avg_vol:
         observation = "🚀 CONFIRMED BUY"
         entry = curr_price
@@ -78,7 +70,6 @@ def analyze_data(df):
         entry = curr_price
         sl = curr_price + (risk * 0.5)
         target = curr_price - risk
-
     try:
         ema_score = abs(curr_e20 - curr_e50) / curr_price * 100
         vol_score = curr_vol / curr_avg_vol
@@ -93,7 +84,6 @@ def analyze_data(df):
         trend_score = min(100, round(trend_score, 2))
     except:
         trend_score = 0
-
     return (
         cp_strength,
         observation,
@@ -111,4 +101,14 @@ all_sectors = {
     "Nifty 50": ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","BHARTIARTL"],
     "Banking": ["SBIN","AXISBANK","KOTAKBANK","HDFCBANK","ICICIBANK","PNB","CANBK","FEDERALBNK"],
     "Auto": ["TATAMOTORS","MARUTI","M&M","HEROMOTOCO","EICHERMOT","ASHOKLEY","TVSMOTOR"],
-    "Metal": ["TATASTEEL","JINDALSTEL","HINDALCO","
+    "Metal": ["TATASTEEL","JINDALSTEL","HINDALCO","JSWSTEEL","NATIONALUM","SAIL","VEDL"],
+    "IT Sector": ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","COFORGE"],
+    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA","APOLLOHOSP","DIVISLAB"]
+}
+
+# =============================
+# SIDEBAR (Backtest Panel)
+# =============================
+st.sidebar.title("📂 Backtest Panel")
+bt_date = st.sidebar.date_input("Select Date", datetime.now() - timedelta(days=1))
+bt_stock_input = st.sidebar.text_input("Stock (optional
