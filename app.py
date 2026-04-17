@@ -7,10 +7,10 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 MANOHAR NSE AI PRO", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 MANOHAR NSE AI PRO TERMINAL")
+st.title("🚀 NSE AI PRO TERMINAL")
 st.markdown("---")
 
 # =============================
@@ -24,7 +24,7 @@ stocks = [
 ]
 
 # =============================
-# ANALYSIS ENGINE
+# ANALYSIS ENGINE (UNCHANGED CORE LOGIC)
 # =============================
 def analyze_data(df):
     if df is None or len(df) < 20:
@@ -36,10 +36,10 @@ def analyze_data(df):
     vol = df['Volume']
     avg_vol = vol.rolling(20).mean()
 
-    if pd.isna(avg_vol.iloc[-1]) or avg_vol.iloc[-1] == 0:
+    if pd.isna(avg_vol.iloc[-1]):
         return None
 
-    trend = "🔵 CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "🔴 PUT STRONG"
+    trend = "CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "PUT STRONG"
 
     signal = "WAIT"
     if e20.iloc[-1] > e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
@@ -50,9 +50,65 @@ def analyze_data(df):
     return trend, signal
 
 # =============================
-# BACKTEST DATE
+# BREAKOUT ENGINE (WITH FAILED LOGIC ADDED)
 # =============================
-bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - timedelta(days=1))
+def breakout_engine(df, stock):
+    results = []
+
+    opening = df.between_time("09:15", "09:30")
+    if opening.empty:
+        return results
+
+    high = opening['High'].max()
+    low = opening['Low'].min()
+
+    for i in range(1, len(df)-3):
+
+        prev = df.iloc[i-1]
+        curr = df.iloc[i]
+        t = df.index[i]
+
+        # ================= BUY BREAKOUT =================
+        if prev['Close'] <= high and curr['Close'] > high:
+
+            future = df.iloc[i+1:i+4]
+            up = sum(future['Close'] > curr['Close'])
+            down = sum(future['Close'] <= curr['Close'])
+
+            if up > down:
+                status = "🚀 CONFIRMED BUY"
+            else:
+                status = "⚠️ FAILED BUY → SELL"
+
+            results.append({
+                "Time": t,
+                "Stock": stock,
+                "Type": status,
+                "Level": round(high,2)
+            })
+            break
+
+        # ================= SELL BREAKOUT =================
+        elif prev['Close'] >= low and curr['Close'] < low:
+
+            future = df.iloc[i+1:i+4]
+            down = sum(future['Close'] < curr['Close'])
+            up = sum(future['Close'] >= curr['Close'])
+
+            if down > up:
+                status = "💀 CONFIRMED SELL"
+            else:
+                status = "⚠️ FAILED SELL → BUY"
+
+            results.append({
+                "Time": t,
+                "Stock": stock,
+                "Type": status,
+                "Level": round(low,2)
+            })
+            break
+
+    return results
 
 # =============================
 # LIVE SCANNER
@@ -60,7 +116,7 @@ bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - ti
 if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
 
     live_results = []
-    live_breakout = []
+    breakout_results = []
 
     for s in stocks:
         try:
@@ -69,7 +125,7 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
             if df.empty:
                 continue
 
-            df = df.between_time("09:15","15:30")
+            df = df.between_time("09:15", "15:30")
 
             res = analyze_data(df)
 
@@ -82,81 +138,29 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
                     "Time": df.index[-1].strftime("%H:%M")
                 })
 
-            # =============================
-            # SMART BREAKOUT LIVE + FAILED LOGIC
-            # =============================
-            opening = df.between_time("09:15","09:30")
-
-            if not opening.empty:
-                high = opening['High'].max()
-                low = opening['Low'].min()
-
-                for i in range(1, len(df)-3):
-
-                    prev = df.iloc[i-1]
-                    curr = df.iloc[i]
-                    t = df.index[i]
-
-                    # BUY BREAKOUT
-                    if prev['Close'] <= high and curr['Close'] > high:
-
-                        future = df.iloc[i+1:i+4]
-                        up = sum(future['Close'] > curr['Close'])
-                        down = sum(future['Close'] <= curr['Close'])
-
-                        if up > down:
-                            signal_type = "🚀 CONFIRMED BUY"
-                        else:
-                            signal_type = "⚠️ FAILED BUY → SELL"
-
-                        live_breakout.append({
-                            "Time": t,
-                            "Stock": s,
-                            "Type": signal_type,
-                            "Level": round(high,2)
-                        })
-                        break
-
-                    # SELL BREAKOUT
-                    elif prev['Close'] >= low and curr['Close'] < low:
-
-                        future = df.iloc[i+1:i+4]
-                        down = sum(future['Close'] < curr['Close'])
-                        up = sum(future['Close'] >= curr['Close'])
-
-                        if down > up:
-                            signal_type = "💀 CONFIRMED SELL"
-                        else:
-                            signal_type = "⚠️ FAILED SELL → BUY"
-
-                        live_breakout.append({
-                            "Time": t,
-                            "Stock": s,
-                            "Type": signal_type,
-                            "Level": round(low,2)
-                        })
-                        break
+            breakout_results += breakout_engine(df, s)
 
         except:
             continue
 
-    live_breakout = sorted(live_breakout, key=lambda x: x["Time"])
+    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
 
-    for x in live_breakout:
+    for x in breakout_results:
         x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
 
     st.subheader("📊 LIVE SIGNALS (9:15–3:30)")
     st.dataframe(pd.DataFrame(live_results), use_container_width=True)
 
     st.markdown("---")
-    st.subheader("🔥 SMART BREAKOUT STOCKS (CONFIRMED + FAILED)")
-    st.dataframe(pd.DataFrame(live_breakout), use_container_width=True)
+    st.subheader("🔥 SMART BREAKOUT (CONFIRMED + FAILED)")
+    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
 
 # =============================
 # BACKTEST PANEL
 # =============================
 st.markdown("---")
-st.subheader(f"📅 BACKTEST PANEL - {bt_date}")
+
+bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - timedelta(days=1))
 
 if st.button("📊 RUN BACKTEST"):
 
@@ -171,14 +175,12 @@ if st.button("📊 RUN BACKTEST"):
                 interval="15m"
             )
 
-            df = df.between_time("09:15","15:30")
+            df = df.between_time("09:15", "15:30")
 
             if df.empty:
                 continue
 
-            # =============================
-            # SIGNAL BACKTEST
-            # =============================
+            # SIGNALS
             for i in range(20, len(df)):
                 sub = df.iloc[:i+1]
                 res = analyze_data(sub)
@@ -190,66 +192,8 @@ if st.button("📊 RUN BACKTEST"):
                         "Signal": res[1]
                     })
 
-            # =============================
-            # SMART BREAKOUT BACKTEST + FAILED LOGIC
-            # =============================
-            opening = df.between_time("09:15","09:30")
-
-            if not opening.empty:
-                high = opening['High'].max()
-                low = opening['Low'].min()
-
-                for i in range(1, len(df)-3):
-
-                    prev = df.iloc[i-1]
-                    curr = df.iloc[i]
-                    t = df.index[i]
-
-                    # BUY BREAKOUT
-                    if prev['Close'] <= high and curr['Close'] > high:
-
-                        future = df.iloc[i+1:i+4]
-                        up = sum(future['Close'] > curr['Close'])
-                        down = sum(future['Close'] <= curr['Close'])
-
-                        if up > down:
-                            bt_breakout.append({
-                                "Time": t,
-                                "Stock": s,
-                                "Type": "🚀 CONFIRMED BUY",
-                                "Level": round(high,2)
-                            })
-                        else:
-                            bt_breakout.append({
-                                "Time": t,
-                                "Stock": s,
-                                "Type": "⚠️ FAILED BUY → SELL",
-                                "Level": round(high,2)
-                            })
-                        break
-
-                    # SELL BREAKOUT
-                    elif prev['Close'] >= low and curr['Close'] < low:
-
-                        future = df.iloc[i+1:i+4]
-                        down = sum(future['Close'] < curr['Close'])
-                        up = sum(future['Close'] >= curr['Close'])
-
-                        if down > up:
-                            bt_breakout.append({
-                                "Time": t,
-                                "Stock": s,
-                                "Type": "💀 CONFIRMED SELL",
-                                "Level": round(low,2)
-                            })
-                        else:
-                            bt_breakout.append({
-                                "Time": t,
-                                "Stock": s,
-                                "Type": "⚠️ FAILED SELL → BUY",
-                                "Level": round(low,2)
-                            })
-                        break
+            # BREAKOUT
+            bt_breakout += breakout_engine(df, s)
 
         except:
             continue
