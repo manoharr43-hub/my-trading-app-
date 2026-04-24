@@ -13,11 +13,11 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (ULTIMATE VERSION)")
+st.title("🚀 NSE AI PRO TERMINAL (FINAL FIXED VERSION)")
 st.markdown("---")
 
 # =============================
-# ALL NSE STOCKS (MERGED)
+# SECTOR MAP
 # =============================
 sector_map = {
     "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
@@ -29,8 +29,7 @@ sector_map = {
 }
 
 all_stocks = sum(sector_map.values(), [])
-
-selected_sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
+selected_sector = st.sidebar.selectbox("📂 Select Sector", list(sector_map.keys()))
 stocks = sector_map[selected_sector]
 
 # =============================
@@ -56,7 +55,6 @@ def ai_prediction(df):
     df = df.copy()
     df['Target'] = df['Close'].shift(-1)
     df.dropna(inplace=True)
-
     if len(df) < 10:
         return None
 
@@ -112,10 +110,10 @@ def analyze_data(df):
 
     entry, sl, tgt = risk_management(df, final)
 
-    return trend, final, rsi.iloc[-1], pred, entry, sl, tgt
+    return trend, final, round(rsi.iloc[-1],2), pred, entry, sl, tgt
 
 # =============================
-# BREAKOUT (WITH TIME)
+# BREAKOUT (TIME FIXED)
 # =============================
 def breakout_engine(df, stock):
     results = []
@@ -128,7 +126,7 @@ def breakout_engine(df, stock):
     low = opening['Low'].min()
 
     for i in range(1, len(df)):
-        time = df.index[i]
+        time = df.index[i].strftime("%H:%M")  # ✅ TIME FIX
 
         if df['Close'].iloc[i] > high:
             results.append({"Stock": stock,"Type": "BUY BO","Level": high,"Time": time})
@@ -141,7 +139,7 @@ def breakout_engine(df, stock):
     return results
 
 # =============================
-# CHART (BREAKOUT HIGHLIGHT)
+# CHART (FIXED)
 # =============================
 def plot_chart(df, stock, bo):
     fig = go.Figure()
@@ -171,7 +169,7 @@ def plot_chart(df, stock, bo):
 # =============================
 # LIVE SCANNER
 # =============================
-if st.button("🔍 START LIVE"):
+if st.button("🔍 START LIVE SCANNER"):
     results = []
     all_breakouts = []
 
@@ -195,7 +193,7 @@ if st.button("🔍 START LIVE"):
                     "Entry": entry,
                     "SL": sl,
                     "Target": tgt,
-                    "RSI": round(rsi,2)
+                    "RSI": rsi
                 })
 
             all_breakouts += bo
@@ -209,13 +207,27 @@ if st.button("🔍 START LIVE"):
     st.subheader("📊 LIVE SIGNALS")
     st.dataframe(df_res, use_container_width=True)
 
-    st.subheader("🔥 ALL NSE BREAKOUT (WITH TIME)")
+    st.subheader("🔥 ALL NSE BREAKOUT")
     st.dataframe(df_bo, use_container_width=True)
+
+# =============================
+# CHART SELECTOR (FIXED)
+# =============================
+st.markdown("---")
+selected_stock = st.selectbox("📈 Select Stock for Chart", stocks)
+
+if selected_stock:
+    df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
+    df_chart = df_chart.between_time("09:15","15:30")
+
+    bo_chart = breakout_engine(df_chart, selected_stock)
+
+    plot_chart(df_chart, selected_stock, bo_chart)
 
 # =============================
 # BACKTEST
 # =============================
-bt_date = st.sidebar.date_input("📅 Backtest Date")
+bt_date = st.sidebar.date_input("📅 Backtest Date", datetime.now().date() - timedelta(days=1))
 
 if st.button("📊 RUN BACKTEST"):
     bt_res = []
@@ -244,7 +256,7 @@ if st.button("📊 RUN BACKTEST"):
                     trend, signal, rsi, pred, entry, sl, tgt = res
 
                     bt_res.append({
-                        "Time": sub.index[-1],
+                        "Time": sub.index[-1].strftime("%H:%M"),  # ✅ TIME FIX
                         "Stock": s,
                         "Signal": signal,
                         "Entry": entry,
@@ -260,5 +272,5 @@ if st.button("📊 RUN BACKTEST"):
     st.subheader("📊 BACKTEST FULL DAY")
     st.dataframe(pd.DataFrame(bt_res), use_container_width=True)
 
-    st.subheader("🔥 BACKTEST BREAKOUT FULL DAY")
+    st.subheader("🔥 BACKTEST BREAKOUT")
     st.dataframe(pd.DataFrame(bt_bo), use_container_width=True)
