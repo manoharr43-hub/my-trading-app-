@@ -13,65 +13,54 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (FINAL + AUTO SIGNAL)")
+st.title("🚀 NSE AI PRO TERMINAL (CLEAN VERSION)")
 st.markdown("---")
 
 # =============================
 # SESSION STATE
 # =============================
-if "live_res" not in st.session_state:
-    st.session_state.live_res = []
-
-if "live_bo" not in st.session_state:
-    st.session_state.live_bo = []
-
-if "bt_res" not in st.session_state:
-    st.session_state.bt_res = []
-
-if "bt_bo" not in st.session_state:
-    st.session_state.bt_bo = []
+for key in ["live_res","live_bo","bt_res","bt_bo"]:
+    if key not in st.session_state:
+        st.session_state[key] = []
 
 # =============================
-# SECTOR MAP
+# STOCK LIST
 # =============================
-sector_map = {
-    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
-    "IT": ["TCS","INFY","HCLTECH","WIPRO","TECHM"],
-    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA"],
-    "Auto": ["MARUTI","M&M","TATAMOTORS"],
-    "Metals": ["JSWSTEEL","TATASTEEL","HINDALCO"],
-    "FMCG": ["ITC","RELIANCE","LT","BHARTIARTL"]
-}
-
-all_stocks = list(set(sum(sector_map.values(), [])))
+stocks = [
+    "HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
+    "TCS","INFY","HCLTECH","WIPRO","TECHM",
+    "SUNPHARMA","DRREDDY","CIPLA",
+    "MARUTI","M&M","TATAMOTORS",
+    "JSWSTEEL","TATASTEEL","HINDALCO",
+    "ITC","RELIANCE","LT","BHARTIARTL"
+]
 
 # =============================
-# SAFE DATA FETCH
+# DATA FETCH
 # =============================
-def fetch_data(symbol, start=None, end=None, period="1d", interval="5m"):
+def fetch_data(symbol, start=None, end=None):
     try:
         if start:
             df = yf.Ticker(symbol + ".NS").history(
                 start=start,
                 end=end,
-                interval=interval
+                interval="5m"
             )
         else:
             df = yf.Ticker(symbol + ".NS").history(
-                period=period,
-                interval=interval
+                period="1d",
+                interval="5m"
             )
 
         if df.empty:
             return None
 
-        df = df.between_time("09:15", "15:30")
+        df = df.between_time("09:15","15:30")
         df.dropna(inplace=True)
 
         return df
 
-    except Exception as e:
-        st.warning(f"{symbol} error: {e}")
+    except:
         return None
 
 # =============================
@@ -105,7 +94,7 @@ def ai_prediction(df):
     return model.predict(X.iloc[[-1]])[0]
 
 # =============================
-# RISK MANAGEMENT
+# RISK
 # =============================
 def risk_management(df, signal):
     price = df['Close'].iloc[-1]
@@ -113,11 +102,9 @@ def risk_management(df, signal):
     if signal == "BUY":
         sl = df['Low'].rolling(10).min().iloc[-1]
         target = price + (price - sl) * 2
-
     elif signal == "SELL":
         sl = df['High'].rolling(10).max().iloc[-1]
         target = price - (sl - price) * 2
-
     else:
         return price, None, None
 
@@ -141,7 +128,6 @@ def analyze_data(df):
 
     price = df['Close'].iloc[-1]
 
-    # Signal logic improved
     if pred > price * 1.002:
         signal = "BUY"
     elif pred < price * 0.998:
@@ -149,7 +135,6 @@ def analyze_data(df):
     else:
         signal = "WAIT"
 
-    # Trend filter
     if signal == "BUY" and price < df['EMA20'].iloc[-1]:
         signal = "WAIT"
     if signal == "SELL" and price > df['EMA20'].iloc[-1]:
@@ -248,7 +233,7 @@ if st.button("🔍 START LIVE"):
     results = []
     all_bo = []
 
-    for s in all_stocks:
+    for s in stocks:
         df = fetch_data(s)
 
         if df is None or len(df) < 50:
@@ -290,8 +275,8 @@ if st.session_state.live_res:
     st.dataframe(df_res[df_res["FINAL"]!="⚠️ WAIT"].head(5), use_container_width=True)
 
     df_bo = pd.DataFrame(st.session_state.live_bo)
-    st.subheader("🔥 LIVE BREAKOUT")
     if not df_bo.empty:
+        st.subheader("🔥 LIVE BREAKOUT")
         st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
     stock = st.selectbox("📈 Live Chart", df_res["Stock"].unique())
@@ -307,7 +292,7 @@ if st.button("📊 RUN BACKTEST"):
     bt_res = []
     bt_bo = []
 
-    for s in all_stocks:
+    for s in stocks:
         df = fetch_data(s, start=bt_date, end=bt_date + timedelta(days=1))
 
         if df is None or len(df) < 50:
@@ -341,8 +326,8 @@ if st.session_state.bt_res:
     st.dataframe(df_bt, use_container_width=True)
 
     df_bo = pd.DataFrame(st.session_state.bt_bo)
-    st.subheader("🔥 BACKTEST BREAKOUT")
     if not df_bo.empty:
+        st.subheader("🔥 BACKTEST BREAKOUT")
         st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
     stock = st.selectbox("📉 Backtest Chart", df_bt["Stock"].unique())
