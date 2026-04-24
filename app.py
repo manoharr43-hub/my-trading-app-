@@ -13,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (AI UPGRADED)")
+st.title("🚀 NSE AI PRO TERMINAL (FINAL VERSION)")
 st.markdown("---")
 
 # =============================
@@ -63,11 +63,10 @@ def ai_prediction(df):
     model = LinearRegression()
     model.fit(X, y)
 
-    pred = model.predict(X[-1].reshape(1, -1))[0]
-    return pred
+    return model.predict(X[-1].reshape(1, -1))[0]
 
 # =============================
-# ANALYSIS ENGINE
+# ANALYSIS
 # =============================
 def analyze_data(df):
     if df is None or len(df) < 50:
@@ -108,7 +107,7 @@ def analyze_data(df):
     return trend, final, round(rsi.iloc[-1],2), pred
 
 # =============================
-# BREAKOUT ENGINE
+# BREAKOUT
 # =============================
 def breakout_engine(df, stock):
     results = []
@@ -136,7 +135,13 @@ def breakout_engine(df, stock):
 # =============================
 # CHART
 # =============================
-def plot_chart(df, stock):
+def plot_chart(df, stock, breakout_points=None):
+    if df.empty:
+        return
+
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
     fig = go.Figure()
 
     fig.add_trace(go.Candlestick(
@@ -150,7 +155,20 @@ def plot_chart(df, stock):
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name="EMA20"))
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name="EMA50"))
 
-    fig.update_layout(title=stock, xaxis_rangeslider_visible=False)
+    # Breakout highlight
+    if breakout_points:
+        for bp in breakout_points:
+            fig.add_trace(go.Scatter(
+                x=[bp["Time"]],
+                y=[bp["Level"]],
+                mode="markers+text",
+                text=[bp["Type"]],
+                marker=dict(size=10),
+                textposition="top center"
+            ))
+
+    fig.update_layout(title=stock, xaxis_rangeslider_visible=False, height=500)
+
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
@@ -162,7 +180,7 @@ if st.button("🔍 START LIVE SCANNER"):
 
     for s in stocks:
         try:
-            df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
+            df = yf.Ticker(s + ".NS").history(period="1d", interval="5m")
             df = df.between_time("09:15","15:30")
 
             if df.empty:
@@ -183,15 +201,64 @@ if st.button("🔍 START LIVE SCANNER"):
                     "AI Price": round(pred,2) if pred else None
                 })
 
-                plot_chart(df, s)
+                plot_chart(df, s, bo)
 
             breakout += bo
 
-        except:
-            continue
+        except Exception as e:
+            st.error(f"{s} Error: {e}")
 
     st.subheader("📊 LIVE SIGNALS")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
 
     st.subheader("🔥 BREAKOUT")
     st.dataframe(pd.DataFrame(breakout), use_container_width=True)
+
+# =============================
+# BACKTEST
+# =============================
+st.markdown("---")
+bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now().date() - timedelta(days=1))
+
+if st.button("📊 RUN BACKTEST"):
+    bt_results = []
+    bt_breakout = []
+
+    for s in stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(
+                start=pd.to_datetime(bt_date),
+                end=pd.to_datetime(bt_date) + timedelta(days=1),
+                interval="5m"
+            )
+
+            df = df.between_time("09:15","15:30")
+
+            if df.empty:
+                continue
+
+            res = analyze_data(df)
+            bo = breakout_engine(df, s)
+
+            if res:
+                trend, signal, rsi, pred = res
+
+                bt_results.append({
+                    "Stock": s,
+                    "Signal": signal,
+                    "RSI": rsi,
+                    "AI Price": round(pred,2) if pred else None
+                })
+
+                plot_chart(df, s, bo)
+
+            bt_breakout += bo
+
+        except Exception as e:
+            st.error(f"{s} Backtest Error: {e}")
+
+    st.subheader("📊 BACKTEST RESULTS")
+    st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
+
+    st.subheader("🔥 BACKTEST BREAKOUT")
+    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
