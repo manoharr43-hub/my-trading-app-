@@ -13,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (FINAL FIXED VERSION)")
+st.title("🚀 NSE AI PRO TERMINAL (ULTIMATE FIXED)")
 st.markdown("---")
 
 # =============================
@@ -29,7 +29,7 @@ sector_map = {
 }
 
 all_stocks = sum(sector_map.values(), [])
-selected_sector = st.sidebar.selectbox("📂 Select Sector", list(sector_map.keys()))
+selected_sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
 stocks = sector_map[selected_sector]
 
 # =============================
@@ -96,12 +96,9 @@ def analyze_data(df):
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
     rsi = calculate_rsi(df)
-    macd, signal = calculate_macd(df)
     pred = ai_prediction(df)
 
-    trend = "CALL" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "PUT"
     final = "WAIT"
-
     if pred:
         if pred > df['Close'].iloc[-1]:
             final = "BUY"
@@ -110,10 +107,10 @@ def analyze_data(df):
 
     entry, sl, tgt = risk_management(df, final)
 
-    return trend, final, round(rsi.iloc[-1],2), pred, entry, sl, tgt
+    return final, round(rsi.iloc[-1],2), entry, sl, tgt
 
 # =============================
-# BREAKOUT (TIME FIXED)
+# BREAKOUT ENGINE (FIXED)
 # =============================
 def breakout_engine(df, stock):
     results = []
@@ -126,20 +123,32 @@ def breakout_engine(df, stock):
     low = opening['Low'].min()
 
     for i in range(1, len(df)):
-        time = df.index[i].strftime("%H:%M")  # ✅ TIME FIX
+        dt = df.index[i]
 
         if df['Close'].iloc[i] > high:
-            results.append({"Stock": stock,"Type": "BUY BO","Level": high,"Time": time})
+            results.append({
+                "Stock": stock,
+                "Type": "BUY BO",
+                "Level": high,
+                "Time": dt.strftime("%H:%M"),
+                "DateTime": dt
+            })
             break
 
         elif df['Close'].iloc[i] < low:
-            results.append({"Stock": stock,"Type": "SELL BO","Level": low,"Time": time})
+            results.append({
+                "Stock": stock,
+                "Type": "SELL BO",
+                "Level": low,
+                "Time": dt.strftime("%H:%M"),
+                "DateTime": dt
+            })
             break
 
     return results
 
 # =============================
-# CHART (FIXED)
+# CHART
 # =============================
 def plot_chart(df, stock, bo):
     fig = go.Figure()
@@ -156,7 +165,7 @@ def plot_chart(df, stock, bo):
         for b in bo:
             color = "green" if "BUY" in b["Type"] else "red"
             fig.add_trace(go.Scatter(
-                x=[b["Time"]],
+                x=[b["DateTime"]],  # ✅ correct
                 y=[b["Level"]],
                 mode="markers+text",
                 marker=dict(color=color, size=12),
@@ -169,9 +178,9 @@ def plot_chart(df, stock, bo):
 # =============================
 # LIVE SCANNER
 # =============================
-if st.button("🔍 START LIVE SCANNER"):
+if st.button("🔍 START LIVE"):
     results = []
-    all_breakouts = []
+    all_bo = []
 
     for s in all_stocks:
         try:
@@ -185,7 +194,7 @@ if st.button("🔍 START LIVE SCANNER"):
             bo = breakout_engine(df, s)
 
             if res:
-                trend, signal, rsi, pred, entry, sl, tgt = res
+                signal, rsi, entry, sl, tgt = res
 
                 results.append({
                     "Stock": s,
@@ -196,32 +205,34 @@ if st.button("🔍 START LIVE SCANNER"):
                     "RSI": rsi
                 })
 
-            all_breakouts += bo
+            all_bo += bo
 
         except:
             pass
 
-    df_res = pd.DataFrame(results).sort_values(by="Signal")
-    df_bo = pd.DataFrame(all_breakouts)
+    df_res = pd.DataFrame(results)
+    df_bo = pd.DataFrame(all_bo)
+
+    if not df_bo.empty:
+        df_bo = df_bo.sort_values(by="DateTime")
 
     st.subheader("📊 LIVE SIGNALS")
     st.dataframe(df_res, use_container_width=True)
 
-    st.subheader("🔥 ALL NSE BREAKOUT")
-    st.dataframe(df_bo, use_container_width=True)
+    st.subheader("🔥 ALL NSE BREAKOUT (TIME ORDER)")
+    st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
 # =============================
-# CHART SELECTOR (FIXED)
+# CHART SELECTOR
 # =============================
 st.markdown("---")
-selected_stock = st.selectbox("📈 Select Stock for Chart", stocks)
+selected_stock = st.selectbox("📈 Select Stock", stocks)
 
 if selected_stock:
     df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
     df_chart = df_chart.between_time("09:15","15:30")
 
     bo_chart = breakout_engine(df_chart, selected_stock)
-
     plot_chart(df_chart, selected_stock, bo_chart)
 
 # =============================
@@ -253,10 +264,10 @@ if st.button("📊 RUN BACKTEST"):
                 bo = breakout_engine(sub, s)
 
                 if res:
-                    trend, signal, rsi, pred, entry, sl, tgt = res
+                    signal, rsi, entry, sl, tgt = res
 
                     bt_res.append({
-                        "Time": sub.index[-1].strftime("%H:%M"),  # ✅ TIME FIX
+                        "Time": sub.index[-1].strftime("%H:%M"),
                         "Stock": s,
                         "Signal": signal,
                         "Entry": entry,
@@ -273,4 +284,20 @@ if st.button("📊 RUN BACKTEST"):
     st.dataframe(pd.DataFrame(bt_res), use_container_width=True)
 
     st.subheader("🔥 BACKTEST BREAKOUT")
-    st.dataframe(pd.DataFrame(bt_bo), use_container_width=True)
+    st.dataframe(pd.DataFrame(bt_bo).drop(columns=["DateTime"]), use_container_width=True)
+
+    # ✅ BACKTEST CHART FIX
+    st.markdown("---")
+    bt_stock = st.selectbox("📉 Backtest Chart Stock", stocks)
+
+    if bt_stock:
+        df_bt_chart = yf.Ticker(bt_stock + ".NS").history(
+            start=bt_date,
+            end=bt_date + timedelta(days=1),
+            interval="5m"
+        )
+
+        df_bt_chart = df_bt_chart.between_time("09:15","15:30")
+
+        bo_bt = breakout_engine(df_bt_chart, bt_stock)
+        plot_chart(df_bt_chart, bt_stock, bo_bt)
