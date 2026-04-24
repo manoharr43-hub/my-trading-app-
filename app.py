@@ -13,8 +13,17 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (FINAL STABLE)")
+st.title("🚀 NSE AI PRO TERMINAL (FINAL STABLE UI FIX)")
 st.markdown("---")
+
+# =============================
+# SESSION STATE INIT
+# =============================
+if "bt_res" not in st.session_state:
+    st.session_state.bt_res = []
+
+if "bt_bo" not in st.session_state:
+    st.session_state.bt_bo = []
 
 # =============================
 # SECTOR MAP
@@ -171,73 +180,12 @@ def plot_chart(df, stock, bo):
                 textposition="top center"
             ))
 
-    fig.update_layout(
-        yaxis2=dict(overlaying='y', side='right'),
-        height=600
-    )
+    fig.update_layout(yaxis2=dict(overlaying='y', side='right'), height=600)
 
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# LIVE SCANNER
-# =============================
-if st.button("🔍 START LIVE"):
-    results = []
-    all_bo = []
-
-    for s in all_stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(period="1d", interval="5m")
-            df = df.between_time("09:15","15:30")
-
-            if df.empty:
-                continue
-
-            res = analyze_data(df)
-            bo = breakout_engine(df, s)
-
-            if res:
-                signal, rsi, entry, sl, tgt = res
-
-                results.append({
-                    "Stock": s,
-                    "Signal": signal,
-                    "Entry": entry,
-                    "SL": sl,
-                    "Target": tgt,
-                    "RSI": rsi
-                })
-
-            all_bo += bo
-
-        except:
-            pass
-
-    df_res = pd.DataFrame(results)
-    df_bo = pd.DataFrame(all_bo)
-
-    if not df_bo.empty:
-        df_bo = df_bo.sort_values(by="DateTime")
-
-    st.subheader("📊 LIVE SIGNALS")
-    st.dataframe(df_res, use_container_width=True)
-
-    st.subheader("🔥 ALL NSE BREAKOUT")
-    st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
-
-    # LIVE CHART
-    if not df_res.empty:
-        selected_stock = st.selectbox("📈 Select Stock", sorted(df_res["Stock"].unique()))
-
-        if selected_stock:
-            df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
-            df_chart = df_chart.between_time("09:15","15:30")
-
-            bo_chart = breakout_engine(df_chart, selected_stock)
-            plot_chart(df_chart, selected_stock, bo_chart)
-
-# =============================
-# BACKTEST
+# BACKTEST BUTTON
 # =============================
 bt_date = st.sidebar.date_input("📅 Backtest Date", datetime.now().date() - timedelta(days=1))
 
@@ -255,53 +203,59 @@ if st.button("📊 RUN BACKTEST"):
 
             df = df.between_time("09:15","15:30")
 
-            if df.empty:
+            if len(df) < 50:
                 continue
 
-            for i in range(50, len(df)):
-                sub = df.iloc[:i]
+            res = analyze_data(df)
+            bo = breakout_engine(df, s)
 
-                res = analyze_data(sub)
-                bo = breakout_engine(sub, s)
+            if res:
+                signal, rsi, entry, sl, tgt = res
 
-                if res:
-                    signal, rsi, entry, sl, tgt = res
+                bt_res.append({
+                    "Stock": s,
+                    "Signal": signal,
+                    "Entry": entry,
+                    "SL": sl,
+                    "Target": tgt,
+                    "Time": df.index[-1].strftime("%H:%M")
+                })
 
-                    bt_res.append({
-                        "Time": sub.index[-1].strftime("%H:%M"),
-                        "Stock": s,
-                        "Signal": signal,
-                        "Entry": entry,
-                        "SL": sl,
-                        "Target": tgt
-                    })
-
-                bt_bo += bo
+            bt_bo += bo
 
         except:
             pass
 
-    df_bt = pd.DataFrame(bt_res)
-    df_bo = pd.DataFrame(bt_bo)
+    st.session_state.bt_res = bt_res
+    st.session_state.bt_bo = bt_bo
 
-    st.subheader("📊 BACKTEST FULL DAY")
+# =============================
+# BACKTEST DISPLAY (NO RESET)
+# =============================
+if st.session_state.bt_res:
+
+    df_bt = pd.DataFrame(st.session_state.bt_res)
+    df_bo = pd.DataFrame(st.session_state.bt_bo)
+
+    st.subheader("📊 BACKTEST RESULTS")
     st.dataframe(df_bt, use_container_width=True)
 
     st.subheader("🔥 BACKTEST BREAKOUT")
     st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
-    # ✅ FIXED BACKTEST CHART
-    if not df_bt.empty:
-        bt_stock = st.selectbox("📉 Backtest Chart Stock", sorted(df_bt["Stock"].unique()))
+    bt_stock = st.selectbox(
+        "📉 Select Stock for Chart",
+        df_bt["Stock"].unique()
+    )
 
-        if bt_stock:
-            df_chart = yf.Ticker(bt_stock + ".NS").history(
-                start=bt_date,
-                end=bt_date + timedelta(days=1),
-                interval="5m"
-            )
+    if bt_stock:
+        df_chart = yf.Ticker(bt_stock + ".NS").history(
+            start=bt_date,
+            end=bt_date + timedelta(days=1),
+            interval="5m"
+        )
 
-            df_chart = df_chart.between_time("09:15","15:30")
+        df_chart = df_chart.between_time("09:15","15:30")
 
-            bo_chart = breakout_engine(df_chart, bt_stock)
-            plot_chart(df_chart, bt_stock, bo_chart)
+        bo_chart = breakout_engine(df_chart, bt_stock)
+        plot_chart(df_chart, bt_stock, bo_chart)
