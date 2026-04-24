@@ -13,11 +13,11 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (FINAL VERSION)")
+st.title("🚀 NSE AI PRO TERMINAL (ULTIMATE VERSION)")
 st.markdown("---")
 
 # =============================
-# SECTOR MAP
+# ALL NSE STOCKS (MERGED)
 # =============================
 sector_map = {
     "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
@@ -28,7 +28,9 @@ sector_map = {
     "FMCG": ["ITC","RELIANCE","LT","BHARTIARTL"]
 }
 
-selected_sector = st.sidebar.selectbox("📂 Select Sector", list(sector_map.keys()))
+all_stocks = sum(sector_map.values(), [])
+
+selected_sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
 stocks = sector_map[selected_sector]
 
 # =============================
@@ -54,6 +56,7 @@ def ai_prediction(df):
     df = df.copy()
     df['Target'] = df['Close'].shift(-1)
     df.dropna(inplace=True)
+
     if len(df) < 10:
         return None
 
@@ -64,6 +67,25 @@ def ai_prediction(df):
     model.fit(X, y)
 
     return model.predict(X[-1].reshape(1, -1))[0]
+
+# =============================
+# ENTRY / SL / TARGET
+# =============================
+def risk_management(df, signal):
+    price = df['Close'].iloc[-1]
+
+    if signal == "BUY":
+        sl = df['Low'].rolling(10).min().iloc[-1]
+        target = price + (price - sl) * 2
+
+    elif signal == "SELL":
+        sl = df['High'].rolling(10).max().iloc[-1]
+        target = price - (sl - price) * 2
+
+    else:
+        return price, None, None
+
+    return round(price,2), round(sl,2), round(target,2)
 
 # =============================
 # ANALYSIS
@@ -79,69 +101,49 @@ def analyze_data(df):
     macd, signal = calculate_macd(df)
     pred = ai_prediction(df)
 
-    vol = df['Volume']
-    avg_vol = vol.rolling(20).mean()
-
-    trend = "CALL STRONG" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "PUT STRONG"
-
+    trend = "CALL" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "PUT"
     final = "WAIT"
 
-    if (
-        df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] and
-        vol.iloc[-1] > avg_vol.iloc[-1] and
-        rsi.iloc[-1] < 70 and
-        macd.iloc[-1] > signal.iloc[-1] and
-        pred and pred > df['Close'].iloc[-1]
-    ):
-        final = "🚀 ULTRA BUY"
+    if pred:
+        if pred > df['Close'].iloc[-1]:
+            final = "BUY"
+        elif pred < df['Close'].iloc[-1]:
+            final = "SELL"
 
-    elif (
-        df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1] and
-        vol.iloc[-1] > avg_vol.iloc[-1] and
-        rsi.iloc[-1] > 30 and
-        macd.iloc[-1] < signal.iloc[-1] and
-        pred and pred < df['Close'].iloc[-1]
-    ):
-        final = "💀 ULTRA SELL"
+    entry, sl, tgt = risk_management(df, final)
 
-    return trend, final, round(rsi.iloc[-1],2), pred
+    return trend, final, rsi.iloc[-1], pred, entry, sl, tgt
 
 # =============================
-# BREAKOUT
+# BREAKOUT (WITH TIME)
 # =============================
 def breakout_engine(df, stock):
     results = []
     opening = df.between_time("09:15","09:30")
+
     if opening.empty:
         return results
 
     high = opening['High'].max()
     low = opening['Low'].min()
 
-    for i in range(1, len(df)-3):
-        prev = df.iloc[i-1]
-        curr = df.iloc[i]
+    for i in range(1, len(df)):
+        time = df.index[i]
 
-        if prev['Close'] <= high and curr['Close'] > high:
-            results.append({"Time": df.index[i],"Stock": stock,"Type": "🚀 BUY BO","Level": high})
+        if df['Close'].iloc[i] > high:
+            results.append({"Stock": stock,"Type": "BUY BO","Level": high,"Time": time})
             break
 
-        elif prev['Close'] >= low and curr['Close'] < low:
-            results.append({"Time": df.index[i],"Stock": stock,"Type": "💀 SELL BO","Level": low})
+        elif df['Close'].iloc[i] < low:
+            results.append({"Stock": stock,"Type": "SELL BO","Level": low,"Time": time})
             break
 
     return results
 
 # =============================
-# CHART
+# CHART (BREAKOUT HIGHLIGHT)
 # =============================
-def plot_chart(df, stock, breakout_points=None):
-    if df.empty:
-        return
-
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-
+def plot_chart(df, stock, bo):
     fig = go.Figure()
 
     fig.add_trace(go.Candlestick(
@@ -152,33 +154,28 @@ def plot_chart(df, stock, breakout_points=None):
         close=df['Close']
     ))
 
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name="EMA20"))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name="EMA50"))
-
-    # Breakout highlight
-    if breakout_points:
-        for bp in breakout_points:
+    if bo:
+        for b in bo:
+            color = "green" if "BUY" in b["Type"] else "red"
             fig.add_trace(go.Scatter(
-                x=[bp["Time"]],
-                y=[bp["Level"]],
+                x=[b["Time"]],
+                y=[b["Level"]],
                 mode="markers+text",
-                text=[bp["Type"]],
-                marker=dict(size=10),
+                marker=dict(color=color, size=12),
+                text=[b["Type"]],
                 textposition="top center"
             ))
-
-    fig.update_layout(title=stock, xaxis_rangeslider_visible=False, height=500)
 
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # LIVE SCANNER
 # =============================
-if st.button("🔍 START LIVE SCANNER"):
+if st.button("🔍 START LIVE"):
     results = []
-    breakout = []
+    all_breakouts = []
 
-    for s in stocks:
+    for s in all_stocks:
         try:
             df = yf.Ticker(s + ".NS").history(period="1d", interval="5m")
             df = df.between_time("09:15","15:30")
@@ -190,45 +187,45 @@ if st.button("🔍 START LIVE SCANNER"):
             bo = breakout_engine(df, s)
 
             if res:
-                trend, signal, rsi, pred = res
+                trend, signal, rsi, pred, entry, sl, tgt = res
 
                 results.append({
                     "Stock": s,
-                    "Price": df['Close'].iloc[-1],
-                    "Trend": trend,
                     "Signal": signal,
-                    "RSI": rsi,
-                    "AI Price": round(pred,2) if pred else None
+                    "Entry": entry,
+                    "SL": sl,
+                    "Target": tgt,
+                    "RSI": round(rsi,2)
                 })
 
-                plot_chart(df, s, bo)
+            all_breakouts += bo
 
-            breakout += bo
+        except:
+            pass
 
-        except Exception as e:
-            st.error(f"{s} Error: {e}")
+    df_res = pd.DataFrame(results).sort_values(by="Signal")
+    df_bo = pd.DataFrame(all_breakouts)
 
     st.subheader("📊 LIVE SIGNALS")
-    st.dataframe(pd.DataFrame(results), use_container_width=True)
+    st.dataframe(df_res, use_container_width=True)
 
-    st.subheader("🔥 BREAKOUT")
-    st.dataframe(pd.DataFrame(breakout), use_container_width=True)
+    st.subheader("🔥 ALL NSE BREAKOUT (WITH TIME)")
+    st.dataframe(df_bo, use_container_width=True)
 
 # =============================
 # BACKTEST
 # =============================
-st.markdown("---")
-bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now().date() - timedelta(days=1))
+bt_date = st.sidebar.date_input("📅 Backtest Date")
 
 if st.button("📊 RUN BACKTEST"):
-    bt_results = []
-    bt_breakout = []
+    bt_res = []
+    bt_bo = []
 
-    for s in stocks:
+    for s in all_stocks:
         try:
             df = yf.Ticker(s + ".NS").history(
-                start=pd.to_datetime(bt_date),
-                end=pd.to_datetime(bt_date) + timedelta(days=1),
+                start=bt_date,
+                end=bt_date + timedelta(days=1),
                 interval="5m"
             )
 
@@ -237,28 +234,31 @@ if st.button("📊 RUN BACKTEST"):
             if df.empty:
                 continue
 
-            res = analyze_data(df)
-            bo = breakout_engine(df, s)
+            for i in range(50, len(df)):
+                sub = df.iloc[:i]
 
-            if res:
-                trend, signal, rsi, pred = res
+                res = analyze_data(sub)
+                bo = breakout_engine(sub, s)
 
-                bt_results.append({
-                    "Stock": s,
-                    "Signal": signal,
-                    "RSI": rsi,
-                    "AI Price": round(pred,2) if pred else None
-                })
+                if res:
+                    trend, signal, rsi, pred, entry, sl, tgt = res
 
-                plot_chart(df, s, bo)
+                    bt_res.append({
+                        "Time": sub.index[-1],
+                        "Stock": s,
+                        "Signal": signal,
+                        "Entry": entry,
+                        "SL": sl,
+                        "Target": tgt
+                    })
 
-            bt_breakout += bo
+                bt_bo += bo
 
-        except Exception as e:
-            st.error(f"{s} Backtest Error: {e}")
+        except:
+            pass
 
-    st.subheader("📊 BACKTEST RESULTS")
-    st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
+    st.subheader("📊 BACKTEST FULL DAY")
+    st.dataframe(pd.DataFrame(bt_res), use_container_width=True)
 
-    st.subheader("🔥 BACKTEST BREAKOUT")
-    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
+    st.subheader("🔥 BACKTEST BREAKOUT FULL DAY")
+    st.dataframe(pd.DataFrame(bt_bo), use_container_width=True)
