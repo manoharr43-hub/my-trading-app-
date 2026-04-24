@@ -80,9 +80,9 @@ def breakout_engine(df, stock):
     return results
 
 # =============================
-# CHART MODULE
+# CHART MODULE (with Breakout Highlight)
 # =============================
-def plot_chart(df, stock):
+def plot_chart(df, stock, breakout_points=None):
     fig = go.Figure(data=[go.Candlestick(
         x=df.index,
         open=df['Open'],
@@ -95,6 +95,21 @@ def plot_chart(df, stock):
                              line=dict(color='blue', width=1), name="EMA20"))
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'].ewm(span=50).mean(),
                              line=dict(color='red', width=1), name="EMA50"))
+
+    # 👉 Breakout points highlight
+    if breakout_points:
+        for bp in breakout_points:
+            fig.add_trace(go.Scatter(
+                x=[bp["Time"]],
+                y=[bp["Level"]],
+                mode="markers+text",
+                marker=dict(color="red", size=12, symbol="x"),
+                text=[bp["Type"]],
+                textposition="top center",
+                name="Breakout"
+            ))
+
+    fig.update_layout(title=f"{stock} Chart (15m)", xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
@@ -119,6 +134,7 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
             if df.empty: continue
             df = df.between_time("09:15", "15:30")
             res = analyze_data(df)
+            breakout_points = breakout_engine(df, s)
             if res:
                 live_results.append({
                     "Stock": s,
@@ -128,8 +144,8 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
                     "Time": df.index[-1].strftime("%H:%M")
                 })
                 show_alert(s, res[1], df['Close'].iloc[-1])
-                plot_chart(df, s)
-            breakout_results += breakout_engine(df, s)
+                plot_chart(df, s, breakout_points)
+            breakout_results += breakout_points
         except:
             continue
     breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
@@ -141,7 +157,7 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
     st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
 
 # =============================
-# BACKTEST (DATE PICKER + CHARTS)
+# BACKTEST (DATE PICKER + CHARTS + Breakout Highlight)
 # =============================
 st.markdown("---")
 bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now().date() - timedelta(days=1))
@@ -153,20 +169,21 @@ if st.button("📊 RUN BACKTEST (Selected Date)"):
             df = yf.Ticker(s + ".NS").history(
                 start=pd.to_datetime(bt_date),
                 end=pd.to_datetime(bt_date) + timedelta(days=1),
-                interval="15m"
+                interval="15m"   # 👉 15-minute enforced
             )
             df = df.between_time("09:15", "15:30")
             if df.empty: continue
             res = analyze_data(df)
+            breakout_points = breakout_engine(df, s)
             if res and res[1] != "WAIT":
                 bt_signals.append({
                     "Date": bt_date.strftime("%Y-%m-%d"),
                     "Stock": s,
                     "Signal": res[1]
                 })
-                # 👉 Backtestలో కూడా chart చూపించాలి
-                plot_chart(df, s)
-            bt_breakout += breakout_engine(df, s)
+                # 👉 Chartలో stock name + breakout highlight
+                plot_chart(df, s, breakout_points)
+            bt_breakout += breakout_points
         except:
             continue
     bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
