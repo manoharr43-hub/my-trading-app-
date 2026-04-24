@@ -46,6 +46,35 @@ sector_map = {
 all_stocks = list(set(sum(sector_map.values(), [])))
 
 # =============================
+# SAFE DATA FETCH
+# =============================
+def fetch_data(symbol, start=None, end=None, period="1d", interval="5m"):
+    try:
+        if start:
+            df = yf.Ticker(symbol + ".NS").history(
+                start=start,
+                end=end,
+                interval=interval
+            )
+        else:
+            df = yf.Ticker(symbol + ".NS").history(
+                period=period,
+                interval=interval
+            )
+
+        if df.empty:
+            return None
+
+        df = df.between_time("09:15", "15:30")
+        df.dropna(inplace=True)
+
+        return df
+
+    except Exception as e:
+        st.warning(f"{symbol} error: {e}")
+        return None
+
+# =============================
 # INDICATORS
 # =============================
 def calculate_rsi(df, period=14):
@@ -60,18 +89,20 @@ def calculate_rsi(df, period=14):
 def ai_prediction(df):
     df = df.copy()
     df['Target'] = df['Close'].shift(-1)
+    df['Returns'] = df['Close'].pct_change()
+    df['Volatility'] = df['Returns'].rolling(5).std()
     df.dropna(inplace=True)
 
-    if len(df) < 10:
+    if len(df) < 20:
         return None
 
-    X = np.array(df[['Close','Volume']])
-    y = np.array(df['Target'])
+    X = df[['Close','Volume','Returns','Volatility']]
+    y = df['Target']
 
     model = LinearRegression()
     model.fit(X, y)
 
-    return model.predict(X[-1].reshape(1, -1))[0]
+    return model.predict(X.iloc[[-1]])[0]
 
 # =============================
 # RISK MANAGEMENT
@@ -93,32 +124,45 @@ def risk_management(df, signal):
     return round(price,2), round(sl,2), round(target,2)
 
 # =============================
-# ANALYSIS + FINAL SIGNAL
+# ANALYSIS
 # =============================
 def analyze_data(df):
     if df is None or len(df) < 50:
         return None
 
     df['AvgVol'] = df['Volume'].rolling(20).mean()
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
 
     rsi = calculate_rsi(df)
     pred = ai_prediction(df)
 
-    signal = "WAIT"
-    if pred:
-        if pred > df['Close'].iloc[-1]:
-            signal = "BUY"
-        elif pred < df['Close'].iloc[-1]:
-            signal = "SELL"
+    if pred is None:
+        return None
+
+    price = df['Close'].iloc[-1]
+
+    # Signal logic improved
+    if pred > price * 1.002:
+        signal = "BUY"
+    elif pred < price * 0.998:
+        signal = "SELL"
+    else:
+        signal = "WAIT"
+
+    # Trend filter
+    if signal == "BUY" and price < df['EMA20'].iloc[-1]:
+        signal = "WAIT"
+    if signal == "SELL" and price > df['EMA20'].iloc[-1]:
+        signal = "WAIT"
 
     entry, sl, tgt = risk_management(df, signal)
 
     vol_ok = df['Volume'].iloc[-1] > df['AvgVol'].iloc[-1]
 
     final = "⚠️ WAIT"
-    if signal == "BUY" and rsi.iloc[-1] < 65 and vol_ok:
+    if signal == "BUY" and rsi.iloc[-1] < 60 and vol_ok:
         final = "🚀 STRONG BUY"
-    elif signal == "SELL" and rsi.iloc[-1] > 35 and vol_ok:
+    elif signal == "SELL" and rsi.iloc[-1] > 40 and vol_ok:
         final = "💀 STRONG SELL"
 
     return signal, round(rsi.iloc[-1],2), entry, sl, tgt, final
@@ -128,8 +172,8 @@ def analyze_data(df):
 # =============================
 def breakout_engine(df, stock):
     results = []
-    opening = df.between_time("09:15","09:30")
 
+    opening = df.between_time("09:15","09:30")
     if opening.empty:
         return results
 
@@ -143,7 +187,7 @@ def breakout_engine(df, stock):
             results.append({
                 "Stock": stock,
                 "Type": "BUY BO",
-                "Level": high,
+                "Level": round(high,2),
                 "Time": dt.strftime("%H:%M"),
                 "DateTime": dt
             })
@@ -153,7 +197,7 @@ def breakout_engine(df, stock):
             results.append({
                 "Stock": stock,
                 "Type": "SELL BO",
-                "Level": low,
+                "Level": round(low,2),
                 "Time": dt.strftime("%H:%M"),
                 "DateTime": dt
             })
@@ -205,50 +249,53 @@ if st.button("🔍 START LIVE"):
     all_bo = []
 
     for s in all_stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(period="1d", interval="5m")
-            df = df.between_time("09:15","15:30")
+        df = fetch_data(s)
 
-            if len(df) < 50:
-                continue
+        if df is None or len(df) < 50:
+            continue
 
-            res = analyze_data(df)
-            bo = breakout_engine(df, s)
+        res = analyze_data(df)
+        bo = breakout_engine(df, s)
 
-            if res:
-                signal, rsi, entry, sl, tgt, final = res
+        if res:
+            signal, rsi, entry, sl, tgt, final = res
 
-                results.append({
-                    "Stock": s,
-                    "Signal": signal,
-                    "FINAL": final,
-                    "Entry": entry,
-                    "SL": sl,
-                    "Target": tgt,
-                    "RSI": rsi
-                })
+            results.append({
+                "Stock": s,
+                "Signal": signal,
+                "FINAL": final,
+                "Entry": entry,
+                "SL": sl,
+                "Target": tgt,
+                "RSI": rsi
+            })
 
-            all_bo += bo
-
-        except:
-            pass
+        all_bo += bo
 
     st.session_state.live_res = results
     st.session_state.live_bo = all_bo
 
 if st.session_state.live_res:
     df_res = pd.DataFrame(st.session_state.live_res)
-    df_bo = pd.DataFrame(st.session_state.live_bo)
+
+    priority = {"🚀 STRONG BUY":1, "💀 STRONG SELL":2, "⚠️ WAIT":3}
+    df_res["Rank"] = df_res["FINAL"].map(priority)
+
+    df_res = df_res.sort_values(by=["Rank","RSI"])
 
     st.subheader("📊 LIVE SIGNALS")
-    st.dataframe(df_res, use_container_width=True)
+    st.dataframe(df_res.drop(columns=["Rank"]), use_container_width=True)
 
+    st.subheader("🔥 TOP TRADES")
+    st.dataframe(df_res[df_res["FINAL"]!="⚠️ WAIT"].head(5), use_container_width=True)
+
+    df_bo = pd.DataFrame(st.session_state.live_bo)
     st.subheader("🔥 LIVE BREAKOUT")
-    st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
+    if not df_bo.empty:
+        st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
     stock = st.selectbox("📈 Live Chart", df_res["Stock"].unique())
-    df_chart = yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
-    df_chart = df_chart.between_time("09:15","15:30")
+    df_chart = fetch_data(stock)
     plot_chart(df_chart, stock, breakout_engine(df_chart, stock))
 
 # =============================
@@ -261,57 +308,43 @@ if st.button("📊 RUN BACKTEST"):
     bt_bo = []
 
     for s in all_stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(
-                start=bt_date,
-                end=bt_date + timedelta(days=1),
-                interval="5m"
-            )
+        df = fetch_data(s, start=bt_date, end=bt_date + timedelta(days=1))
 
-            df = df.between_time("09:15","15:30")
+        if df is None or len(df) < 50:
+            continue
 
-            if len(df) < 50:
-                continue
+        res = analyze_data(df)
+        bo = breakout_engine(df, s)
 
-            res = analyze_data(df)
-            bo = breakout_engine(df, s)
+        if res:
+            signal, rsi, entry, sl, tgt, final = res
 
-            if res:
-                signal, rsi, entry, sl, tgt, final = res
+            bt_res.append({
+                "Stock": s,
+                "Signal": signal,
+                "FINAL": final,
+                "Entry": entry,
+                "SL": sl,
+                "Target": tgt,
+                "Time": df.index[-1].strftime("%H:%M")
+            })
 
-                bt_res.append({
-                    "Stock": s,
-                    "Signal": signal,
-                    "FINAL": final,
-                    "Entry": entry,
-                    "SL": sl,
-                    "Target": tgt,
-                    "Time": df.index[-1].strftime("%H:%M")
-                })
-
-            bt_bo += bo
-
-        except:
-            pass
+        bt_bo += bo
 
     st.session_state.bt_res = bt_res
     st.session_state.bt_bo = bt_bo
 
 if st.session_state.bt_res:
     df_bt = pd.DataFrame(st.session_state.bt_res)
-    df_bo = pd.DataFrame(st.session_state.bt_bo)
 
     st.subheader("📊 BACKTEST RESULTS")
     st.dataframe(df_bt, use_container_width=True)
 
+    df_bo = pd.DataFrame(st.session_state.bt_bo)
     st.subheader("🔥 BACKTEST BREAKOUT")
-    st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
+    if not df_bo.empty:
+        st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
     stock = st.selectbox("📉 Backtest Chart", df_bt["Stock"].unique())
-    df_chart = yf.Ticker(stock + ".NS").history(
-        start=bt_date,
-        end=bt_date + timedelta(days=1),
-        interval="5m"
-    )
-    df_chart = df_chart.between_time("09:15","15:30")
+    df_chart = fetch_data(stock, start=bt_date, end=bt_date + timedelta(days=1))
     plot_chart(df_chart, stock, breakout_engine(df_chart, stock))
