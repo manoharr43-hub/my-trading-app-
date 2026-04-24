@@ -110,3 +110,83 @@ def plot_chart(df, stock):
 # =============================
 def show_alert(stock, signal, price):
     if signal == "🚀 STRONG BUY":
+        st.success(f"{stock}: STRONG BUY at {price}")
+    elif signal == "💀 STRONG SELL":
+        st.error(f"{stock}: STRONG SELL at {price}")
+    else:
+        st.info(f"{stock}: Signal = {signal}")
+
+# =============================
+# LIVE SCANNER
+# =============================
+if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
+    live_results, breakout_results = [], []
+    for s in stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
+            if df.empty: continue
+            df = df.between_time("09:15", "15:30")
+
+            res = analyze_data(df)
+            if res:
+                live_results.append({
+                    "Stock": s,
+                    "Price": df['Close'].iloc[-1],
+                    "Trend": res[0],
+                    "Signal": res[1],
+                    "Time": df.index[-1].strftime("%H:%M")
+                })
+                show_alert(s, res[1], df['Close'].iloc[-1])
+                plot_chart(df, s)
+
+            breakout_results += breakout_engine(df, s)
+        except:
+            continue
+
+    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
+    for x in breakout_results:
+        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+
+    st.subheader("📊 LIVE SIGNALS")
+    st.dataframe(pd.DataFrame(live_results), use_container_width=True)
+    st.subheader("🔥 SMART BREAKOUT")
+    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
+
+# =============================
+# MULTI-DAY BACKTEST
+# =============================
+st.markdown("---")
+days = st.sidebar.slider("📅 Backtest Days", 1, 10, 5)
+
+if st.button("📊 RUN MULTI-DAY BACKTEST"):
+    bt_signals, bt_breakout = [], []
+    for d in range(days):
+        bt_date = datetime.now() - timedelta(days=d+1)
+        for s in stocks:
+            try:
+                df = yf.Ticker(s + ".NS").history(
+                    start=bt_date,
+                    end=bt_date + timedelta(days=1),
+                    interval="15m"
+                )
+                df = df.between_time("09:15", "15:30")
+                if df.empty: continue
+
+                res = analyze_data(df)
+                if res and res[1] != "WAIT":
+                    bt_signals.append({
+                        "Date": bt_date.strftime("%Y-%m-%d"),
+                        "Stock": s,
+                        "Signal": res[1]
+                    })
+                bt_breakout += breakout_engine(df, s)
+            except:
+                continue
+
+    bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
+    bt_signals = sorted(bt_signals, key=lambda x: x["Date"])
+
+    st.subheader("📊 BACKTEST SIGNALS")
+    st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
+    st.subheader("🔥 BACKTEST SMART BREAKOUT")
+    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
