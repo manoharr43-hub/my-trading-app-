@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
+import plotly.graph_objects as go
 
 # =============================
 # CONFIG
@@ -24,7 +25,7 @@ stocks = [
 ]
 
 # =============================
-# ANALYSIS ENGINE (UNCHANGED CORE LOGIC)
+# ANALYSIS ENGINE
 # =============================
 def analyze_data(df):
     if df is None or len(df) < 20:
@@ -50,11 +51,10 @@ def analyze_data(df):
     return trend, signal
 
 # =============================
-# BREAKOUT ENGINE (WITH FAILED LOGIC ADDED)
+# BREAKOUT ENGINE
 # =============================
 def breakout_engine(df, stock):
     results = []
-
     opening = df.between_time("09:15", "09:30")
     if opening.empty:
         return results
@@ -63,153 +63,50 @@ def breakout_engine(df, stock):
     low = opening['Low'].min()
 
     for i in range(1, len(df)-3):
-
         prev = df.iloc[i-1]
         curr = df.iloc[i]
         t = df.index[i]
 
-        # ================= BUY BREAKOUT =================
+        # BUY BREAKOUT
         if prev['Close'] <= high and curr['Close'] > high:
-
             future = df.iloc[i+1:i+4]
             up = sum(future['Close'] > curr['Close'])
             down = sum(future['Close'] <= curr['Close'])
-
-            if up > down:
-                status = "🚀 CONFIRMED BUY"
-            else:
-                status = "⚠️ FAILED BUY → SELL"
-
-            results.append({
-                "Time": t,
-                "Stock": stock,
-                "Type": status,
-                "Level": round(high,2)
-            })
+            status = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
+            results.append({"Time": t,"Stock": stock,"Type": status,"Level": round(high,2)})
             break
 
-        # ================= SELL BREAKOUT =================
+        # SELL BREAKOUT
         elif prev['Close'] >= low and curr['Close'] < low:
-
             future = df.iloc[i+1:i+4]
             down = sum(future['Close'] < curr['Close'])
             up = sum(future['Close'] >= curr['Close'])
-
-            if down > up:
-                status = "💀 CONFIRMED SELL"
-            else:
-                status = "⚠️ FAILED SELL → BUY"
-
-            results.append({
-                "Time": t,
-                "Stock": stock,
-                "Type": status,
-                "Level": round(low,2)
-            })
+            status = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
+            results.append({"Time": t,"Stock": stock,"Type": status,"Level": round(low,2)})
             break
 
     return results
 
 # =============================
-# LIVE SCANNER
+# CHART MODULE
 # =============================
-if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
-
-    live_results = []
-    breakout_results = []
-
-    for s in stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
-
-            if df.empty:
-                continue
-
-            df = df.between_time("09:15", "15:30")
-
-            res = analyze_data(df)
-
-            if res:
-                live_results.append({
-                    "Stock": s,
-                    "Price": df['Close'].iloc[-1],
-                    "Trend": res[0],
-                    "Signal": res[1],
-                    "Time": df.index[-1].strftime("%H:%M")
-                })
-
-            breakout_results += breakout_engine(df, s)
-
-        except:
-            continue
-
-    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
-
-    for x in breakout_results:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-
-    st.subheader("📊 LIVE SIGNALS (9:15–3:30)")
-    st.dataframe(pd.DataFrame(live_results), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🔥 SMART BREAKOUT (CONFIRMED + FAILED)")
-    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
+def plot_chart(df, stock):
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        name="Candlestick"
+    )])
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'].ewm(span=20).mean(),
+                             line=dict(color='blue', width=1), name="EMA20"))
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'].ewm(span=50).mean(),
+                             line=dict(color='red', width=1), name="EMA50"))
+    st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST PANEL
+# AUTO ALERTS
 # =============================
-st.markdown("---")
-
-bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - timedelta(days=1))
-
-if st.button("📊 RUN BACKTEST"):
-
-    bt_signals = []
-    bt_breakout = []
-
-    for s in stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(
-                start=bt_date,
-                end=bt_date + timedelta(days=1),
-                interval="15m"
-            )
-
-            df = df.between_time("09:15", "15:30")
-
-            if df.empty:
-                continue
-
-            # SIGNALS
-            for i in range(20, len(df)):
-                sub = df.iloc[:i+1]
-                res = analyze_data(sub)
-
-                if res and res[1] != "WAIT":
-                    bt_signals.append({
-                        "Time": sub.index[-1],
-                        "Stock": s,
-                        "Signal": res[1]
-                    })
-
-            # BREAKOUT
-            bt_breakout += breakout_engine(df, s)
-
-        except:
-            continue
-
-    bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
-    bt_signals = sorted(bt_signals, key=lambda x: x["Time"])
-
-    for x in bt_breakout:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-
-    for x in bt_signals:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-
-    st.subheader("📊 BACKTEST SIGNALS")
-    st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🔥 BACKTEST SMART BREAKOUT (CONFIRMED + FAILED)")
-    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
+def show_alert(stock, signal, price):
+    if signal == "🚀 STRONG BUY":
