@@ -2,16 +2,15 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V5", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V6", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO DASHBOARD V5")
+st.title("🚀 NSE AI PRO DASHBOARD V6")
 st.markdown("---")
 
 # =============================
@@ -25,10 +24,22 @@ stocks = [
 ]
 
 # =============================
+# SAFE DATA LOADER
+# =============================
+def get_data(stock):
+    try:
+        df = yf.Ticker(stock + ".NS").history(period="5d", interval="15m")
+        if df is None or df.empty:
+            return None
+        return df.dropna()
+    except:
+        return None
+
+# =============================
 # AI SCORE
 # =============================
 def ai_score(df):
-    if df is None or df.empty:
+    if df is None:
         return 0
 
     close = df['Close']
@@ -54,9 +65,7 @@ def ai_score(df):
     else:
         score += 10
 
-    vol_avg = df['Volume'].rolling(20).mean()
-
-    if df['Volume'].iloc[-1] > vol_avg.iloc[-1]:
+    if df['Volume'].iloc[-1] > df['Volume'].rolling(20).mean().iloc[-1]:
         score += 40
     else:
         score += 10
@@ -66,8 +75,8 @@ def ai_score(df):
 # =============================
 # SIGNAL ENGINE
 # =============================
-def signal_engine(df):
-    if df is None or df.empty:
+def signal(df):
+    if df is None:
         return "NO DATA"
 
     close = df['Close']
@@ -95,21 +104,10 @@ def levels(price):
     return price, price*0.98, price*1.03, price*1.06
 
 # =============================
-# SAFE DATA LOADER
-# =============================
-def load_data(stock):
-    try:
-        df = yf.Ticker(stock+".NS").history(period="5d", interval="15m")
-        if df is None or df.empty:
-            return None
-        return df.dropna()
-    except:
-        return None
-
-# =============================
-# CHART
+# CHART (FIXED CLARITY)
 # =============================
 def chart(df, stock):
+
     fig = go.Figure()
 
     fig.add_trace(go.Candlestick(
@@ -121,7 +119,23 @@ def chart(df, stock):
     ))
 
     fig.update_layout(
-        title=f"{stock} Chart",
+        title=f"{stock} CHART",
         template="plotly_dark",
         xaxis_rangeslider_visible=False,
-        height=550
+        height=600
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# =============================
+# MAIN DASHBOARD
+# =============================
+data = []
+
+if st.button("🔍 RUN SCANNER"):
+
+    for s in stocks:
+        df = get_data(s)
+
+        if df is None:
+            continue
