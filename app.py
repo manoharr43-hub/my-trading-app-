@@ -3,10 +3,10 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
-import logging
 
-logging.basicConfig(level=logging.WARNING)
-
+# =============================
+# CONFIG
+# =============================
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
@@ -23,10 +23,8 @@ stocks = [
     "JSWSTEEL","TATASTEEL","HINDALCO"
 ]
 
-selected_stocks = st.sidebar.multiselect("స్టాక్స్ ఎంపిక చేసుకోండి", stocks, default=stocks)
-
 # =============================
-# ANALYSIS ENGINE
+# ANALYSIS ENGINE (UNCHANGED CORE LOGIC)
 # =============================
 def analyze_data(df):
     if df is None or len(df) < 20:
@@ -52,7 +50,7 @@ def analyze_data(df):
     return trend, signal
 
 # =============================
-# BREAKOUT ENGINE
+# BREAKOUT ENGINE (WITH FAILED LOGIC ADDED)
 # =============================
 def breakout_engine(df, stock):
     results = []
@@ -65,16 +63,23 @@ def breakout_engine(df, stock):
     low = opening['Low'].min()
 
     for i in range(1, len(df)-3):
+
         prev = df.iloc[i-1]
         curr = df.iloc[i]
         t = df.index[i]
 
-        # BUY BREAKOUT
+        # ================= BUY BREAKOUT =================
         if prev['Close'] <= high and curr['Close'] > high:
+
             future = df.iloc[i+1:i+4]
             up = sum(future['Close'] > curr['Close'])
             down = sum(future['Close'] <= curr['Close'])
-            status = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
+
+            if up > down:
+                status = "🚀 CONFIRMED BUY"
+            else:
+                status = "⚠️ FAILED BUY → SELL"
+
             results.append({
                 "Time": t,
                 "Stock": stock,
@@ -83,12 +88,18 @@ def breakout_engine(df, stock):
             })
             break
 
-        # SELL BREAKOUT
+        # ================= SELL BREAKOUT =================
         elif prev['Close'] >= low and curr['Close'] < low:
+
             future = df.iloc[i+1:i+4]
             down = sum(future['Close'] < curr['Close'])
             up = sum(future['Close'] >= curr['Close'])
-            status = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
+
+            if down > up:
+                status = "💀 CONFIRMED SELL"
+            else:
+                status = "⚠️ FAILED SELL → BUY"
+
             results.append({
                 "Time": t,
                 "Stock": stock,
@@ -103,88 +114,102 @@ def breakout_engine(df, stock):
 # LIVE SCANNER
 # =============================
 if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
-    with st.spinner("లైవ్ స్కానింగ్ జరుగుతోంది..."):
-        live_results = []
-        breakout_results = []
 
-        for s in selected_stocks:
-            try:
-                df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
-                if df.empty:
-                    continue
-                df = df.between_time("09:15", "15:30")
-                res = analyze_data(df)
-                if res:
-                    live_results.append({
-                        "Stock": s,
-                        "Price": df['Close'].iloc[-1],
-                        "Trend": res[0],
-                        "Signal": res[1],
-                        "Time": df.index[-1].strftime("%H:%M")
-                    })
-                breakout_results += breakout_engine(df, s)
-            except Exception as e:
-                logging.warning(f"{s} కోసం లోపం: {e}")
+    live_results = []
+    breakout_results = []
+
+    for s in stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
+
+            if df.empty:
                 continue
 
-        breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
-        for x in breakout_results:
-            x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+            df = df.between_time("09:15", "15:30")
 
-        st.subheader("📊 LIVE SIGNALS (9:15–3:30)")
-        st.dataframe(pd.DataFrame(live_results), use_container_width=True)
-        st.markdown("---")
-        st.subheader("🔥 SMART BREAKOUT (CONFIRMED + FAILED)")
-        st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
+            res = analyze_data(df)
+
+            if res:
+                live_results.append({
+                    "Stock": s,
+                    "Price": df['Close'].iloc[-1],
+                    "Trend": res[0],
+                    "Signal": res[1],
+                    "Time": df.index[-1].strftime("%H:%M")
+                })
+
+            breakout_results += breakout_engine(df, s)
+
+        except:
+            continue
+
+    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
+
+    for x in breakout_results:
+        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+
+    st.subheader("📊 LIVE SIGNALS (9:15–3:30)")
+    st.dataframe(pd.DataFrame(live_results), use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("🔥 SMART BREAKOUT (CONFIRMED + FAILED)")
+    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
 
 # =============================
 # BACKTEST PANEL
 # =============================
 st.markdown("---")
+
 bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - timedelta(days=1))
 
 if st.button("📊 RUN BACKTEST"):
-    with st.spinner("బ్యాక్టెస్ట్ జరుగుతోంది..."):
-        bt_signals = []
-        bt_breakout = []
 
-        for s in selected_stocks:
-            try:
-                df = yf.Ticker(s + ".NS").history(
-                    start=bt_date,
-                    end=bt_date + timedelta(days=1),
-                    interval="15m"
-                )
-                df = df.between_time("09:15", "15:30")
-                if df.empty:
-                    continue
+    bt_signals = []
+    bt_breakout = []
 
-                # SIGNALS
-                for i in range(20, len(df)):
-                    sub = df.iloc[:i+1]
-                    res = analyze_data(sub)
-                    if res and res[1] != "WAIT":
-                        bt_signals.append({
-                            "Time": sub.index[-1],
-                            "Stock": s,
-                            "Signal": res[1]
-                        })
-                # BREAKOUT
-                bt_breakout += breakout_engine(df, s)
-            except Exception as e:
-                logging.warning(f"{s} కోసం లోపం: {e}")
+    for s in stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(
+                start=bt_date,
+                end=bt_date + timedelta(days=1),
+                interval="15m"
+            )
+
+            df = df.between_time("09:15", "15:30")
+
+            if df.empty:
                 continue
 
-        bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
-        bt_signals = sorted(bt_signals, key=lambda x: x["Time"])
-        for x in bt_breakout:
-            x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-        for x in bt_signals:
-            x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+            # SIGNALS
+            for i in range(20, len(df)):
+                sub = df.iloc[:i+1]
+                res = analyze_data(sub)
 
-        st.subheader("📊 BACKTEST SIGNALS")
-        st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
-        st.info(f"మొత్తం సిగ్నల్స్: {len(bt_signals)} | మొత్తం బ్రేకౌట్‌లు: {len(bt_breakout)}")
-        st.markdown("---")
-        st.subheader("🔥 BACKTEST SMART BREAKOUT (CONFIRMED + FAILED)")
-        st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
+                if res and res[1] != "WAIT":
+                    bt_signals.append({
+                        "Time": sub.index[-1],
+                        "Stock": s,
+                        "Signal": res[1]
+                    })
+
+            # BREAKOUT
+            bt_breakout += breakout_engine(df, s)
+
+        except:
+            continue
+
+    bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
+    bt_signals = sorted(bt_signals, key=lambda x: x["Time"])
+
+    for x in bt_breakout:
+        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+
+    for x in bt_signals:
+        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+
+    st.subheader("📊 BACKTEST SIGNALS")
+    st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("🔥 BACKTEST SMART BREAKOUT (CONFIRMED + FAILED)")
+    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
