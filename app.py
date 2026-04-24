@@ -1,9 +1,11 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
+from sklearn.linear_model import LinearRegression
 
 # =============================
 # CONFIG
@@ -11,7 +13,7 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL")
+st.title("🚀 NSE AI PRO TERMINAL (AI UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -30,165 +32,166 @@ selected_sector = st.sidebar.selectbox("📂 Select Sector", list(sector_map.key
 stocks = sector_map[selected_sector]
 
 # =============================
+# INDICATORS
+# =============================
+def calculate_rsi(df, period=14):
+    delta = df['Close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_macd(df):
+    ema12 = df['Close'].ewm(span=12).mean()
+    ema26 = df['Close'].ewm(span=26).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9).mean()
+    return macd, signal
+
+def ai_prediction(df):
+    df = df.copy()
+    df['Target'] = df['Close'].shift(-1)
+    df.dropna(inplace=True)
+    if len(df) < 10:
+        return None
+
+    X = np.array(df[['Close','Volume']])
+    y = np.array(df['Target'])
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    pred = model.predict(X[-1].reshape(1, -1))[0]
+    return pred
+
+# =============================
 # ANALYSIS ENGINE
 # =============================
 def analyze_data(df):
-    if df is None or len(df) < 20:
+    if df is None or len(df) < 50:
         return None
-    e20 = df['Close'].ewm(span=20).mean()
-    e50 = df['Close'].ewm(span=50).mean()
+
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
+    rsi = calculate_rsi(df)
+    macd, signal = calculate_macd(df)
+    pred = ai_prediction(df)
+
     vol = df['Volume']
     avg_vol = vol.rolling(20).mean()
-    if pd.isna(avg_vol.iloc[-1]):
-        return None
-    trend = "CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "PUT STRONG"
-    signal = "WAIT"
-    if e20.iloc[-1] > e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
-        signal = "🚀 STRONG BUY"
-    elif e20.iloc[-1] < e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
-        signal = "💀 STRONG SELL"
-    return trend, signal
+
+    trend = "CALL STRONG" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "PUT STRONG"
+
+    final = "WAIT"
+
+    if (
+        df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] and
+        vol.iloc[-1] > avg_vol.iloc[-1] and
+        rsi.iloc[-1] < 70 and
+        macd.iloc[-1] > signal.iloc[-1] and
+        pred and pred > df['Close'].iloc[-1]
+    ):
+        final = "🚀 ULTRA BUY"
+
+    elif (
+        df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1] and
+        vol.iloc[-1] > avg_vol.iloc[-1] and
+        rsi.iloc[-1] > 30 and
+        macd.iloc[-1] < signal.iloc[-1] and
+        pred and pred < df['Close'].iloc[-1]
+    ):
+        final = "💀 ULTRA SELL"
+
+    return trend, final, round(rsi.iloc[-1],2), pred
 
 # =============================
 # BREAKOUT ENGINE
 # =============================
 def breakout_engine(df, stock):
     results = []
-    opening = df.between_time("09:15", "09:30")
+    opening = df.between_time("09:15","09:30")
     if opening.empty:
         return results
+
     high = opening['High'].max()
     low = opening['Low'].min()
+
     for i in range(1, len(df)-3):
         prev = df.iloc[i-1]
         curr = df.iloc[i]
-        t = df.index[i]
+
         if prev['Close'] <= high and curr['Close'] > high:
-            future = df.iloc[i+1:i+4]
-            up = sum(future['Close'] > curr['Close'])
-            down = sum(future['Close'] <= curr['Close'])
-            status = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
-            results.append({"Time": t,"Stock": stock,"Type": status,"Level": round(high,2)})
+            results.append({"Time": df.index[i],"Stock": stock,"Type": "🚀 BUY BO","Level": high})
             break
+
         elif prev['Close'] >= low and curr['Close'] < low:
-            future = df.iloc[i+1:i+4]
-            down = sum(future['Close'] < curr['Close'])
-            up = sum(future['Close'] >= curr['Close'])
-            status = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
-            results.append({"Time": t,"Stock": stock,"Type": status,"Level": round(low,2)})
+            results.append({"Time": df.index[i],"Stock": stock,"Type": "💀 SELL BO","Level": low})
             break
+
     return results
 
 # =============================
-# CHART MODULE (with Breakout Highlight)
+# CHART
 # =============================
-def plot_chart(df, stock, breakout_points=None):
-    fig = go.Figure(data=[go.Candlestick(
+def plot_chart(df, stock):
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
         x=df.index,
         open=df['Open'],
         high=df['High'],
         low=df['Low'],
-        close=df['Close'],
-        name="Candlestick"
-    )])
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'].ewm(span=20).mean(),
-                             line=dict(color='blue', width=1), name="EMA20"))
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'].ewm(span=50).mean(),
-                             line=dict(color='red', width=1), name="EMA50"))
+        close=df['Close']
+    ))
 
-    # 👉 Breakout points highlight
-    if breakout_points:
-        for bp in breakout_points:
-            fig.add_trace(go.Scatter(
-                x=[bp["Time"]],
-                y=[bp["Level"]],
-                mode="markers+text",
-                marker=dict(color="red", size=12, symbol="x"),
-                text=[bp["Type"]],
-                textposition="top center",
-                name="Breakout"
-            ))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name="EMA20"))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name="EMA50"))
 
-    fig.update_layout(title=f"{stock} Chart (15m)", xaxis_rangeslider_visible=False)
+    fig.update_layout(title=stock, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
-
-# =============================
-# AUTO ALERTS
-# =============================
-def show_alert(stock, signal, price):
-    if signal == "🚀 STRONG BUY":
-        st.success(f"{stock}: STRONG BUY at {price}")
-    elif signal == "💀 STRONG SELL":
-        st.error(f"{stock}: STRONG SELL at {price}")
-    else:
-        st.info(f"{stock}: Signal = {signal}")
 
 # =============================
 # LIVE SCANNER
 # =============================
-if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
-    live_results, breakout_results = [], []
+if st.button("🔍 START LIVE SCANNER"):
+    results = []
+    breakout = []
+
     for s in stocks:
         try:
             df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
-            if df.empty: continue
-            df = df.between_time("09:15", "15:30")
+            df = df.between_time("09:15","15:30")
+
+            if df.empty:
+                continue
+
             res = analyze_data(df)
-            breakout_points = breakout_engine(df, s)
+            bo = breakout_engine(df, s)
+
             if res:
-                live_results.append({
+                trend, signal, rsi, pred = res
+
+                results.append({
                     "Stock": s,
                     "Price": df['Close'].iloc[-1],
-                    "Trend": res[0],
-                    "Signal": res[1],
-                    "Time": df.index[-1].strftime("%H:%M")
+                    "Trend": trend,
+                    "Signal": signal,
+                    "RSI": rsi,
+                    "AI Price": round(pred,2) if pred else None
                 })
-                show_alert(s, res[1], df['Close'].iloc[-1])
-                plot_chart(df, s, breakout_points)
-            breakout_results += breakout_points
+
+                plot_chart(df, s)
+
+            breakout += bo
+
         except:
             continue
-    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
-    for x in breakout_results:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+
     st.subheader("📊 LIVE SIGNALS")
-    st.dataframe(pd.DataFrame(live_results), use_container_width=True)
-    st.subheader("🔥 SMART BREAKOUT")
-    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
+    st.dataframe(pd.DataFrame(results), use_container_width=True)
 
-# =============================
-# BACKTEST (DATE PICKER + CHARTS + Breakout Highlight)
-# =============================
-st.markdown("---")
-bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now().date() - timedelta(days=1))
-
-if st.button("📊 RUN BACKTEST (Selected Date)"):
-    bt_signals, bt_breakout = [], []
-    for s in stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(
-                start=pd.to_datetime(bt_date),
-                end=pd.to_datetime(bt_date) + timedelta(days=1),
-                interval="15m"   # 👉 15-minute enforced
-            )
-            df = df.between_time("09:15", "15:30")
-            if df.empty: continue
-            res = analyze_data(df)
-            breakout_points = breakout_engine(df, s)
-            if res and res[1] != "WAIT":
-                bt_signals.append({
-                    "Date": bt_date.strftime("%Y-%m-%d"),
-                    "Stock": s,
-                    "Signal": res[1]
-                })
-                # 👉 Chartలో stock name + breakout highlight
-                plot_chart(df, s, breakout_points)
-            bt_breakout += breakout_points
-        except:
-            continue
-    bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
-    bt_signals = sorted(bt_signals, key=lambda x: x["Date"])
-    st.subheader("📊 BACKTEST SIGNALS")
-    st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
-    st.subheader("🔥 BACKTEST SMART BREAKOUT")
-    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
+    st.subheader("🔥 BREAKOUT")
+    st.dataframe(pd.DataFrame(breakout), use_container_width=True)
