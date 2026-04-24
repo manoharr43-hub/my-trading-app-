@@ -1,215 +1,121 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
-from streamlit_autorefresh import st_autorefresh
+import pyotp
+from datetime import datetime
+from NorenRestApiPy import NorenApi
+import time
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
-
-st.title("🚀 NSE AI PRO TERMINAL")
-st.markdown("---")
+st.set_page_config(page_title="🤖 AUTO TRADING BOT", layout="wide")
+st.title("🤖 NSE AUTO BUY/SELL BOT")
 
 # =============================
-# STOCK LIST
+# USER INPUT (SAFE)
 # =============================
-stocks = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
-    "AXISBANK","BHARTIARTL","KOTAKBANK","MARUTI","M&M","TATAMOTORS",
-    "SUNPHARMA","DRREDDY","CIPLA","HCLTECH","WIPRO","TECHM",
-    "JSWSTEEL","TATASTEEL","HINDALCO"
-]
+user_id = st.text_input("User ID")
+password = st.text_input("Password", type="password")
+api_secret = st.text_input("API Secret", type="password")
+totp_key = st.text_input("TOTP Key", type="password")
 
-# =============================
-# ANALYSIS ENGINE (UNCHANGED CORE LOGIC)
-# =============================
-def analyze_data(df):
-    if df is None or len(df) < 20:
-        return None
-
-    e20 = df['Close'].ewm(span=20).mean()
-    e50 = df['Close'].ewm(span=50).mean()
-
-    vol = df['Volume']
-    avg_vol = vol.rolling(20).mean()
-
-    if pd.isna(avg_vol.iloc[-1]):
-        return None
-
-    trend = "CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "PUT STRONG"
-
-    signal = "WAIT"
-    if e20.iloc[-1] > e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
-        signal = "🚀 STRONG BUY"
-    elif e20.iloc[-1] < e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
-        signal = "💀 STRONG SELL"
-
-    return trend, signal
+enable_live = st.checkbox("⚠️ Enable LIVE Trading (Danger)")
 
 # =============================
-# BREAKOUT ENGINE (WITH FAILED LOGIC ADDED)
+# API CLASS
 # =============================
-def breakout_engine(df, stock):
-    results = []
-
-    opening = df.between_time("09:15", "09:30")
-    if opening.empty:
-        return results
-
-    high = opening['High'].max()
-    low = opening['Low'].min()
-
-    for i in range(1, len(df)-3):
-
-        prev = df.iloc[i-1]
-        curr = df.iloc[i]
-        t = df.index[i]
-
-        # ================= BUY BREAKOUT =================
-        if prev['Close'] <= high and curr['Close'] > high:
-
-            future = df.iloc[i+1:i+4]
-            up = sum(future['Close'] > curr['Close'])
-            down = sum(future['Close'] <= curr['Close'])
-
-            if up > down:
-                status = "🚀 CONFIRMED BUY"
-            else:
-                status = "⚠️ FAILED BUY → SELL"
-
-            results.append({
-                "Time": t,
-                "Stock": stock,
-                "Type": status,
-                "Level": round(high,2)
-            })
-            break
-
-        # ================= SELL BREAKOUT =================
-        elif prev['Close'] >= low and curr['Close'] < low:
-
-            future = df.iloc[i+1:i+4]
-            down = sum(future['Close'] < curr['Close'])
-            up = sum(future['Close'] >= curr['Close'])
-
-            if down > up:
-                status = "💀 CONFIRMED SELL"
-            else:
-                status = "⚠️ FAILED SELL → BUY"
-
-            results.append({
-                "Time": t,
-                "Stock": stock,
-                "Type": status,
-                "Level": round(low,2)
-            })
-            break
-
-    return results
+class ShoonyaApiPy(NorenApi):
+    def __init__(self):
+        super().__init__(
+            host='https://api.shoonya.com/NorenWClientTP/',
+            websocket='wss://api.shoonya.com/NorenWSTP/'
+        )
 
 # =============================
-# LIVE SCANNER
+# LOGIN
 # =============================
-if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
+def login():
+    api = ShoonyaApiPy()
+    otp = pyotp.TOTP(totp_key).now()
 
-    live_results = []
-    breakout_results = []
-
-    for s in stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
-
-            if df.empty:
-                continue
-
-            df = df.between_time("09:15", "15:30")
-
-            res = analyze_data(df)
-
-            if res:
-                live_results.append({
-                    "Stock": s,
-                    "Price": df['Close'].iloc[-1],
-                    "Trend": res[0],
-                    "Signal": res[1],
-                    "Time": df.index[-1].strftime("%H:%M")
-                })
-
-            breakout_results += breakout_engine(df, s)
-
-        except:
-            continue
-
-    breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
-
-    for x in breakout_results:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-
-    st.subheader("📊 LIVE SIGNALS (9:15–3:30)")
-    st.dataframe(pd.DataFrame(live_results), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🔥 SMART BREAKOUT (CONFIRMED + FAILED)")
-    st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
+    ret = api.login(
+        userid=user_id,
+        password=password,
+        twoFA=otp,
+        vendor_code="FA",
+        api_secret=api_secret,
+        imei="abc1234"
+    )
+    return api
 
 # =============================
-# BACKTEST PANEL
+# STRATEGY
 # =============================
-st.markdown("---")
+def generate_signal(df):
+    e20 = df['close'].ewm(span=20).mean()
+    e50 = df['close'].ewm(span=50).mean()
 
-bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now() - timedelta(days=1))
+    if e20.iloc[-1] > e50.iloc[-1]:
+        return "BUY"
+    elif e20.iloc[-1] < e50.iloc[-1]:
+        return "SELL"
+    return "WAIT"
 
-if st.button("📊 RUN BACKTEST"):
+# =============================
+# ORDER FUNCTION
+# =============================
+def place_order(api, symbol, side, qty):
+    try:
+        order = api.place_order(
+            buy_or_sell='B' if side == "BUY" else 'S',
+            product_type='MIS',
+            exchange='NSE',
+            tradingsymbol=symbol,
+            quantity=qty,
+            discloseqty=0,
+            price_type='MKT',
+            retention='DAY'
+        )
+        return order
+    except Exception as e:
+        return str(e)
 
-    bt_signals = []
-    bt_breakout = []
+# =============================
+# BOT RUN
+# =============================
+if st.button("🚀 START BOT"):
 
-    for s in stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(
-                start=bt_date,
-                end=bt_date + timedelta(days=1),
-                interval="15m"
-            )
+    api = login()
+    st.success("✅ Logged in")
 
-            df = df.between_time("09:15", "15:30")
+    stocks = ["RELIANCE","TCS","INFY"]
 
-            if df.empty:
-                continue
+    while True:
+        results = []
 
-            # SIGNALS
-            for i in range(20, len(df)):
-                sub = df.iloc[:i+1]
-                res = analyze_data(sub)
+        for s in stocks:
+            try:
+                data = api.get_time_price_series(
+                    exchange='NSE',
+                    token=s,
+                    starttime=int(time.time()) - 3600
+                )
 
-                if res and res[1] != "WAIT":
-                    bt_signals.append({
-                        "Time": sub.index[-1],
-                        "Stock": s,
-                        "Signal": res[1]
-                    })
+                df = pd.DataFrame(data)
+                df['close'] = df['lp'].astype(float)
 
-            # BREAKOUT
-            bt_breakout += breakout_engine(df, s)
+                signal = generate_signal(df)
 
-        except:
-            continue
+                if signal != "WAIT":
+                    msg = f"{s} → {signal}"
+                    st.write(msg)
 
-    bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
-    bt_signals = sorted(bt_signals, key=lambda x: x["Time"])
+                    # ================= LIVE ORDER =================
+                    if enable_live:
+                        order = place_order(api, s, signal, qty=1)
+                        st.write(f"ORDER: {order}")
 
-    for x in bt_breakout:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
+            except Exception as e:
+                st.error(f"{s} Error: {e}")
 
-    for x in bt_signals:
-        x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-
-    st.subheader("📊 BACKTEST SIGNALS")
-    st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🔥 BACKTEST SMART BREAKOUT (CONFIRMED + FAILED)")
-    st.dataframe(pd.DataFrame(bt_breakout), use_container_width=True)
+        time.sleep(60)
