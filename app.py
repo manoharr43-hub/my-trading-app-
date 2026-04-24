@@ -15,14 +15,19 @@ st.title("🚀 NSE AI PRO TERMINAL")
 st.markdown("---")
 
 # =============================
-# STOCK LIST
+# SECTOR MAP
 # =============================
-stocks = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
-    "AXISBANK","BHARTIARTL","KOTAKBANK","MARUTI","M&M","TATAMOTORS",
-    "SUNPHARMA","DRREDDY","CIPLA","HCLTECH","WIPRO","TECHM",
-    "JSWSTEEL","TATASTEEL","HINDALCO"
-]
+sector_map = {
+    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
+    "IT": ["TCS","INFY","HCLTECH","WIPRO","TECHM"],
+    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA"],
+    "Auto": ["MARUTI","M&M","TATAMOTORS"],
+    "Metals": ["JSWSTEEL","TATASTEEL","HINDALCO"],
+    "FMCG": ["ITC","RELIANCE","LT","BHARTIARTL"]
+}
+
+selected_sector = st.sidebar.selectbox("📂 Select Sector", list(sector_map.keys()))
+stocks = sector_map[selected_sector]
 
 # =============================
 # ANALYSIS ENGINE
@@ -30,24 +35,18 @@ stocks = [
 def analyze_data(df):
     if df is None or len(df) < 20:
         return None
-
     e20 = df['Close'].ewm(span=20).mean()
     e50 = df['Close'].ewm(span=50).mean()
-
     vol = df['Volume']
     avg_vol = vol.rolling(20).mean()
-
     if pd.isna(avg_vol.iloc[-1]):
         return None
-
     trend = "CALL STRONG" if e20.iloc[-1] > e50.iloc[-1] else "PUT STRONG"
-
     signal = "WAIT"
     if e20.iloc[-1] > e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
         signal = "🚀 STRONG BUY"
     elif e20.iloc[-1] < e50.iloc[-1] and vol.iloc[-1] > avg_vol.iloc[-1]:
         signal = "💀 STRONG SELL"
-
     return trend, signal
 
 # =============================
@@ -58,16 +57,12 @@ def breakout_engine(df, stock):
     opening = df.between_time("09:15", "09:30")
     if opening.empty:
         return results
-
     high = opening['High'].max()
     low = opening['Low'].min()
-
     for i in range(1, len(df)-3):
         prev = df.iloc[i-1]
         curr = df.iloc[i]
         t = df.index[i]
-
-        # BUY BREAKOUT
         if prev['Close'] <= high and curr['Close'] > high:
             future = df.iloc[i+1:i+4]
             up = sum(future['Close'] > curr['Close'])
@@ -75,8 +70,6 @@ def breakout_engine(df, stock):
             status = "🚀 CONFIRMED BUY" if up > down else "⚠️ FAILED BUY → SELL"
             results.append({"Time": t,"Stock": stock,"Type": status,"Level": round(high,2)})
             break
-
-        # SELL BREAKOUT
         elif prev['Close'] >= low and curr['Close'] < low:
             future = df.iloc[i+1:i+4]
             down = sum(future['Close'] < curr['Close'])
@@ -84,7 +77,6 @@ def breakout_engine(df, stock):
             status = "💀 CONFIRMED SELL" if down > up else "⚠️ FAILED SELL → BUY"
             results.append({"Time": t,"Stock": stock,"Type": status,"Level": round(low,2)})
             break
-
     return results
 
 # =============================
@@ -126,7 +118,6 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
             df = yf.Ticker(s + ".NS").history(period="1d", interval="15m")
             if df.empty: continue
             df = df.between_time("09:15", "15:30")
-
             res = analyze_data(df)
             if res:
                 live_results.append({
@@ -138,54 +129,46 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
                 })
                 show_alert(s, res[1], df['Close'].iloc[-1])
                 plot_chart(df, s)
-
             breakout_results += breakout_engine(df, s)
         except:
             continue
-
     breakout_results = sorted(breakout_results, key=lambda x: x["Time"])
     for x in breakout_results:
         x["Time"] = pd.to_datetime(x["Time"]).strftime("%H:%M")
-
     st.subheader("📊 LIVE SIGNALS")
     st.dataframe(pd.DataFrame(live_results), use_container_width=True)
     st.subheader("🔥 SMART BREAKOUT")
     st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
 
 # =============================
-# MULTI-DAY BACKTEST
+# BACKTEST (DATE PICKER)
 # =============================
 st.markdown("---")
-days = st.sidebar.slider("📅 Backtest Days", 1, 10, 5)
+bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now().date() - timedelta(days=1))
 
-if st.button("📊 RUN MULTI-DAY BACKTEST"):
+if st.button("📊 RUN BACKTEST (Selected Date)"):
     bt_signals, bt_breakout = [], []
-    for d in range(days):
-        bt_date = datetime.now() - timedelta(days=d+1)
-        for s in stocks:
-            try:
-                df = yf.Ticker(s + ".NS").history(
-                    start=bt_date,
-                    end=bt_date + timedelta(days=1),
-                    interval="15m"
-                )
-                df = df.between_time("09:15", "15:30")
-                if df.empty: continue
-
-                res = analyze_data(df)
-                if res and res[1] != "WAIT":
-                    bt_signals.append({
-                        "Date": bt_date.strftime("%Y-%m-%d"),
-                        "Stock": s,
-                        "Signal": res[1]
-                    })
-                bt_breakout += breakout_engine(df, s)
-            except:
-                continue
-
+    for s in stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(
+                start=pd.to_datetime(bt_date),
+                end=pd.to_datetime(bt_date) + timedelta(days=1),
+                interval="15m"
+            )
+            df = df.between_time("09:15", "15:30")
+            if df.empty: continue
+            res = analyze_data(df)
+            if res and res[1] != "WAIT":
+                bt_signals.append({
+                    "Date": bt_date.strftime("%Y-%m-%d"),
+                    "Stock": s,
+                    "Signal": res[1]
+                })
+            bt_breakout += breakout_engine(df, s)
+        except:
+            continue
     bt_breakout = sorted(bt_breakout, key=lambda x: x["Time"])
     bt_signals = sorted(bt_signals, key=lambda x: x["Date"])
-
     st.subheader("📊 BACKTEST SIGNALS")
     st.dataframe(pd.DataFrame(bt_signals), use_container_width=True)
     st.subheader("🔥 BACKTEST SMART BREAKOUT")
