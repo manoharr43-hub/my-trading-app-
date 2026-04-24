@@ -195,4 +195,4 @@ if st.session_state.bt_res:
     df_bo = pd.DataFrame(st.session_state.bt_bo)
     st.subheader("📊 BACKTEST RESULTS"); st.dataframe(df_bt, use_container_width=True)
     st.subheader("🔥 BACKTEST BREAKOUT"); st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
-    bt_stock = st.selectbox("📉 Select Backtest Stock
+    bt_stock = st.selectbox("📉
