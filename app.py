@@ -13,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (ULTIMATE FIXED)")
+st.title("🚀 NSE AI PRO TERMINAL (ULTIMATE PRO)")
 st.markdown("---")
 
 # =============================
@@ -28,7 +28,7 @@ sector_map = {
     "FMCG": ["ITC","RELIANCE","LT","BHARTIARTL"]
 }
 
-all_stocks = sum(sector_map.values(), [])
+all_stocks = list(set(sum(sector_map.values(), [])))
 selected_sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
 stocks = sector_map[selected_sector]
 
@@ -44,17 +44,11 @@ def calculate_rsi(df, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def calculate_macd(df):
-    ema12 = df['Close'].ewm(span=12).mean()
-    ema26 = df['Close'].ewm(span=26).mean()
-    macd = ema12 - ema26
-    signal = macd.ewm(span=9).mean()
-    return macd, signal
-
 def ai_prediction(df):
     df = df.copy()
     df['Target'] = df['Close'].shift(-1)
     df.dropna(inplace=True)
+
     if len(df) < 10:
         return None
 
@@ -67,7 +61,7 @@ def ai_prediction(df):
     return model.predict(X[-1].reshape(1, -1))[0]
 
 # =============================
-# ENTRY / SL / TARGET
+# RISK MANAGEMENT
 # =============================
 def risk_management(df, signal):
     price = df['Close'].iloc[-1]
@@ -86,31 +80,58 @@ def risk_management(df, signal):
     return round(price,2), round(sl,2), round(target,2)
 
 # =============================
+# OPTION STRENGTH
+# =============================
+def option_strength(df):
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
+    vol = df['Volume']
+    avg_vol = vol.rolling(20).mean()
+
+    call_strength = 0
+    put_strength = 0
+
+    if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]:
+        call_strength += 1
+
+    if vol.iloc[-1] > avg_vol.iloc[-1]:
+        call_strength += 1
+
+    if df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
+        call_strength += 1
+
+    if df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1]:
+        put_strength += 1
+
+    if df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
+        put_strength += 1
+
+    return call_strength, put_strength
+
+# =============================
 # ANALYSIS
 # =============================
 def analyze_data(df):
     if df is None or len(df) < 50:
         return None
 
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-
     rsi = calculate_rsi(df)
     pred = ai_prediction(df)
 
-    final = "WAIT"
+    signal = "WAIT"
     if pred:
         if pred > df['Close'].iloc[-1]:
-            final = "BUY"
+            signal = "BUY"
         elif pred < df['Close'].iloc[-1]:
-            final = "SELL"
+            signal = "SELL"
 
-    entry, sl, tgt = risk_management(df, final)
+    entry, sl, tgt = risk_management(df, signal)
 
-    return final, round(rsi.iloc[-1],2), entry, sl, tgt
+    return signal, round(rsi.iloc[-1],2), entry, sl, tgt
 
 # =============================
-# BREAKOUT ENGINE (FIXED)
+# BREAKOUT
 # =============================
 def breakout_engine(df, stock):
     results = []
@@ -148,7 +169,7 @@ def breakout_engine(df, stock):
     return results
 
 # =============================
-# CHART
+# CHART (WITH VOLUME)
 # =============================
 def plot_chart(df, stock, bo):
     fig = go.Figure()
@@ -161,17 +182,30 @@ def plot_chart(df, stock, bo):
         close=df['Close']
     ))
 
+    fig.add_trace(go.Bar(
+        x=df.index,
+        y=df['Volume'],
+        yaxis="y2",
+        opacity=0.3,
+        name="Volume"
+    ))
+
     if bo:
         for b in bo:
             color = "green" if "BUY" in b["Type"] else "red"
             fig.add_trace(go.Scatter(
-                x=[b["DateTime"]],  # ✅ correct
+                x=[b["DateTime"]],
                 y=[b["Level"]],
                 mode="markers+text",
                 marker=dict(color=color, size=12),
                 text=[b["Type"]],
                 textposition="top center"
             ))
+
+    fig.update_layout(
+        yaxis2=dict(overlaying='y', side='right'),
+        height=600
+    )
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -219,21 +253,29 @@ if st.button("🔍 START LIVE"):
     st.subheader("📊 LIVE SIGNALS")
     st.dataframe(df_res, use_container_width=True)
 
-    st.subheader("🔥 ALL NSE BREAKOUT (TIME ORDER)")
+    st.subheader("🔥 ALL NSE BREAKOUT")
     st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
-# =============================
-# CHART SELECTOR
-# =============================
-st.markdown("---")
-selected_stock = st.selectbox("📈 Select Stock", stocks)
+    # =============================
+    # STOCK SELECT
+    # =============================
+    selected_stock = st.selectbox("📈 Select Stock", df_res["Stock"].unique())
 
-if selected_stock:
-    df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
-    df_chart = df_chart.between_time("09:15","15:30")
+    if selected_stock:
+        df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
+        df_chart = df_chart.between_time("09:15","15:30")
 
-    bo_chart = breakout_engine(df_chart, selected_stock)
-    plot_chart(df_chart, selected_stock, bo_chart)
+        bo_chart = breakout_engine(df_chart, selected_stock)
+
+        plot_chart(df_chart, selected_stock, bo_chart)
+
+        # OPTION STRENGTH
+        call_str, put_str = option_strength(df_chart)
+
+        col1, col2 = st.columns(2)
+
+        col1.metric("📈 CALL STRENGTH", f"{call_str}/3")
+        col2.metric("📉 PUT STRENGTH", f"{put_str}/3")
 
 # =============================
 # BACKTEST
@@ -286,18 +328,17 @@ if st.button("📊 RUN BACKTEST"):
     st.subheader("🔥 BACKTEST BREAKOUT")
     st.dataframe(pd.DataFrame(bt_bo).drop(columns=["DateTime"]), use_container_width=True)
 
-    # ✅ BACKTEST CHART FIX
-    st.markdown("---")
+    # BACKTEST CHART
     bt_stock = st.selectbox("📉 Backtest Chart Stock", stocks)
 
     if bt_stock:
-        df_bt_chart = yf.Ticker(bt_stock + ".NS").history(
+        df_bt = yf.Ticker(bt_stock + ".NS").history(
             start=bt_date,
             end=bt_date + timedelta(days=1),
             interval="5m"
         )
 
-        df_bt_chart = df_bt_chart.between_time("09:15","15:30")
+        df_bt = df_bt.between_time("09:15","15:30")
 
-        bo_bt = breakout_engine(df_bt_chart, bt_stock)
-        plot_chart(df_bt_chart, bt_stock, bo_bt)
+        bo_bt = breakout_engine(df_bt, bt_stock)
+        plot_chart(df_bt, bt_stock, bo_bt)
