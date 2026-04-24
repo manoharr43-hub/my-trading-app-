@@ -1,18 +1,17 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V4", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V5", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO DASHBOARD V4")
+st.title("🚀 NSE AI PRO DASHBOARD V5")
 st.markdown("---")
 
 # =============================
@@ -26,14 +25,18 @@ stocks = [
 ]
 
 # =============================
-# AI SCORE ENGINE
+# AI SCORE
 # =============================
 def ai_score(df):
-    score = 0
+    if df is None or df.empty:
+        return 0
+
     close = df['Close']
 
     ema20 = close.ewm(span=20).mean()
     ema50 = close.ewm(span=50).mean()
+
+    score = 0
 
     if ema20.iloc[-1] > ema50.iloc[-1]:
         score += 30
@@ -51,7 +54,9 @@ def ai_score(df):
     else:
         score += 10
 
-    if df['Volume'].iloc[-1] > df['Volume'].rolling(20).mean().iloc[-1]:
+    vol_avg = df['Volume'].rolling(20).mean()
+
+    if df['Volume'].iloc[-1] > vol_avg.iloc[-1]:
         score += 40
     else:
         score += 10
@@ -62,6 +67,9 @@ def ai_score(df):
 # SIGNAL ENGINE
 # =============================
 def signal_engine(df):
+    if df is None or df.empty:
+        return "NO DATA"
+
     close = df['Close']
 
     ema20 = close.ewm(span=20).mean()
@@ -87,12 +95,21 @@ def levels(price):
     return price, price*0.98, price*1.03, price*1.06
 
 # =============================
-# CHART (FIXED CLARITY)
+# SAFE DATA LOADER
 # =============================
-def show_chart(df, stock):
+def load_data(stock):
+    try:
+        df = yf.Ticker(stock+".NS").history(period="5d", interval="15m")
+        if df is None or df.empty:
+            return None
+        return df.dropna()
+    except:
+        return None
 
-    df = df.dropna()
-
+# =============================
+# CHART
+# =============================
+def chart(df, stock):
     fig = go.Figure()
 
     fig.add_trace(go.Candlestick(
@@ -100,32 +117,11 @@ def show_chart(df, stock):
         open=df['Open'],
         high=df['High'],
         low=df['Low'],
-        close=df['Close'],
-        increasing_line_color='green',
-        decreasing_line_color='red'
+        close=df['Close']
     ))
 
     fig.update_layout(
-        title=f"{stock} CHART",
+        title=f"{stock} Chart",
         template="plotly_dark",
         xaxis_rangeslider_visible=False,
-        height=600
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# =============================
-# BACKTEST (FIXED DATE)
-# =============================
-def backtest(stock, date):
-
-    start = pd.to_datetime(date)
-    end = start + pd.Timedelta(days=1)
-
-    df = yf.Ticker(stock+".NS").history(
-        start=start,
-        end=end,
-        interval="15m"
-    )
-
-    df
+        height=550
