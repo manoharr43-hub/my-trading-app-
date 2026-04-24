@@ -13,7 +13,7 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (ULTIMATE PRO)")
+st.title("🚀 NSE AI PRO TERMINAL (FINAL STABLE)")
 st.markdown("---")
 
 # =============================
@@ -80,36 +80,6 @@ def risk_management(df, signal):
     return round(price,2), round(sl,2), round(target,2)
 
 # =============================
-# OPTION STRENGTH
-# =============================
-def option_strength(df):
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-
-    vol = df['Volume']
-    avg_vol = vol.rolling(20).mean()
-
-    call_strength = 0
-    put_strength = 0
-
-    if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]:
-        call_strength += 1
-
-    if vol.iloc[-1] > avg_vol.iloc[-1]:
-        call_strength += 1
-
-    if df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
-        call_strength += 1
-
-    if df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1]:
-        put_strength += 1
-
-    if df['Close'].iloc[-1] < df['EMA20'].iloc[-1]:
-        put_strength += 1
-
-    return call_strength, put_strength
-
-# =============================
 # ANALYSIS
 # =============================
 def analyze_data(df):
@@ -169,7 +139,7 @@ def breakout_engine(df, stock):
     return results
 
 # =============================
-# CHART (WITH VOLUME)
+# CHART
 # =============================
 def plot_chart(df, stock, bo):
     fig = go.Figure()
@@ -186,8 +156,7 @@ def plot_chart(df, stock, bo):
         x=df.index,
         y=df['Volume'],
         yaxis="y2",
-        opacity=0.3,
-        name="Volume"
+        opacity=0.3
     ))
 
     if bo:
@@ -256,26 +225,16 @@ if st.button("🔍 START LIVE"):
     st.subheader("🔥 ALL NSE BREAKOUT")
     st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
-    # =============================
-    # STOCK SELECT
-    # =============================
-    selected_stock = st.selectbox("📈 Select Stock", df_res["Stock"].unique())
+    # LIVE CHART
+    if not df_res.empty:
+        selected_stock = st.selectbox("📈 Select Stock", sorted(df_res["Stock"].unique()))
 
-    if selected_stock:
-        df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
-        df_chart = df_chart.between_time("09:15","15:30")
+        if selected_stock:
+            df_chart = yf.Ticker(selected_stock + ".NS").history(period="1d", interval="5m")
+            df_chart = df_chart.between_time("09:15","15:30")
 
-        bo_chart = breakout_engine(df_chart, selected_stock)
-
-        plot_chart(df_chart, selected_stock, bo_chart)
-
-        # OPTION STRENGTH
-        call_str, put_str = option_strength(df_chart)
-
-        col1, col2 = st.columns(2)
-
-        col1.metric("📈 CALL STRENGTH", f"{call_str}/3")
-        col2.metric("📉 PUT STRENGTH", f"{put_str}/3")
+            bo_chart = breakout_engine(df_chart, selected_stock)
+            plot_chart(df_chart, selected_stock, bo_chart)
 
 # =============================
 # BACKTEST
@@ -322,23 +281,27 @@ if st.button("📊 RUN BACKTEST"):
         except:
             pass
 
+    df_bt = pd.DataFrame(bt_res)
+    df_bo = pd.DataFrame(bt_bo)
+
     st.subheader("📊 BACKTEST FULL DAY")
-    st.dataframe(pd.DataFrame(bt_res), use_container_width=True)
+    st.dataframe(df_bt, use_container_width=True)
 
     st.subheader("🔥 BACKTEST BREAKOUT")
-    st.dataframe(pd.DataFrame(bt_bo).drop(columns=["DateTime"]), use_container_width=True)
+    st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
-    # BACKTEST CHART
-    bt_stock = st.selectbox("📉 Backtest Chart Stock", stocks)
+    # ✅ FIXED BACKTEST CHART
+    if not df_bt.empty:
+        bt_stock = st.selectbox("📉 Backtest Chart Stock", sorted(df_bt["Stock"].unique()))
 
-    if bt_stock:
-        df_bt = yf.Ticker(bt_stock + ".NS").history(
-            start=bt_date,
-            end=bt_date + timedelta(days=1),
-            interval="5m"
-        )
+        if bt_stock:
+            df_chart = yf.Ticker(bt_stock + ".NS").history(
+                start=bt_date,
+                end=bt_date + timedelta(days=1),
+                interval="5m"
+            )
 
-        df_bt = df_bt.between_time("09:15","15:30")
+            df_chart = df_chart.between_time("09:15","15:30")
 
-        bo_bt = breakout_engine(df_bt, bt_stock)
-        plot_chart(df_bt, bt_stock, bo_bt)
+            bo_chart = breakout_engine(df_chart, bt_stock)
+            plot_chart(df_chart, bt_stock, bo_chart)
