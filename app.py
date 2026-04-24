@@ -2,21 +2,20 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO DASHBOARD V2", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V3", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO DASHBOARD V2")
+st.title("🚀 NSE AI PRO DASHBOARD V3")
 st.markdown("---")
 
 # =============================
-# STOCKS
+# STOCK LIST
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
@@ -30,7 +29,6 @@ stocks = [
 # =============================
 def ai_score(df):
     score = 0
-
     close = df['Close']
 
     ema20 = close.ewm(span=20).mean()
@@ -60,17 +58,38 @@ def ai_score(df):
     return min(score, 100)
 
 # =============================
+# SIGNAL ENGINE (BUY/SELL FIXED)
+# =============================
+def signal_engine(df):
+    close = df['Close']
+
+    ema20 = close.ewm(span=20).mean()
+    ema50 = close.ewm(span=50).mean()
+
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+
+    if ema20.iloc[-1] > ema50.iloc[-1] and rsi.iloc[-1] < 65:
+        return "🚀 BUY"
+    elif ema20.iloc[-1] < ema50.iloc[-1] and rsi.iloc[-1] > 35:
+        return "💀 SELL"
+    else:
+        return "WAIT"
+
+# =============================
 # TRADE LEVELS
 # =============================
-def trade_levels(price):
+def levels(price):
     return price, price*0.98, price*1.03, price*1.06
 
 # =============================
-# CHART
+# CHARTS
 # =============================
-def show_chart(df, stock):
+def intraday_chart(df, stock):
     fig = go.Figure()
-
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df['Open'],
@@ -78,36 +97,43 @@ def show_chart(df, stock):
         low=df['Low'],
         close=df['Close']
     ))
+    fig.update_layout(title=f"{stock} Intraday Chart", xaxis_rangeslider_visible=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-    fig.update_layout(title=f"{stock} Chart", xaxis_rangeslider_visible=False)
+def daily_chart(stock):
+    df = yf.Ticker(stock+".NS").history(period="6mo", interval="1d")
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines'))
+    fig.update_layout(title=f"{stock} Daily Chart")
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# DASHBOARD ENGINE
+# MAIN DASHBOARD
 # =============================
 dashboard = []
 
-if st.button("🔍 RUN AI DASHBOARD"):
+if st.button("🔍 RUN AI SCANNER"):
 
     for s in stocks:
         try:
             df = yf.Ticker(s+".NS").history(period="5d", interval="15m")
-
             if df.empty:
                 continue
 
-            df = df.dropna()
-
             price = df['Close'].iloc[-1]
             score = ai_score(df)
-            entry, sl, t1, t2 = trade_levels(price)
+            signal = signal_engine(df)
+
+            entry, sl, t1, t2 = levels(price)
 
             dashboard.append({
                 "Stock": s,
                 "Price": round(price,2),
                 "AI Score": score,
+                "Signal": signal,
                 "Entry": round(entry,2),
-                "StopLoss": round(sl,2),
+                "SL": round(sl,2),
                 "Target1": round(t1,2),
                 "Target2": round(t2,2)
             })
@@ -131,7 +157,7 @@ if st.button("🔍 RUN AI DASHBOARD"):
     st.dataframe(df_dash, use_container_width=True)
 
 # =============================
-# CHART VIEW
+# CHART SECTION
 # =============================
 st.markdown("---")
 
@@ -140,4 +166,44 @@ if st.button("📈 SHOW CHARTS"):
     for s in stocks[:5]:
         df = yf.Ticker(s+".NS").history(period="5d", interval="15m")
         if not df.empty:
-            show_chart(df, s)
+            intraday_chart(df, s)
+
+    st.markdown("### 📊 DAILY CHARTS")
+    for s in stocks[:3]:
+        daily_chart(s)
+
+# =============================
+# BACKTEST (SAFE VERSION)
+# =============================
+st.markdown("---")
+
+def backtest(stock):
+    df = yf.Ticker(stock+".NS").history(period="60d", interval="1d")
+    results = []
+
+    for i in range(20, len(df)):
+        sub = df.iloc[:i]
+        signal = signal_engine(sub)
+
+        if signal != "WAIT":
+            results.append({
+                "Stock": stock,
+                "Time": sub.index[-1],
+                "Signal": signal,
+                "Price": sub['Close'].iloc[-1]
+            })
+
+    return results
+
+if st.button("📊 RUN BACKTEST"):
+
+    all_results = []
+
+    for s in stocks:
+        try:
+            all_results += backtest(s)
+        except:
+            continue
+
+    st.subheader("🔥 BACKTEST RESULTS")
+    st.dataframe(pd.DataFrame(all_results), use_container_width=True)
