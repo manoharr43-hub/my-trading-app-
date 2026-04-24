@@ -141,7 +141,7 @@ if st.button("🔍 START LIVE SCANNER (9:15–3:30)"):
     st.dataframe(pd.DataFrame(breakout_results), use_container_width=True)
 
 # =============================
-# BACKTEST (DATE PICKER)
+# BACKTEST (DATE PICKER + CHARTS)
 # =============================
 st.markdown("---")
 bt_date = st.sidebar.date_input("📅 Select Backtest Date", datetime.now().date() - timedelta(days=1))
@@ -164,6 +164,8 @@ if st.button("📊 RUN BACKTEST (Selected Date)"):
                     "Stock": s,
                     "Signal": res[1]
                 })
+                # 👉 Backtestలో కూడా chart చూపించాలి
+                plot_chart(df, s)
             bt_breakout += breakout_engine(df, s)
         except:
             continue
