@@ -13,12 +13,18 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="🔥 NSE AI PRO TERMINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL (FINAL STABLE UI FIX)")
+st.title("🚀 NSE AI PRO TERMINAL (FINAL ALL FIXED)")
 st.markdown("---")
 
 # =============================
-# SESSION STATE INIT
+# SESSION STATE (IMPORTANT)
 # =============================
+if "live_res" not in st.session_state:
+    st.session_state.live_res = []
+
+if "live_bo" not in st.session_state:
+    st.session_state.live_bo = []
+
 if "bt_res" not in st.session_state:
     st.session_state.bt_res = []
 
@@ -181,11 +187,74 @@ def plot_chart(df, stock, bo):
             ))
 
     fig.update_layout(yaxis2=dict(overlaying='y', side='right'), height=600)
-
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST BUTTON
+# LIVE SCANNER
+# =============================
+if st.button("🔍 START LIVE"):
+    results = []
+    all_bo = []
+
+    for s in all_stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(period="1d", interval="5m")
+            df = df.between_time("09:15","15:30")
+
+            if len(df) < 50:
+                continue
+
+            res = analyze_data(df)
+            bo = breakout_engine(df, s)
+
+            if res:
+                signal, rsi, entry, sl, tgt = res
+
+                results.append({
+                    "Stock": s,
+                    "Signal": signal,
+                    "Entry": entry,
+                    "SL": sl,
+                    "Target": tgt,
+                    "RSI": rsi
+                })
+
+            all_bo += bo
+
+        except:
+            pass
+
+    st.session_state.live_res = results
+    st.session_state.live_bo = all_bo
+
+# =============================
+# LIVE DISPLAY
+# =============================
+if st.session_state.live_res:
+
+    df_res = pd.DataFrame(st.session_state.live_res)
+    df_bo = pd.DataFrame(st.session_state.live_bo)
+
+    if not df_bo.empty:
+        df_bo = df_bo.sort_values(by="DateTime")
+
+    st.subheader("📊 LIVE SIGNALS")
+    st.dataframe(df_res, use_container_width=True)
+
+    st.subheader("🔥 LIVE BREAKOUT")
+    st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
+
+    live_stock = st.selectbox("📈 Select Live Stock", df_res["Stock"].unique())
+
+    if live_stock:
+        df_chart = yf.Ticker(live_stock + ".NS").history(period="1d", interval="5m")
+        df_chart = df_chart.between_time("09:15","15:30")
+
+        bo_chart = breakout_engine(df_chart, live_stock)
+        plot_chart(df_chart, live_stock, bo_chart)
+
+# =============================
+# BACKTEST
 # =============================
 bt_date = st.sidebar.date_input("📅 Backtest Date", datetime.now().date() - timedelta(days=1))
 
@@ -230,7 +299,7 @@ if st.button("📊 RUN BACKTEST"):
     st.session_state.bt_bo = bt_bo
 
 # =============================
-# BACKTEST DISPLAY (NO RESET)
+# BACKTEST DISPLAY
 # =============================
 if st.session_state.bt_res:
 
@@ -243,10 +312,7 @@ if st.session_state.bt_res:
     st.subheader("🔥 BACKTEST BREAKOUT")
     st.dataframe(df_bo.drop(columns=["DateTime"]), use_container_width=True)
 
-    bt_stock = st.selectbox(
-        "📉 Select Stock for Chart",
-        df_bt["Stock"].unique()
-    )
+    bt_stock = st.selectbox("📉 Select Backtest Stock", df_bt["Stock"].unique())
 
     if bt_stock:
         df_chart = yf.Ticker(bt_stock + ".NS").history(
