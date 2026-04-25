@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
@@ -10,22 +10,14 @@ from sklearn.linear_model import LinearRegression
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V4", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V5 LIVE", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO TERMINAL V4 (CLEAN + TIME FIX + BIG PLAYER)")
+st.title("🚀 NSE AI PRO V5 (LIVE ONLY + BIG PLAYER)")
 st.markdown("---")
 
 # =============================
-# DATA LOAD
-# =============================
-@st.cache_data(ttl=300)
-def load_data(stock):
-    df = yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
-    return df
-
-# =============================
-# STOCKS
+# STOCK LIST
 # =============================
 sector_map = {
     "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
@@ -39,10 +31,17 @@ sector_map = {
 all_stocks = list(set(sum(sector_map.values(), [])))
 
 # =============================
-# TIME FORMAT FIX (IMPORTANT)
+# TIME FORMAT (ONLY 9:30 AM)
 # =============================
 def clean_time(ts):
-    return pd.to_datetime(ts).strftime("%I:%M %p")
+    return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
+
+# =============================
+# DATA LOAD
+# =============================
+@st.cache_data(ttl=300)
+def load_data(stock):
+    return yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
 
 # =============================
 # RSI
@@ -106,26 +105,7 @@ def big_player(df, stock):
                 "Time": clean_time(df.index[i])
             })
 
-    return sorted(entries, key=lambda x: x["Time"])
-
-# =============================
-# RISK
-# =============================
-def risk(df, signal):
-    price = df['Close'].iloc[-1]
-
-    if signal == "BUY":
-        sl = df['Low'].rolling(10).min().iloc[-1]
-        target = price + (price - sl) * 2
-
-    elif signal == "SELL":
-        sl = df['High'].rolling(10).max().iloc[-1]
-        target = price - (sl - price) * 2
-
-    else:
-        return price, None, None
-
-    return round(price,2), round(sl,2), round(target,2)
+    return entries
 
 # =============================
 # ANALYSIS ENGINE
@@ -143,8 +123,6 @@ def analyze(df):
     if pred:
         signal = "BUY" if pred > df['Close'].iloc[-1] else "SELL"
 
-    entry, sl, tgt = risk(df, signal)
-
     vol_ok = df['Volume'].iloc[-1] > df['AvgVol'].iloc[-1]
     trend_up = df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]
     trend_down = df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1]
@@ -157,49 +135,15 @@ def analyze(df):
     elif signal == "SELL" and r.iloc[-1] > 30 and vol_ok and trend_down:
         final = "💀 STRONG SELL"
 
-    return signal, round(r.iloc[-1],2), entry, sl, tgt, final
-
-# =============================
-# BREAKOUT
-# =============================
-def breakout(df, stock):
-    try:
-        opening = df.between_time("09:15","09:30")
-        if len(opening) < 2:
-            return []
-
-        high = opening['High'].max()
-        low = opening['Low'].min()
-
-        for i in range(len(df)):
-            if df['Close'].iloc[i] > high:
-                return [{
-                    "Stock": stock,
-                    "Type": "BUY BO",
-                    "Level": high,
-                    "Time": clean_time(df.index[i])
-                }]
-
-            if df['Close'].iloc[i] < low:
-                return [{
-                    "Stock": stock,
-                    "Type": "SELL BO",
-                    "Level": low,
-                    "Time": clean_time(df.index[i])
-                }]
-    except:
-        return []
-
-    return []
+    return signal, round(r.iloc[-1],2), final
 
 # =============================
 # LIVE START
 # =============================
-if st.button("🔍 START LIVE V4"):
+if st.button("🔍 START LIVE V5"):
 
     results = []
-    all_bo = []
-    all_big = []
+    big_entries = []
 
     for s in all_stocks:
         try:
@@ -209,47 +153,43 @@ if st.button("🔍 START LIVE V4"):
             if len(df) < 50:
                 continue
 
-            res = analyze(df)
-            bo = breakout(df, s)
+            signal, rsi_v, final = analyze(df)
             big = big_player(df, s)
 
-            if res:
-                signal, rsi_v, entry, sl, tgt, final = res
+            results.append({
+                "Stock": s,
+                "Signal": signal,
+                "FINAL": final,
+                "RSI": rsi_v
+            })
 
-                results.append({
-                    "Stock": s,
-                    "Signal": signal,
-                    "FINAL": final,
-                    "Entry": entry,
-                    "SL": sl,
-                    "Target": tgt,
-                    "RSI": rsi_v
-                })
-
-            all_bo += bo
-            all_big += big
+            big_entries += big
 
         except:
             pass
 
     st.session_state.live_res = results
-    st.session_state.live_bo = all_bo
-    st.session_state.big_entries = all_big
+    st.session_state.big_entries = big_entries
 
 # =============================
 # DISPLAY
 # =============================
 if "live_res" in st.session_state:
 
-    st.subheader("📊 SIGNALS")
+    st.subheader("📊 LIVE SIGNALS")
     st.dataframe(pd.DataFrame(st.session_state.live_res))
 
-    st.subheader("🔥 BREAKOUT")
-    st.dataframe(pd.DataFrame(st.session_state.live_bo))
-
     st.subheader("🐋 BIG PLAYER ENTRIES")
-    st.dataframe(pd.DataFrame(st.session_state.big_entries))
 
+    if st.session_state.big_entries:
+        df_big = pd.DataFrame(st.session_state.big_entries)
+        st.dataframe(df_big)
+    else:
+        st.info("No Big Player activity yet")
+
+    # =============================
+    # CHART
+    # =============================
     stock = st.selectbox(
         "📈 Chart",
         pd.DataFrame(st.session_state.live_res)["Stock"].unique()
@@ -266,12 +206,13 @@ if "live_res" in st.session_state:
         close=df_chart['Close']
     )])
 
-    big_df = pd.DataFrame(st.session_state.big_entries)
+    # BIG PLAYER MARKERS
+    df_big = pd.DataFrame(st.session_state.big_entries)
 
-    if not big_df.empty:
-        big_df = big_df[big_df["Stock"] == stock]
+    if not df_big.empty:
+        df_big = df_big[df_big["Stock"] == stock]
 
-        for _, row in big_df.iterrows():
+        for _, row in df_big.iterrows():
             color = "green" if row["Type"] == "BIG BUY" else "red"
 
             fig.add_trace(go.Scatter(
