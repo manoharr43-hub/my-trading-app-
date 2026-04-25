@@ -8,109 +8,106 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V11", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V13", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO V11 - SMART MONEY + MULTI TF")
+st.title("🚀 NSE AI PRO V13 - CLEAN + STABLE + SMART MONEY")
 
 # =============================
-# STOCKS
+# SESSION SAFE
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC"]
+if "bt_history" not in st.session_state:
+    st.session_state.bt_history = []
 
 # =============================
-# TIMEFRAMES
+# STOCK LIST
 # =============================
-timeframes = {
-    "1m": "1m",
-    "5m": "5m",
-    "15m": "15m",
-    "1H": "60m"
-}
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT"]
 
 # =============================
-# DATA LOADER
+# SAFE DATA LOADER
 # =============================
 @st.cache_data(ttl=300)
-def load_data(stock, tf):
-    return yf.Ticker(stock + ".NS").history(period="5d", interval=tf)
+def load_data(stock, tf="5m"):
+    try:
+        df = yf.Ticker(stock + ".NS").history(period="5d", interval=tf)
+        if df is None or len(df) < 10:
+            return None
+        return df
+    except:
+        return None
 
 # =============================
-# SMART MONEY DETECTION
+# SMART MONEY LOGIC
 # =============================
 def smart_money(df):
 
-    vol_avg = df['Volume'].rolling(20).mean()
-    last_vol = df['Volume'].iloc[-1]
-
-    resistance = df['High'].rolling(20).max().iloc[-2]
-    support = df['Low'].rolling(20).min().iloc[-2]
+    if df is None or len(df) < 20:
+        return "NO DATA"
 
     price = df['Close'].iloc[-1]
 
-    signal = "NORMAL"
+    resistance = df['High'].rolling(20).max().iloc[-2] if len(df) > 20 else df['High'].max()
+    support = df['Low'].rolling(20).min().iloc[-2] if len(df) > 20 else df['Low'].min()
 
-    # 🔥 Volume Trap
-    if last_vol > vol_avg.iloc[-1] * 2:
+    vol_avg = df['Volume'].rolling(20).mean().iloc[-1] if len(df) > 20 else df['Volume'].mean()
 
-        if price > resistance:
-            signal = "⚠️ DISTRIBUTION (BUY TRAP)"
-        elif price < support:
-            signal = "⚠️ ACCUMULATION (SELL TRAP)"
-        else:
-            signal = "🔥 SMART MONEY ACTIVE"
+    vol_spike = df['Volume'].iloc[-1] > vol_avg * 1.8
 
-    return signal
+    if vol_spike and price > resistance:
+        return "🔥 DISTRIBUTION / BUY TRAP"
+
+    if vol_spike and price < support:
+        return "🔥 ACCUMULATION / SELL TRAP"
+
+    if vol_spike:
+        return "🧠 SMART MONEY ACTIVE"
+
+    return "NORMAL"
 
 # =============================
-# TREND ANALYSIS
+# TREND
 # =============================
 def trend(df):
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]:
-        return "UPTREND"
-    else:
-        return "DOWNTREND"
+    return "UPTREND" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "DOWNTREND"
 
 # =============================
 # SIGNAL ENGINE
 # =============================
-def signal_engine(df):
+def signals(df):
 
     price = df['Close'].iloc[-1]
 
-    resistance = df['High'].rolling(20).max().iloc[-2]
-    support = df['Low'].rolling(20).min().iloc[-2]
+    resistance = df['High'].rolling(20).max().iloc[-2] if len(df) > 20 else df['High'].max()
+    support = df['Low'].rolling(20).min().iloc[-2] if len(df) > 20 else df['Low'].min()
 
-    vol_spike = df['Volume'].iloc[-1] > df['Volume'].rolling(20).mean().iloc[-1] * 1.8
+    breakout = "NONE"
+    big_entry = "NONE"
 
-    breakout = None
-    big_entry = None
+    vol_avg = df['Volume'].rolling(20).mean().iloc[-1] if len(df) > 20 else df['Volume'].mean()
 
     if price > resistance:
         breakout = "UP BREAKOUT"
     elif price < support:
         breakout = "DOWN BREAKOUT"
 
-    if breakout == "UP BREAKOUT" and vol_spike:
-        big_entry = "BIG BUY ENTRY"
+    if df['Volume'].iloc[-1] > vol_avg * 1.8:
 
-    if breakout == "DOWN BREAKOUT" and vol_spike:
-        big_entry = "BIG SELL ENTRY"
+        if breakout == "UP BREAKOUT":
+            big_entry = "BIG BUY ENTRY"
+
+        if breakout == "DOWN BREAKOUT":
+            big_entry = "BIG SELL ENTRY"
 
     return breakout, big_entry
 
 # =============================
-# CHART
+# CHART (SAFE + ALWAYS SHOW)
 # =============================
-def show_chart(df, stock, tf):
-
-    breakout, big_entry = signal_engine(df)
-    sm = smart_money(df)
-    tr = trend(df)
+def show_chart(df, stock):
 
     fig = go.Figure()
 
@@ -134,88 +131,104 @@ def show_chart(df, stock, tf):
         name="EMA50"
     ))
 
-    # BUY/SELL BASED ON TREND
-    if tr == "UPTREND":
-        st.success("📈 TREND: UP")
-    else:
-        st.error("📉 TREND: DOWN")
+    breakout, big_entry = signals(df)
+    sm = smart_money(df)
 
-    # BREAKOUT MARKER
-    if breakout:
-        fig.add_scatter(
-            x=[df.index[-1]],
-            y=[df['Close'].iloc[-1]],
-            mode="markers+text",
-            marker=dict(size=12, color="blue"),
-            text=[breakout],
-            textposition="bottom center"
-        )
+    # INFO PANEL
+    st.info(f"🧠 SMART MONEY: {sm}")
+    st.success(f"📌 BREAKOUT: {breakout}")
+    st.warning(f"💰 BIG ENTRY: {big_entry}")
 
-    # BIG ENTRY MARKER
-    if big_entry:
-        color = "green" if "BUY" in big_entry else "red"
+    fig.update_layout(title=f"{stock}", height=550)
 
-        fig.add_scatter(
-            x=[df.index[-1]],
-            y=[df['Close'].iloc[-1]],
-            mode="markers+text",
-            marker=dict(size=14, color=color),
-            text=[big_entry],
-            textposition="top center"
-        )
-
-    fig.update_layout(title=f"{stock} ({tf}) | SMART MONEY", height=550)
-
-    st.plotly_chart(fig, use_container_width=True, key=f"{stock}_{tf}")
+    st.plotly_chart(fig, use_container_width=True, key=stock)
 
 # =============================
-# UI
+# LIVE VIEW
 # =============================
-st.subheader("⏱ MULTI TIMEFRAME ANALYSIS")
+st.subheader("📊 LIVE CHART")
 
-selected_tf = st.selectbox("Select Timeframe", list(timeframes.keys()))
+selected = st.selectbox("Select Stock", stocks)
 
-selected_stock = st.selectbox("Select Stock", stocks)
+df = load_data(selected)
 
-df = load_data(selected_stock, timeframes[selected_tf])
-
-if df is not None and len(df) > 50:
-
-    st.subheader("🧠 SMART MONEY STATUS")
-    st.info(smart_money(df))
-
-    show_chart(df, selected_stock, selected_tf)
+if df is None:
+    st.error("⚠️ DATA NOT AVAILABLE")
+else:
+    show_chart(df, selected)
 
 # =============================
-# SCANNER (MULTI TF CONFIRMATION)
+# SCANNER
 # =============================
-st.subheader("🔥 SMART MONEY SCANNER")
+st.subheader("🔥 MARKET SCANNER")
 
 buy, sell = [], []
 
 for s in stocks:
 
-    df_5m = load_data(s, "5m")
-    df_15m = load_data(s, "15m")
+    df = load_data(s)
 
-    if df_5m is None or df_15m is None:
+    if df is None:
         continue
 
-    breakout, big_entry = signal_engine(df_5m)
-    trend_15 = trend(df_15m)
+    sm = smart_money(df)
+    tr = trend(df)
 
-    if big_entry == "BIG BUY ENTRY" and trend_15 == "UPTREND":
-        buy.append(s)
-
-    if big_entry == "BIG SELL ENTRY" and trend_15 == "DOWNTREND":
+    if "BUY TRAP" in sm and tr == "UPTREND":
         sell.append(s)
+
+    if "SELL TRAP" in sm and tr == "DOWNTREND":
+        buy.append(s)
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.success("🚀 STRONG BUY (SMART MONEY CONFIRMED)")
+    st.success("🚀 STRONG BUY")
     st.write(buy)
 
 with col2:
-    st.error("💀 STRONG SELL (SMART MONEY CONFIRMED)")
+    st.error("💀 STRONG SELL")
     st.write(sell)
+
+# =============================
+# BACKTEST (FIXED + ALWAYS SHOW)
+# =============================
+st.subheader("📁 BACKTEST FOLDER")
+
+if st.button("RUN BACKTEST"):
+
+    results = []
+
+    for s in stocks:
+
+        df = load_data(s)
+
+        if df is None:
+            continue
+
+        sm = smart_money(df)
+        tr = trend(df)
+        br, be = signals(df)
+
+        results.append({
+            "Stock": s,
+            "Trend": tr,
+            "SmartMoney": sm,
+            "Breakout": br,
+            "BigEntry": be
+        })
+
+    df_res = pd.DataFrame(results)
+
+    st.session_state.bt_history.append(df_res)
+
+    st.success("✅ BACKTEST DONE")
+    st.dataframe(df_res)
+
+# ALWAYS SHOW HISTORY
+if len(st.session_state.bt_history) == 0:
+    st.info("No backtest yet")
+else:
+    for i, df in enumerate(st.session_state.bt_history[::-1]):
+        with st.expander(f"Run #{i+1}"):
+            st.dataframe(df)
