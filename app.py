@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.3", layout="wide")
-st.title("🚀 NSE AI PRO V9.3 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.4", layout="wide")
+st.title("🚀 NSE AI PRO V9.4 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -98,15 +98,6 @@ def strength_meter(df):
     return (df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]
 
 # =============================
-# ALERTS
-# =============================
-def show_alert(stock, signal, price):
-    if signal == "BIG BUY":
-        st.success(f"🚀 {stock}: BIG BUY at {price}")
-    elif signal == "BIG SELL":
-        st.error(f"💀 {stock}: BIG SELL at {price}")
-
-# =============================
 # LIVE
 # =============================
 if st.button("🔍 START LIVE"):
@@ -117,7 +108,6 @@ if st.button("🔍 START LIVE"):
             if df.empty: continue
             signals = big_player(df, s)
             all_big += signals
-            for sig in signals: show_alert(sig["Stock"], sig["Type"], sig["Price"])
             strength_data.append({"Stock": s,"Strength": strength_meter(df)})
         except Exception as e:
             st.warning(f"{s} error: {e}")
@@ -132,7 +122,15 @@ if st.button("🔍 START LIVE"):
 # =============================
 if len(st.session_state.live_big) > 0:
     st.subheader("🐋 BIG PLAYER")
-    st.dataframe(pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]])
+    df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]]
+    st.dataframe(df_signals)
+
+    # BUY & SELL BOXES
+    st.markdown("### ✅ BIG BUY BOX")
+    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"])
+    st.markdown("### ❌ BIG SELL BOX")
+    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"])
+
     if not st.session_state.strength.empty:
         st.subheader("🔥 STRONG STOCKS"); st.dataframe(st.session_state.strength.head(5))
         st.subheader("❄️ WEAK STOCKS"); st.dataframe(st.session_state.strength.tail(5))
@@ -142,43 +140,11 @@ if len(st.session_state.live_big) > 0:
     fig = go.Figure(data=[go.Candlestick(x=df_chart.index,open=df_chart['Open'],
                                          high=df_chart['High'],low=df_chart['Low'],
                                          close=df_chart['Close'])])
-    df_big = pd.DataFrame(st.session_state.live_big)
-    df_big = df_big[df_big["Stock"] == stock]
+    df_big = df_signals[df_signals["Stock"] == stock]
     for _, row in df_big.iterrows():
         fig.add_trace(go.Scatter(x=[row["TimeRaw"]],y=[row["Price"]],
                                  mode="markers+text",
                                  marker=dict(size=10,color="green" if row["Type"]=="BIG BUY" else "red"),
-                                 text=[row["Type"]],textposition="top center"))
+                                 text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
+                                 textposition="top center"))
     st.plotly_chart(fig, use_container_width=True)
-
-# =============================
-# MULTI-DAY BACKTEST
-# =============================
-if st.checkbox("📊 Enable Multi-Day Backtest"):
-    days = st.slider("Select Backtest Days", 1, 10, 3)
-    bt_big = []
-    for d in range(days):
-        bt_date = datetime.now().date() - timedelta(days=d+1)
-        for s in stocks:
-            try:
-                df = yf.Ticker(s + ".NS").history(start=bt_date,end=bt_date+timedelta(days=1),interval="5m")
-                df = df.between_time("09:15","15:30")
-                if df.empty: continue
-                bt_big += big_player(df, s)
-            except Exception as e:
-                st.warning(f"{s} backtest error: {e}")
-
-    bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
-    bt_df = pd.DataFrame(bt_big)
-    st.session_state.bt_df = bt_df
-
-    if len(bt_big) > 0:
-        st.subheader("🐋 MULTI-DAY BACKTEST RESULTS")
-        st.dataframe(bt_df[["Stock","Type","Price","Time"]])
-
-    # CSV Export
-    if not bt_df.empty:
-        st.download_button(label="⬇️ Download Backtest CSV",
-                           data=bt_df.to_csv(index=False),
-                           file_name="backtest_results.csv",
-                           mime="text/csv")
