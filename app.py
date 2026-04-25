@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.8", layout="wide")
-st.title("🚀 NSE AI PRO V9.8 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.9", layout="wide")
+st.title("🚀 NSE AI PRO V9.9 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -212,5 +212,4 @@ if st.checkbox("📊 Enable Backtest"):
             close=df_chart['Close']
         )])
 
-        df_bt = bt_df[bt_df["Stock"] == stock]
-        for _, row in df_bt.iterrows
+        df_bt = bt_df[bt_df["Stock"] == stock
