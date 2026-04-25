@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V16", layout="wide")
-st.title("🚀 NSE AI PRO V16 (FINAL ZERO ERROR)")
+st.set_page_config(page_title="🔥 NSE AI PRO V17", layout="wide")
+st.title("🚀 NSE AI PRO V17 (SMART TRADING TERMINAL)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -59,6 +59,32 @@ def load_data(stock, period="1d"):
     except:
         return pd.DataFrame()
 
+# ===== SUPPORT / RESISTANCE =====
+def get_support_resistance(df):
+    if df.empty:
+        return None, None
+    recent = df.tail(50)
+    return round(recent['Low'].min(),2), round(recent['High'].max(),2)
+
+# ===== MARKET TREND =====
+@st.cache_data(ttl=60)
+def get_market_trend():
+    df = yf.Ticker("^NSEI").history(period="1d", interval="5m")
+    if df.empty:
+        return "UNKNOWN"
+    return "BULLISH 📈" if df['Close'].iloc[-1] > df['Open'].iloc[0] else "BEARISH 📉"
+
+# ===== NEWS =====
+def get_news(stock):
+    try:
+        ticker = yf.Ticker(stock + ".NS")
+        news = ticker.news
+        if not news:
+            return ["No news"]
+        return [n['title'] for n in news[:5]]
+    except:
+        return ["News not available"]
+
 # =============================
 # BIG PLAYER LOGIC
 # =============================
@@ -67,8 +93,8 @@ def big_player(df, stock):
         return []
 
     df = df.copy()
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
+
     tp = (df['High'] + df['Low'] + df['Close']) / 3
     df['VWAP'] = (tp * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1)
 
@@ -122,6 +148,12 @@ def strength_meter(df):
     return round(((df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1) * 100, 2)
 
 # =============================
+# MARKET TREND DISPLAY
+# =============================
+trend = get_market_trend()
+st.subheader(f"🌍 Market Trend: {trend}")
+
+# =============================
 # LIVE
 # =============================
 if st.button("🔍 START LIVE"):
@@ -153,6 +185,10 @@ if st.session_state.live_big:
     df_chart = load_data(stock)
 
     if not df_chart.empty:
+
+        support, resistance = get_support_resistance(df_chart)
+        st.markdown(f"**🟢 Support:** {support} | 🔴 Resistance: {resistance}")
+
         fig = go.Figure(data=[go.Candlestick(
             x=df_chart.index,
             open=df_chart['Open'],
@@ -175,8 +211,13 @@ if st.session_state.live_big:
 
         st.plotly_chart(fig, use_container_width=True)
 
+        # ===== NEWS =====
+        st.subheader("📰 Latest News")
+        for n in get_news(stock):
+            st.write("•", n)
+
 # =============================
-# BACKTEST (FIXED)
+# BACKTEST (same as before)
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
@@ -200,65 +241,21 @@ if st.checkbox("📊 Enable Backtest"):
     bt_df = pd.DataFrame(bt_big)
 
     if not bt_df.empty:
-
         st.dataframe(bt_df)
-
-        # SAVE
         file_path = f"{BACKTEST_DIR}/bt_{bt_date}.csv"
         bt_df.to_csv(file_path, index=False)
         st.success(f"Saved: {file_path}")
-
-        # ===== BACKTEST CHART =====
-        st.subheader("📊 Backtest Chart")
-
-        stock = st.selectbox("Select Stock (Backtest)", stocks, key="bt_stock")
-
-        df_chart = yf.Ticker(stock + ".NS").history(
-            start=bt_date,
-            end=bt_date + timedelta(days=1),
-            interval="5m"
-        )
-
-        if not df_chart.empty:
-            df_chart = df_chart.between_time("09:15","15:30")
-
-            fig = go.Figure(data=[go.Candlestick(
-                x=df_chart.index,
-                open=df_chart['Open'],
-                high=df_chart['High'],
-                low=df_chart['Low'],
-                close=df_chart['Close']
-            )])
-
-            df_bt_stock = bt_df[bt_df["Stock"] == stock]
-
-            for _, row in df_bt_stock.iterrows():
-                fig.add_trace(go.Scatter(
-                    x=[row["TimeRaw"]],
-                    y=[row["Price"]],
-                    mode="markers+text",
-                    marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
-                    text=[row["Type"]],
-                    textposition="top center"
-                ))
-
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No Chart Data")
-
     else:
         st.warning("No Backtest Data")
 
 # =============================
-# BACKTEST FILES
+# FILE VIEW
 # =============================
 st.subheader("📂 BACKTEST FILES")
 
 files = os.listdir(BACKTEST_DIR)
-
 if files:
     f = st.selectbox("Select File", files)
-    df_saved = pd.read_csv(os.path.join(BACKTEST_DIR, f))
-    st.dataframe(df_saved)
+    st.dataframe(pd.read_csv(os.path.join(BACKTEST_DIR, f)))
 else:
     st.info("No files yet")
