@@ -8,12 +8,12 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.1", layout="wide")
-st.title("🚀 NSE AI PRO V9.1 (STABLE VERSION)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.2", layout="wide")
+st.title("🚀 NSE AI PRO V9.2 (FINAL STABLE)")
 st.markdown("---")
 
 # =============================
-# SAFE SESSION INIT (FIX)
+# SAFE SESSION INIT
 # =============================
 if "live_big" not in st.session_state:
     st.session_state.live_big = []
@@ -141,7 +141,7 @@ if st.button("🔍 START LIVE"):
     st.session_state.strength = strength_df
 
 # =============================
-# LIVE DISPLAY (SAFE FIX)
+# LIVE DISPLAY
 # =============================
 if len(st.session_state.live_big) > 0:
 
@@ -176,7 +176,10 @@ if len(st.session_state.live_big) > 0:
             x=[row["TimeRaw"]],
             y=[row["Price"]],
             mode="markers+text",
-            marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red"),
+            marker=dict(
+                size=10,
+                color="green" if row["Type"] == "BIG BUY" else "red"
+            ),
             text=[row["Type"]],
             textposition="top center"
         ))
@@ -188,7 +191,7 @@ if len(st.session_state.live_big) > 0:
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
-    bt_date = st.date_input("Select Date", datetime.now().date()-timedelta(days=1))
+    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
 
     bt_big = []
 
@@ -200,7 +203,7 @@ if st.checkbox("📊 Enable Backtest"):
                 interval="5m"
             )
 
-            df = df.between_time("09:15","15:30")
+            df = df.between_time("09:15", "15:30")
 
             if df.empty:
                 continue
@@ -216,7 +219,7 @@ if st.checkbox("📊 Enable Backtest"):
         st.subheader("🐋 BACKTEST BIG PLAYER")
         st.dataframe(pd.DataFrame(bt_big)[["Stock","Type","Price","Time"]])
 
-    # CHART
+    # BACKTEST CHART
     stock = st.selectbox("📉 Backtest Chart", stocks)
 
     df_chart = yf.Ticker(stock + ".NS").history(
@@ -225,7 +228,7 @@ if st.checkbox("📊 Enable Backtest"):
         interval="5m"
     )
 
-    df_chart = df_chart.between_time("09:15","15:30")
+    df_chart = df_chart.between_time("09:15", "15:30")
 
     fig = go.Figure(data=[go.Candlestick(
         x=df_chart.index,
@@ -243,4 +246,12 @@ if st.checkbox("📊 Enable Backtest"):
             x=[row["TimeRaw"]],
             y=[row["Price"]],
             mode="markers+text",
-            marker=dict(size=12, color="green" if row["Type
+            marker=dict(
+                size=12,
+                color="green" if row["Type"] == "BIG BUY" else "red"
+            ),
+            text=[row["Type"]],
+            textposition="top center"
+        ))
+
+    st.plotly_chart(fig, use_container_width=True)
