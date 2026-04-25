@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.7", layout="wide")
-st.title("🚀 NSE AI PRO V9.7 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.6", layout="wide")
+st.title("🚀 NSE AI PRO V9.6 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -72,7 +72,7 @@ def big_player(df, stock):
 
     df = df.copy()
     df['AvgVol'] = df['Volume'].rolling(20).mean()
-    df['Spike'] = df['Volume'] > df['AvgVol'] * 1.5   # relaxed condition
+    df['Spike'] = df['Volume'] > df['AvgVol'] * 2
     df['Move'] = df['Close'].diff()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
 
@@ -164,13 +164,8 @@ if st.checkbox("📊 Enable Backtest"):
                 interval="5m"
             ).between_time("09:15","15:30")
 
-            if df.empty: 
-                st.info(f"{s} → No data for {bt_date}")
-                continue
-
-            signals = big_player(df, s)
-            st.write(f"{s} backtest signals: {len(signals)}")   # Debug print
-            bt_big += signals
+            if df.empty: continue
+            bt_big += big_player(df, s)
         except Exception as e:
             st.warning(f"{s} backtest error: {e}")
 
@@ -178,9 +173,7 @@ if st.checkbox("📊 Enable Backtest"):
     bt_df = pd.DataFrame(bt_big)
     st.session_state.bt_df = bt_df
 
-    if bt_df.empty:
-        st.warning("⚠️ No signals found for selected date.")
-    else:
+    if len(bt_big) > 0:
         st.subheader("🐋 BACKTEST RESULTS")
         st.dataframe(bt_df[["Stock","Type","Price","Time"]])
 
