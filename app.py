@@ -172,4 +172,7 @@ if st.checkbox("📊 Enable Backtest"):
         st.plotly_chart(fig_bt, use_container_width=True)
     else:
         st.error("No data")
-    if not
+    if not bt_df.empty:
+        st.dataframe(bt_df)
+    else:
+        st.warning("No signals (filtered by 15m trend)")
