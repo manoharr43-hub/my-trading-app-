@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.5", layout="wide")
-st.title("🚀 NSE AI PRO V9.5 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.6", layout="wide")
+st.title("🚀 NSE AI PRO V9.6 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -19,6 +19,8 @@ if "live_big" not in st.session_state:
     st.session_state.live_big = []
 if "strength" not in st.session_state:
     st.session_state.strength = pd.DataFrame()
+if "bt_df" not in st.session_state:
+    st.session_state.bt_df = pd.DataFrame()
 
 # =============================
 # SECTOR STOCK LIST
@@ -146,3 +148,59 @@ if len(st.session_state.live_big) > 0:
                                  text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
                                  textposition="top center"))
     st.plotly_chart(fig, use_container_width=True)
+
+# =============================
+# BACKTEST
+# =============================
+if st.checkbox("📊 Enable Backtest"):
+    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
+    bt_big = []
+
+    for s in stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(
+                start=bt_date,
+                end=bt_date + timedelta(days=1),
+                interval="5m"
+            ).between_time("09:15","15:30")
+
+            if df.empty: continue
+            bt_big += big_player(df, s)
+        except Exception as e:
+            st.warning(f"{s} backtest error: {e}")
+
+    bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
+    bt_df = pd.DataFrame(bt_big)
+    st.session_state.bt_df = bt_df
+
+    if len(bt_big) > 0:
+        st.subheader("🐋 BACKTEST RESULTS")
+        st.dataframe(bt_df[["Stock","Type","Price","Time"]])
+
+        stock = st.selectbox("📉 Backtest Chart", stocks)
+        df_chart = yf.Ticker(stock + ".NS").history(
+            start=bt_date,
+            end=bt_date + timedelta(days=1),
+            interval="5m"
+        ).between_time("09:15","15:30")
+
+        fig = go.Figure(data=[go.Candlestick(
+            x=df_chart.index,
+            open=df_chart['Open'],
+            high=df_chart['High'],
+            low=df_chart['Low'],
+            close=df_chart['Close']
+        )])
+
+        df_bt = bt_df[bt_df["Stock"] == stock]
+        for _, row in df_bt.iterrows():
+            fig.add_trace(go.Scatter(
+                x=[row["TimeRaw"]],
+                y=[row["Price"]],
+                mode="markers+text",
+                marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
+                text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
+                textposition="top center"
+            ))
+
+        st.plotly_chart(fig, use_container_width=True)
