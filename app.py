@@ -211,3 +211,10 @@ if st.checkbox("📊 Enable Backtest"):
             ))
 
         st.plotly_chart(fig, use_container_width=True)
+        # Trend Indicators
+df['EMA50'] = df['Close'].ewm(span=50).mean()
+df['EMA200'] = df['Close'].ewm(span=200).mean()
+df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
+df['MACD'] = ta.trend.MACD(df['Close']).macd()
+df['MACD_signal'] = ta.trend.MACD(df['Close']).macd_signal()
+
