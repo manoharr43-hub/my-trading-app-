@@ -10,26 +10,23 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V13", layout="wide")
-st.title("🚀 NSE AI PRO V13 (BACKTEST FOLDER + FINAL)")
+st.set_page_config(page_title="🔥 NSE AI PRO V15", layout="wide")
+st.title("🚀 NSE AI PRO V15 (FINAL STABLE)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
-# BACKTEST FOLDER SETUP
+# BACKTEST FOLDER
 # =============================
 BACKTEST_DIR = "backtests"
-if not os.path.exists(BACKTEST_DIR):
-    os.makedirs(BACKTEST_DIR)
+os.makedirs(BACKTEST_DIR, exist_ok=True)
 
 # =============================
-# SESSION INIT
+# SESSION
 # =============================
 if "live_big" not in st.session_state:
     st.session_state.live_big = []
 if "strength" not in st.session_state:
     st.session_state.strength = pd.DataFrame()
-if "bt_df" not in st.session_state:
-    st.session_state.bt_df = pd.DataFrame()
 
 # =============================
 # STOCKS (ALL SECTORS)
@@ -58,14 +55,12 @@ def clean_time(ts):
 def load_data(stock, period="1d"):
     try:
         df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
-        if df.empty:
-            return pd.DataFrame()
         return df.between_time("09:15","15:30").dropna()
     except:
         return pd.DataFrame()
 
 # =============================
-# BIG PLAYER LOGIC (NO DUPLICATE)
+# BIG PLAYER LOGIC (IMPROVED)
 # =============================
 def big_player(df, stock):
     if df.empty or len(df) < 30:
@@ -74,26 +69,16 @@ def big_player(df, stock):
     df = df.copy()
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-
     tp = (df['High'] + df['Low'] + df['Close']) / 3
     df['VWAP'] = (tp * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1)
 
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
-
-    rs = avg_gain / (avg_loss + 1e-9)
+    rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
 
     df['AvgVol'] = df['Volume'].rolling(20).mean()
-
-    df['Body'] = abs(df['Close'] - df['Open'])
-    df['Range'] = df['High'] - df['Low']
-    df['StrongCandle'] = df['Body'] > (df['Range'] * 0.6)
 
     entries = []
     last_signal = None
@@ -101,22 +86,11 @@ def big_player(df, stock):
     for i in range(25, len(df)):
         price = df['Close'].iloc[i]
 
-        score = 0
-        if price > df['EMA20'].iloc[i]: score += 1
-        if price > df['EMA50'].iloc[i]: score += 1
-        if price > df['VWAP'].iloc[i]: score += 1
-        if df['RSI'].iloc[i] > 60: score += 1
-        if df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*3: score += 1
+        vol = df['Volume'].iloc[i] > df['AvgVol'].iloc[i] * 1.5
+        buy_cond = price > df['EMA20'].iloc[i] and price > df['VWAP'].iloc[i] and df['RSI'].iloc[i] > 52
+        sell_cond = price < df['EMA20'].iloc[i] and price < df['VWAP'].iloc[i] and df['RSI'].iloc[i] < 48
 
-        confidence = f"{score}/5"
-
-        if (
-            df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*2.5 and
-            price > df['EMA20'].iloc[i] > df['EMA50'].iloc[i] and
-            price > df['VWAP'].iloc[i] and
-            df['RSI'].iloc[i] > 55 and
-            df['StrongCandle'].iloc[i]
-        ):
+        if vol and buy_cond:
             if last_signal != "BUY":
                 entries.append({
                     "Stock": stock,
@@ -124,17 +98,11 @@ def big_player(df, stock):
                     "Price": round(price,2),
                     "TimeRaw": df.index[i],
                     "Time": clean_time(df.index[i]),
-                    "Confidence": confidence
+                    "Confidence": "MEDIUM"
                 })
                 last_signal = "BUY"
 
-        elif (
-            df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*2.5 and
-            price < df['EMA20'].iloc[i] < df['EMA50'].iloc[i] and
-            price < df['VWAP'].iloc[i] and
-            df['RSI'].iloc[i] < 45 and
-            df['StrongCandle'].iloc[i]
-        ):
+        elif vol and sell_cond:
             if last_signal != "SELL":
                 entries.append({
                     "Stock": stock,
@@ -142,11 +110,11 @@ def big_player(df, stock):
                     "Price": round(price,2),
                     "TimeRaw": df.index[i],
                     "Time": clean_time(df.index[i]),
-                    "Confidence": confidence
+                    "Confidence": "MEDIUM"
                 })
                 last_signal = "SELL"
 
-    return entries[-5:] if entries else []
+    return entries[-10:]
 
 def strength_meter(df):
     if df.empty:
@@ -201,14 +169,14 @@ if st.session_state.live_big:
                 y=[row["Price"]],
                 mode="markers+text",
                 marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red"),
-                text=[f"{row['Type']} ({row['Confidence']})"],
+                text=[row["Type"]],
                 textposition="top center"
             ))
 
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST + SAVE
+# BACKTEST
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
@@ -228,35 +196,29 @@ if st.checkbox("📊 Enable Backtest"):
 
         df = df.between_time("09:15","15:30")
 
-        if df.empty:
-            continue
-
         bt_big += big_player(df, s)
 
     bt_df = pd.DataFrame(bt_big)
 
-    if bt_df.empty:
-        st.error("No Backtest Data")
-    else:
-        bt_df = bt_df.sort_values(by="TimeRaw")
+    if not bt_df.empty:
+        st.dataframe(bt_df)
 
-        st.dataframe(bt_df[["Stock","Type","Price","Time","Confidence"]])
-
-        # SAVE FILE
-        file_path = f"{BACKTEST_DIR}/backtest_{bt_date}.csv"
+        file_path = f"{BACKTEST_DIR}/bt_{bt_date}.csv"
         bt_df.to_csv(file_path, index=False)
         st.success(f"Saved: {file_path}")
+    else:
+        st.warning("No Backtest Data")
 
 # =============================
 # BACKTEST FOLDER VIEW
 # =============================
-st.subheader("📂 BACKTEST FOLDER")
+st.subheader("📂 BACKTEST FILES")
 
 files = os.listdir(BACKTEST_DIR)
 
 if files:
-    selected_file = st.selectbox("Select File", files)
-    df_saved = pd.read_csv(os.path.join(BACKTEST_DIR, selected_file))
+    f = st.selectbox("Select File", files)
+    df_saved = pd.read_csv(os.path.join(BACKTEST_DIR, f))
     st.dataframe(df_saved)
 else:
-    st.info("No saved backtests yet")
+    st.info("No files yet")
