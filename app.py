@@ -9,16 +9,14 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V21", layout="wide")
-st.title("🚀 NSE AI PRO V21 (SL + TP SYSTEM)")
+st.set_page_config(page_title="🔥 NSE AI PRO V20", layout="wide")
+st.title("🚀 NSE AI PRO V20 (SMART TRADING SYSTEM)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
 # STOCKS
 # =============================
-stocks = [
-    "HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK","INFY","TCS","ITC","RELIANCE","LT"
-]
+stocks = ["HDFCBANK","ICICIBANK","SBIN","RELIANCE","INFY","TCS","ITC","LT","AXISBANK","KOTAKBANK"]
 
 # =============================
 # DATA
@@ -38,6 +36,7 @@ def get_15m_trend(stock):
         return "UNKNOWN"
 
     ema = df['Close'].ewm(span=20).mean()
+
     return "UP" if df['Close'].iloc[-1] > ema.iloc[-1] else "DOWN"
 
 # =============================
@@ -46,29 +45,17 @@ def get_15m_trend(stock):
 def get_sr(df):
     if df.empty:
         return None, None
+
     recent = df.tail(50)
     return round(recent['Low'].min(),2), round(recent['High'].max(),2)
 
-# =============================
-# SL / TP LOGIC
-# =============================
-def calc_sl_tp(df, price, signal_type):
-    recent_low = df['Low'].tail(20).min()
-    recent_high = df['High'].tail(20).max()
-
-    if signal_type == "BIG BUY":
-        sl = recent_low
-        risk = price - sl
-        tp = price + (risk * 1.5)
-    else:
-        sl = recent_high
-        risk = sl - price
-        tp = price - (risk * 1.5)
-
-    return round(sl,2), round(tp,2)
+def sr_status(price, support, resistance):
+    near_support = "YES" if support and abs(price-support)/price < 0.01 else "NO"
+    break_res = "YES" if resistance and price > resistance else "NO"
+    return near_support, break_res
 
 # =============================
-# BIG PLAYER
+# BIG PLAYER LOGIC
 # =============================
 def big_player(df, stock):
     if df.empty or len(df) < 30:
@@ -98,10 +85,10 @@ def big_player(df, stock):
         sell = price<df['EMA20'].iloc[i] and price<df['VWAP'].iloc[i] and df['RSI'].iloc[i]<48
 
         if vol and buy:
-            signals.append({"Stock":stock,"Type":"BIG BUY","Price":price,"TimeRaw":df.index[i]})
+            signals.append({"Stock":stock,"Type":"BIG BUY","Price":price,"TimeRaw":df.index[i],"Time":str(df.index[i])})
 
         elif vol and sell:
-            signals.append({"Stock":stock,"Type":"BIG SELL","Price":price,"TimeRaw":df.index[i]})
+            signals.append({"Stock":stock,"Type":"BIG SELL","Price":price,"TimeRaw":df.index[i],"Time":str(df.index[i])})
 
     return signals[-10:]
 
@@ -115,11 +102,13 @@ if st.button("🔍 START LIVE"):
     for s in stocks:
 
         df5 = load_data(s,"5m")
+        df15 = load_data(s,"15m")
+
         if df5.empty:
             continue
 
-        trend = get_15m_trend(s)
         support,resistance = get_sr(df5)
+        trend = get_15m_trend(s)
 
         signals = big_player(df5,s)
 
@@ -127,21 +116,19 @@ if st.button("🔍 START LIVE"):
 
             price = sig["Price"]
 
-            # FILTER BY TREND
-            if not (
+            near_sup, break_res = sr_status(price,support,resistance)
+
+            trend_match = "YES" if (
                 (trend=="UP" and sig["Type"]=="BIG BUY") or
                 (trend=="DOWN" and sig["Type"]=="BIG SELL")
-            ):
-                continue
+            ) else "NO"
 
-            sl,tp = calc_sl_tp(df5,price,sig["Type"])
-
-            sig["Entry"] = price
-            sig["Stoploss"] = sl
-            sig["Target"] = tp
             sig["Support"] = support
             sig["Resistance"] = resistance
+            sig["Near_Support"] = near_sup
+            sig["Resistance_Break"] = break_res
             sig["Trend"] = trend
+            sig["Trend_Match"] = trend_match
 
             final.append(sig)
 
@@ -154,7 +141,7 @@ if st.session_state.live_big:
 
     df = pd.DataFrame(st.session_state.live_big)
 
-    st.subheader("🐋 BIG PLAYER WITH SL/TP")
+    st.subheader("🐋 SMART BIG PLAYER SIGNALS")
     st.dataframe(df, use_container_width=True)
 
     stock = st.selectbox("📈 Chart", stocks)
@@ -175,10 +162,61 @@ if st.session_state.live_big:
         for _,r in df_sig.iterrows():
             fig.add_trace(go.Scatter(
                 x=[r["TimeRaw"]],
-                y=[r["Entry"]],
-                mode="markers+text",
-                text=[f"{r['Type']} SL:{r['Stoploss']} TP:{r['Target']}"],
+                y=[r["Price"]],
+                mode="markers",
                 marker=dict(size=10,color="green" if r["Type"]=="BIG BUY" else "red")
             ))
 
         st.plotly_chart(fig,use_container_width=True)
+
+# =============================
+# BACKTEST
+# =============================
+if st.checkbox("📊 Enable Backtest"):
+
+    bt_date = st.date_input("Select Date",datetime.now().date()-timedelta(days=1))
+
+    bt_final = []
+
+    for s in stocks:
+
+        df = yf.Ticker(s+".NS").history(
+            start=bt_date,
+            end=bt_date+timedelta(days=1),
+            interval="5m"
+        )
+
+        if df.empty:
+            continue
+
+        df = df.between_time("09:15","15:30")
+
+        support,resistance = get_sr(df)
+        signals = big_player(df,s)
+
+        trend = get_15m_trend(s)
+
+        for sig in signals:
+
+            price = sig["Price"]
+
+            near_sup, break_res = sr_status(price,support,resistance)
+
+            trend_match = "YES" if (
+                (trend=="UP" and sig["Type"]=="BIG BUY") or
+                (trend=="DOWN" and sig["Type"]=="BIG SELL")
+            ) else "NO"
+
+            sig["Support"] = support
+            sig["Resistance"] = resistance
+            sig["Near_Support"] = near_sup
+            sig["Resistance_Break"] = break_res
+            sig["Trend"] = trend
+            sig["Trend_Match"] = trend_match
+
+            bt_final.append(sig)
+
+    bt_df = pd.DataFrame(bt_final)
+
+    st.subheader("📊 Backtest Results")
+    st.dataframe(bt_df, use_container_width=True)
