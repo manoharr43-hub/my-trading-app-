@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
@@ -10,10 +10,10 @@ from sklearn.linear_model import LinearRegression
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V3", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V4", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO V3 - SMART MONEY SYSTEM")
+st.title("🚀 NSE AI PRO V4 - SMART MONEY DASHBOARD")
 st.markdown("---")
 
 # =============================
@@ -46,7 +46,7 @@ def rsi(df, period=14):
     return 100 - (100 / (1 + rs))
 
 # =============================
-# AI PREDICTION
+# AI PREDICT
 # =============================
 def ai_predict(df):
     df = df.copy().dropna()
@@ -90,6 +90,35 @@ def big_player(df):
     return None, None
 
 # =============================
+# STRENGTH SCORE
+# =============================
+def strength_score(df):
+    df = df.copy()
+
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['AvgVol'] = df['Volume'].rolling(20).mean()
+
+    r = rsi(df).iloc[-1]
+
+    score = 0
+
+    if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]:
+        score += 2
+    else:
+        score -= 2
+
+    if df['Volume'].iloc[-1] > df['AvgVol'].iloc[-1]:
+        score += 1
+
+    if r < 70:
+        score += 1
+    else:
+        score -= 1
+
+    return score
+
+# =============================
 # ANALYSIS
 # =============================
 def analyze(df):
@@ -98,7 +127,6 @@ def analyze(df):
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['AvgVol'] = df['Volume'].rolling(20).mean()
 
     r = rsi(df)
     pred = ai_predict(df)
@@ -108,7 +136,7 @@ def analyze(df):
     if pred:
         signal = "BUY" if pred > df['Close'].iloc[-1] else "SELL"
 
-    vol_ok = df['Volume'].iloc[-1] > df['AvgVol'].iloc[-1]
+    vol_ok = df['Volume'].iloc[-1] > df['Volume'].rolling(20).mean().iloc[-1]
 
     trend_up = df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]
     trend_down = df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1]
@@ -137,23 +165,13 @@ def plot_chart(df, stock):
         close=df['Close']
     ))
 
-    # BREAKOUT LEVELS
-    opening = df.between_time("09:15","09:30")
-
-    if len(opening) > 2:
-        high = opening['High'].max()
-        low = opening['Low'].min()
-
-        fig.add_hline(y=high, line_dash="dot")
-        fig.add_hline(y=low, line_dash="dot")
-
-    # BIG PLAYER ENTRY
-    sig, level = big_player(df)
+    # BIG PLAYER
+    sig, lvl = big_player(df)
 
     if sig == "BUY":
         fig.add_trace(go.Scatter(
             x=[df.index[-1]],
-            y=[level],
+            y=[lvl],
             mode="markers+text",
             text=["🟢 BIG BUY"],
             marker=dict(size=14)
@@ -162,7 +180,7 @@ def plot_chart(df, stock):
     elif sig == "SELL":
         fig.add_trace(go.Scatter(
             x=[df.index[-1]],
-            y=[level],
+            y=[lvl],
             mode="markers+text",
             text=["🔴 BIG SELL"],
             marker=dict(size=14)
@@ -172,10 +190,12 @@ def plot_chart(df, stock):
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# LIVE RUN
+# MAIN RUN
 # =============================
-if st.button("🔍 START LIVE V3"):
+if st.button("🚀 RUN V4 DASHBOARD"):
+
     results = []
+    strength_list = []
 
     for s in all_stocks:
         try:
@@ -197,21 +217,47 @@ if st.button("🔍 START LIVE V3"):
                     "FINAL": final
                 })
 
+            score = strength_score(df)
+
+            strength_list.append({
+                "Stock": s,
+                "Score": score
+            })
+
         except:
             pass
 
-    st.session_state.res = results
+    st.session_state.results = results
+    st.session_state.strength = strength_list
 
 # =============================
 # DISPLAY
 # =============================
-if "res" in st.session_state:
-    df_res = pd.DataFrame(st.session_state.res)
+if "results" in st.session_state:
 
-    st.subheader("📊 LIVE SIGNALS V3")
+    df_res = pd.DataFrame(st.session_state.results)
+
+    st.subheader("📊 LIVE SIGNALS V4")
     st.dataframe(df_res, use_container_width=True)
 
-    stock = st.selectbox("📈 Chart", df_res["Stock"].unique())
+# =============================
+# STRONG / WEAK STOCKS
+# =============================
+if "strength" in st.session_state:
+
+    df_strength = pd.DataFrame(st.session_state.strength)
+
+    strong = df_strength.sort_values("Score", ascending=False).head(5)
+    weak = df_strength.sort_values("Score", ascending=True).head(5)
+
+    st.markdown("---")
+    st.subheader("🟢 TOP 5 STRONG STOCKS")
+    st.dataframe(strong, use_container_width=True)
+
+    st.subheader("🔴 TOP 5 WEAK STOCKS")
+    st.dataframe(weak, use_container_width=True)
+
+    stock = st.selectbox("📈 Chart View", df_strength["Stock"])
 
     df_chart = load_data(stock)
     df_chart = df_chart.between_time("09:15","15:30")
