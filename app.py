@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V17", layout="wide")
-st.title("🚀 NSE AI PRO V17 (SMART TRADING TERMINAL)")
+st.set_page_config(page_title="🔥 NSE AI PRO V18", layout="wide")
+st.title("🚀 NSE AI PRO V18 (FINAL STABLE)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -31,63 +31,19 @@ if "strength" not in st.session_state:
 # =============================
 # STOCKS
 # =============================
-stocks = [
-    "HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK","INDUSINDBK",
-    "INFY","TCS","WIPRO","HCLTECH","TECHM",
-    "ITC","HINDUNILVR","NESTLEIND","BRITANNIA","DABUR",
-    "RELIANCE","ONGC","BPCL","IOC","GAIL",
-    "TATAMOTORS","MARUTI","M&M","BAJAJ-AUTO","HEROMOTOCO",
-    "SUNPHARMA","DRREDDY","CIPLA","DIVISLAB","LUPIN",
-    "TATASTEEL","JSWSTEEL","HINDALCO","COALINDIA",
-    "LT","ULTRACEMCO","GRASIM","ADANIENT","ADANIPORTS"
-]
+stocks = ["HDFCBANK","ICICIBANK","SBIN","RELIANCE","INFY","TCS","ITC","LT","AXISBANK","KOTAKBANK"]
 
 # =============================
 # FUNCTIONS
 # =============================
 def clean_time(ts):
-    try:
-        return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
-    except:
-        return ""
+    return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
 
 @st.cache_data(ttl=60)
 def load_data(stock, period="1d"):
-    try:
-        df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
-        return df.between_time("09:15","15:30").dropna()
-    except:
-        return pd.DataFrame()
+    df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
+    return df.between_time("09:15","15:30") if not df.empty else pd.DataFrame()
 
-# ===== SUPPORT / RESISTANCE =====
-def get_support_resistance(df):
-    if df.empty:
-        return None, None
-    recent = df.tail(50)
-    return round(recent['Low'].min(),2), round(recent['High'].max(),2)
-
-# ===== MARKET TREND =====
-@st.cache_data(ttl=60)
-def get_market_trend():
-    df = yf.Ticker("^NSEI").history(period="1d", interval="5m")
-    if df.empty:
-        return "UNKNOWN"
-    return "BULLISH 📈" if df['Close'].iloc[-1] > df['Open'].iloc[0] else "BEARISH 📉"
-
-# ===== NEWS =====
-def get_news(stock):
-    try:
-        ticker = yf.Ticker(stock + ".NS")
-        news = ticker.news
-        if not news:
-            return ["No news"]
-        return [n['title'] for n in news[:5]]
-    except:
-        return ["News not available"]
-
-# =============================
-# BIG PLAYER LOGIC
-# =============================
 def big_player(df, stock):
     if df.empty or len(df) < 30:
         return []
@@ -113,82 +69,41 @@ def big_player(df, stock):
         price = df['Close'].iloc[i]
 
         vol = df['Volume'].iloc[i] > df['AvgVol'].iloc[i] * 1.5
-        buy_cond = price > df['EMA20'].iloc[i] and price > df['VWAP'].iloc[i] and df['RSI'].iloc[i] > 52
-        sell_cond = price < df['EMA20'].iloc[i] and price < df['VWAP'].iloc[i] and df['RSI'].iloc[i] < 48
+        buy = price > df['EMA20'].iloc[i] and price > df['VWAP'].iloc[i] and df['RSI'].iloc[i] > 52
+        sell = price < df['EMA20'].iloc[i] and price < df['VWAP'].iloc[i] and df['RSI'].iloc[i] < 48
 
-        if vol and buy_cond:
-            if last_signal != "BUY":
-                entries.append({
-                    "Stock": stock,
-                    "Type": "BIG BUY",
-                    "Price": round(price,2),
-                    "TimeRaw": df.index[i],
-                    "Time": clean_time(df.index[i]),
-                    "Confidence": "MEDIUM"
-                })
-                last_signal = "BUY"
+        if vol and buy and last_signal != "BUY":
+            entries.append({"Stock":stock,"Type":"BIG BUY","Price":price,"TimeRaw":df.index[i],"Time":clean_time(df.index[i]),"Confidence":"MEDIUM"})
+            last_signal = "BUY"
 
-        elif vol and sell_cond:
-            if last_signal != "SELL":
-                entries.append({
-                    "Stock": stock,
-                    "Type": "BIG SELL",
-                    "Price": round(price,2),
-                    "TimeRaw": df.index[i],
-                    "Time": clean_time(df.index[i]),
-                    "Confidence": "MEDIUM"
-                })
-                last_signal = "SELL"
+        elif vol and sell and last_signal != "SELL":
+            entries.append({"Stock":stock,"Type":"BIG SELL","Price":price,"TimeRaw":df.index[i],"Time":clean_time(df.index[i]),"Confidence":"MEDIUM"})
+            last_signal = "SELL"
 
     return entries[-10:]
-
-def strength_meter(df):
-    if df.empty:
-        return 0
-    return round(((df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1) * 100, 2)
-
-# =============================
-# MARKET TREND DISPLAY
-# =============================
-trend = get_market_trend()
-st.subheader(f"🌍 Market Trend: {trend}")
 
 # =============================
 # LIVE
 # =============================
 if st.button("🔍 START LIVE"):
-    all_big, strength_data = [], []
-
+    all_big = []
     for s in stocks:
         df = load_data(s)
-        if df.empty:
-            continue
-
         all_big += big_player(df, s)
-        strength_data.append({"Stock": s, "Strength %": strength_meter(df)})
-
     st.session_state.live_big = sorted(all_big, key=lambda x: x["TimeRaw"])
-    st.session_state.strength = pd.DataFrame(strength_data).sort_values(by="Strength %", ascending=False)
 
 # =============================
-# DISPLAY LIVE
+# LIVE DISPLAY
 # =============================
 if st.session_state.live_big:
 
     df_signals = pd.DataFrame(st.session_state.live_big)
-
-    st.subheader("🐋 BIG PLAYER SIGNALS")
-    st.dataframe(df_signals.sort_values(by="TimeRaw", ascending=False), use_container_width=True)
+    st.dataframe(df_signals)
 
     stock = st.selectbox("📈 Chart", stocks)
-
     df_chart = load_data(stock)
 
     if not df_chart.empty:
-
-        support, resistance = get_support_resistance(df_chart)
-        st.markdown(f"**🟢 Support:** {support} | 🔴 Resistance: {resistance}")
-
         fig = go.Figure(data=[go.Candlestick(
             x=df_chart.index,
             open=df_chart['Open'],
@@ -203,21 +118,14 @@ if st.session_state.live_big:
             fig.add_trace(go.Scatter(
                 x=[row["TimeRaw"]],
                 y=[row["Price"]],
-                mode="markers+text",
-                marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red"),
-                text=[row["Type"]],
-                textposition="top center"
+                mode="markers",
+                marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red")
             ))
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ===== NEWS =====
-        st.subheader("📰 Latest News")
-        for n in get_news(stock):
-            st.write("•", n)
-
 # =============================
-# BACKTEST (same as before)
+# BACKTEST (FINAL FIXED)
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
@@ -240,22 +148,47 @@ if st.checkbox("📊 Enable Backtest"):
 
     bt_df = pd.DataFrame(bt_big)
 
+    # ===== ALWAYS SHOW CHART =====
+    st.subheader("📊 Backtest Chart")
+
+    stock_bt = st.selectbox("Select Stock", stocks, key="bt")
+
+    df_chart_bt = yf.Ticker(stock_bt + ".NS").history(
+        start=bt_date,
+        end=bt_date + timedelta(days=1),
+        interval="5m"
+    )
+
+    if not df_chart_bt.empty:
+
+        df_chart_bt = df_chart_bt.between_time("09:15","15:30")
+
+        fig_bt = go.Figure(data=[go.Candlestick(
+            x=df_chart_bt.index,
+            open=df_chart_bt['Open'],
+            high=df_chart_bt['High'],
+            low=df_chart_bt['Low'],
+            close=df_chart_bt['Close']
+        )])
+
+        if not bt_df.empty:
+            df_bt_stock = bt_df[bt_df["Stock"] == stock_bt]
+
+            for _, row in df_bt_stock.iterrows():
+                fig_bt.add_trace(go.Scatter(
+                    x=[row["TimeRaw"]],
+                    y=[row["Price"]],
+                    mode="markers",
+                    marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red")
+                ))
+
+        st.plotly_chart(fig_bt, use_container_width=True)
+
+    else:
+        st.error("No data for selected date")
+
+    # ===== TABLE =====
     if not bt_df.empty:
         st.dataframe(bt_df)
-        file_path = f"{BACKTEST_DIR}/bt_{bt_date}.csv"
-        bt_df.to_csv(file_path, index=False)
-        st.success(f"Saved: {file_path}")
     else:
-        st.warning("No Backtest Data")
-
-# =============================
-# FILE VIEW
-# =============================
-st.subheader("📂 BACKTEST FILES")
-
-files = os.listdir(BACKTEST_DIR)
-if files:
-    f = st.selectbox("Select File", files)
-    st.dataframe(pd.read_csv(os.path.join(BACKTEST_DIR, f)))
-else:
-    st.info("No files yet")
+        st.warning("No signals (chart still visible)")
