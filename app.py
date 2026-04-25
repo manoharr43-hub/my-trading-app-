@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.7", layout="wide")
-st.title("🚀 NSE AI PRO V9.7 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.8", layout="wide")
+st.title("🚀 NSE AI PRO V9.8 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -145,11 +145,14 @@ if len(st.session_state.live_big) > 0:
     df_big = pd.DataFrame(st.session_state.live_big)
     df_big = df_big[df_big["Stock"] == stock]
     for _, row in df_big.iterrows():
-        fig.add_trace(go.Scatter(x=[row["TimeRaw"]],y=[row["Price"]],
-                                 mode="markers+text",
-                                 marker=dict(size=10,color="green" if row["Type"]=="BIG BUY" else "red"),
-                                 text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
-                                 textposition="top center"))
+        fig.add_trace(go.Scatter(
+            x=[row["TimeRaw"]],
+            y=[row["Price"]],
+            mode="markers+text",
+            marker=dict(size=10,color="green" if row["Type"]=="BIG BUY" else "red"),
+            text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],  # ✅ Properly closed string
+            textposition="top center"
+        ))
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
@@ -207,5 +210,4 @@ if st.checkbox("📊 Enable Backtest"):
                     x=[row["TimeRaw"]],
                     y=[row["Price"]],
                     mode="markers+text",
-                    marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
-                    text=[f"{row['Type']} @ {row['Price']} ({row['Time
+                    marker=dict(size=12, color="green
