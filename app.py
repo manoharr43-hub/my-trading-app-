@@ -2,107 +2,60 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
-from sklearn.linear_model import LinearRegression
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V8", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V9", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO V8 - SMART MONEY + MULTI TIMEFRAME")
+st.title("🚀 NSE AI PRO V9 - SECTOR + BACKTEST FIXED")
 
 # =============================
-# STOCK LIST
+# SESSION
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT"]
+if "bt_history" not in st.session_state:
+    st.session_state.bt_history = []
 
 # =============================
-# TIMEFRAMES
+# SECTORS
 # =============================
-timeframes = {
-    "1m": "1m",
-    "5m": "5m",
-    "15m": "15m"
+sector_map = {
+    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
+    "IT": ["TCS","INFY","HCLTECH","WIPRO","TECHM"],
+    "Auto": ["MARUTI","M&M","TATAMOTORS"],
+    "FMCG": ["ITC","HINDUNILVR","NESTLEIND"],
+    "Energy": ["RELIANCE","ONGC","NTPC"]
 }
 
+all_stocks = list(set(sum(sector_map.values(), [])))
+
 # =============================
-# DATA LOADER
+# DATA
 # =============================
 @st.cache_data(ttl=300)
-def load_data(stock, tf):
-    return yf.Ticker(stock + ".NS").history(period="5d", interval=tf)
+def load_data(stock):
+    return yf.Ticker(stock + ".NS").history(period="5d", interval="5m")
 
 # =============================
 # RSI
 # =============================
-def rsi(df, period=14):
+def rsi(df):
     delta = df['Close'].diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
     rs = gain / (loss + 1e-10)
     return 100 - (100 / (1 + rs))
 
 # =============================
-# SMART MONEY DETECTION
-# =============================
-def smart_money(df):
-    volume_mean = df['Volume'].rolling(20).mean()
-    last_vol = df['Volume'].iloc[-1]
-
-    high = df['High'].rolling(20).max().iloc[-2]
-    low = df['Low'].rolling(20).min().iloc[-2]
-    price = df['Close'].iloc[-1]
-
-    # 🔥 Volume trap logic
-    if last_vol > volume_mean.iloc[-1] * 2:
-
-        # breakout + fake move detection
-        if price > high:
-            return "⚠️ BUY TRAP (Distribution Risk)"
-        elif price < low:
-            return "⚠️ SELL TRAP (Accumulation Risk)"
-
-        return "🔥 SMART MONEY ACTIVITY"
-
-    return "NORMAL"
-
-# =============================
-# AI PREDICT
-# =============================
-def ai_predict(df):
-    df = df.dropna()
-    if len(df) < 30:
-        return None
-
-    df['Target'] = df['Close'].shift(-1)
-    df.dropna(inplace=True)
-
-    X = df[['Close','Volume']]
-    y = df['Target']
-
-    model = LinearRegression()
-    model.fit(X, y)
-
-    return model.predict(X.iloc[-1].values.reshape(1, -1))[0]
-
-# =============================
-# ANALYSIS ENGINE
+# ANALYSIS
 # =============================
 def analyze(df):
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-
-    pred = ai_predict(df)
-    price = df['Close'].iloc[-1]
-
-    signal = "WAIT"
-    if pred:
-        signal = "BUY" if pred > price else "SELL"
 
     r = rsi(df).iloc[-1]
 
@@ -111,15 +64,25 @@ def analyze(df):
     up = df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]
     down = df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1]
 
-    final = "WAIT"
+    score = 0
 
-    if signal == "BUY" and r < 70 and vol_ok and up:
-        final = "STRONG BUY"
+    if up:
+        score += 2
+    if vol_ok:
+        score += 1
+    if r < 70:
+        score += 1
 
-    elif signal == "SELL" and r > 30 and vol_ok and down:
-        final = "STRONG SELL"
+    sell_score = 0
 
-    return signal, round(r,2), final
+    if down:
+        sell_score += 2
+    if vol_ok:
+        sell_score += 1
+    if r > 30:
+        sell_score += 1
+
+    return score, sell_score
 
 # =============================
 # ENTRY SYSTEM
@@ -128,103 +91,128 @@ def entry_system(df):
     price = df['Close'].iloc[-1]
     atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
 
-    sl = price - atr * 1.5
-    tgt = price + atr * 3
-
-    return round(sl,2), round(tgt,2)
+    return round(price - atr*1.5,2), round(price + atr*3,2)
 
 # =============================
-# CHART (SAFE)
+# SECTOR SCANNER
 # =============================
-def show_chart(df, stock, tf):
+st.subheader("📡 NSE SECTOR SCANNER")
 
-    fig = go.Figure()
+buy_list = []
+sell_list = []
 
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close']
-    ))
+for sector, stocks in sector_map.items():
 
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df['Close'].ewm(span=20).mean(),
-        name="EMA20"
-    ))
+    st.markdown(f"### 🔹 {sector}")
 
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df['Close'].ewm(span=50).mean(),
-        name="EMA50"
-    ))
+    table = []
 
-    fig.update_layout(
-        title=f"{stock} ({tf})",
-        height=500
-    )
+    for s in stocks:
 
-    st.plotly_chart(fig, use_container_width=True, key=f"{stock}_{tf}")
+        df = load_data(s)
 
-# =============================
-# UI - TIMEFRAME SELECT
-# =============================
-st.subheader("⏱ MULTI TIMEFRAME ANALYSIS")
+        if df is None or len(df) < 50:
+            continue
 
-selected_tf = st.selectbox("Select Timeframe", list(timeframes.keys()))
+        buy_score, sell_score = analyze(df)
+        sl, tgt = entry_system(df)
+
+        table.append({
+            "Stock": s,
+            "BUY_SCORE": buy_score,
+            "SELL_SCORE": sell_score,
+            "SL": sl,
+            "TARGET": tgt
+        })
+
+    df_sector = pd.DataFrame(table)
+
+    st.dataframe(df_sector)
 
 # =============================
-# LIVE SCANNER
+# TOP 5 BUY / SELL STRONG
 # =============================
-st.subheader("📡 SMART MONEY SCANNER")
+st.subheader("🔥 TOP 5 BUY / SELL STRONG")
 
-buy, sell = [], []
+score_table = []
 
-for s in stocks:
+for s in all_stocks:
 
-    df = load_data(s, timeframes[selected_tf])
+    df = load_data(s)
 
     if df is None or len(df) < 50:
         continue
 
-    signal, r, final = analyze(df)
-    sm = smart_money(df)
-    sl, tgt = entry_system(df)
+    buy_score, sell_score = analyze(df)
 
-    if final == "STRONG BUY":
-        buy.append(s)
-    elif final == "STRONG SELL":
-        sell.append(s)
+    score_table.append({
+        "Stock": s,
+        "BUY_SCORE": buy_score,
+        "SELL_SCORE": sell_score
+    })
+
+df_score = pd.DataFrame(score_table)
+
+top_buy = df_score.sort_values("BUY_SCORE", ascending=False).head(5)
+top_sell = df_score.sort_values("SELL_SCORE", ascending=False).head(5)
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.success("🚀 BUY")
-    st.write(buy)
+    st.success("🚀 TOP 5 BUY STRONG")
+    st.dataframe(top_buy)
 
 with col2:
-    st.error("💀 SELL")
-    st.write(sell)
+    st.error("💀 TOP 5 SELL STRONG")
+    st.dataframe(top_sell)
 
 # =============================
-# SINGLE CHART
+# BACKTEST FIXED
 # =============================
-st.subheader("📊 CHART VIEW")
+st.subheader("📊 BACKTEST FIXED")
 
-selected = st.selectbox("Select Stock", stocks)
+bt_days = st.slider("Backtest Days", 1, 10, 5)
 
-df = load_data(selected, timeframes[selected_tf])
+if st.button("RUN BACKTEST"):
 
-if df is not None:
-    show_chart(df, selected, selected_tf)
+    results = []
+
+    for s in all_stocks:
+
+        df = yf.Ticker(s + ".NS").history(period=f"{bt_days}d", interval="5m")
+
+        if df is None or len(df) < 50:
+            continue
+
+        buy_score, sell_score = analyze(df)
+        sl, tgt = entry_system(df)
+
+        results.append({
+            "Stock": s,
+            "BUY_SCORE": buy_score,
+            "SELL_SCORE": sell_score,
+            "SL": sl,
+            "TARGET": tgt
+        })
+
+    res_df = pd.DataFrame(results)
+
+    st.session_state.bt_history.append(res_df)
+
+    st.success("✅ BACKTEST DONE")
+    st.dataframe(res_df)
 
 # =============================
-# SMART MONEY DETAILS
+# BACKTEST HISTORY
 # =============================
-st.subheader("🧠 SMART MONEY DETECTION")
+st.subheader("📁 BACKTEST HISTORY")
 
-df_sm = load_data(selected, timeframes[selected_tf])
+if st.session_state.bt_history:
 
-if df_sm is not None:
-    st.info(smart_money(df_sm))
+    for i, df in enumerate(st.session_state.bt_history[::-1]):
+
+        with st.expander(f"Run #{i+1}"):
+            st.dataframe(df)
+
+else:
+    st.info("No backtest yet")
