@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.6", layout="wide")
-st.title("🚀 NSE AI PRO V9.6 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.7", layout="wide")
+st.title("🚀 NSE AI PRO V9.7 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -61,6 +61,7 @@ def load_data(stock, period="1d"):
     df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
     if df.empty:
         return pd.DataFrame()
+    df.index = pd.to_datetime(df.index)  # force DatetimeIndex
     return df.between_time("09:15","15:30")
 
 # =============================
@@ -122,14 +123,15 @@ if st.button("🔍 START LIVE"):
 # =============================
 if len(st.session_state.live_big) > 0:
     st.subheader("🐋 BIG PLAYER")
-    df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time","TimeRaw"]]
+    # Only show clean Time column
+    df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]]
     st.dataframe(df_signals)
 
     # BUY & SELL BOXES
     st.markdown("### ✅ BIG BUY BOX")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"][["Stock","Price","Time"]])
+    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"])
     st.markdown("### ❌ BIG SELL BOX")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"][["Stock","Price","Time"]])
+    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"])
 
     if not st.session_state.strength.empty:
         st.subheader("🔥 STRONG STOCKS"); st.dataframe(st.session_state.strength.head(5))
@@ -140,7 +142,8 @@ if len(st.session_state.live_big) > 0:
     fig = go.Figure(data=[go.Candlestick(x=df_chart.index,open=df_chart['Open'],
                                          high=df_chart['High'],low=df_chart['Low'],
                                          close=df_chart['Close'])])
-    df_big = df_signals[df_signals["Stock"] == stock]
+    df_big = pd.DataFrame(st.session_state.live_big)
+    df_big = df_big[df_big["Stock"] == stock]
     for _, row in df_big.iterrows():
         fig.add_trace(go.Scatter(x=[row["TimeRaw"]],y=[row["Price"]],
                                  mode="markers+text",
@@ -162,9 +165,11 @@ if st.checkbox("📊 Enable Backtest"):
                 start=bt_date,
                 end=bt_date + timedelta(days=1),
                 interval="5m"
-            ).between_time("09:15","15:30")
-
-            if df.empty: continue
+            )
+            if df.empty or not isinstance(df.index, pd.DatetimeIndex):
+                continue
+            df.index = pd.to_datetime(df.index)
+            df = df.between_time("09:15","15:30")
             bt_big += big_player(df, s)
         except Exception as e:
             st.warning(f"{s} backtest error: {e}")
@@ -175,6 +180,7 @@ if st.checkbox("📊 Enable Backtest"):
 
     if len(bt_big) > 0:
         st.subheader("🐋 BACKTEST RESULTS")
+        # Only show clean Time column
         st.dataframe(bt_df[["Stock","Type","Price","Time"]])
 
         stock = st.selectbox("📉 Backtest Chart", stocks)
@@ -182,25 +188,24 @@ if st.checkbox("📊 Enable Backtest"):
             start=bt_date,
             end=bt_date + timedelta(days=1),
             interval="5m"
-        ).between_time("09:15","15:30")
+        )
+        if not df_chart.empty:
+            df_chart.index = pd.to_datetime(df_chart.index)
+            df_chart = df_chart.between_time("09:15","15:30")
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=df_chart.index,
-            open=df_chart['Open'],
-            high=df_chart['High'],
-            low=df_chart['Low'],
-            close=df_chart['Close']
-        )])
+            fig = go.Figure(data=[go.Candlestick(
+                x=df_chart.index,
+                open=df_chart['Open'],
+                high=df_chart['High'],
+                low=df_chart['Low'],
+                close=df_chart['Close']
+            )])
 
-        df_bt = bt_df[bt_df["Stock"] == stock]
-        for _, row in df_bt.iterrows():
-            fig.add_trace(go.Scatter(
-                x=[row["TimeRaw"]],
-                y=[row["Price"]],
-                mode="markers+text",
-                marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
-                text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
-                textposition="top center"
-            ))
-
-        st.plotly_chart(fig, use_container_width=True)
+            df_bt = bt_df[bt_df["Stock"] == stock]
+            for _, row in df_bt.iterrows():
+                fig.add_trace(go.Scatter(
+                    x=[row["TimeRaw"]],
+                    y=[row["Price"]],
+                    mode="markers+text",
+                    marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
+                    text=[f"{row['Type']} @ {row['Price']} ({row['Time
