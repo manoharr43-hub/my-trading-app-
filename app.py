@@ -5,13 +5,21 @@ import numpy as np
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
+import os
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V12", layout="wide")
-st.title("🚀 NSE AI PRO V12 (NO DUPLICATE SIGNALS)")
+st.set_page_config(page_title="🔥 NSE AI PRO V13", layout="wide")
+st.title("🚀 NSE AI PRO V13 (BACKTEST FOLDER + FINAL)")
 st_autorefresh(interval=60000, key="refresh")
+
+# =============================
+# BACKTEST FOLDER SETUP
+# =============================
+BACKTEST_DIR = "backtests"
+if not os.path.exists(BACKTEST_DIR):
+    os.makedirs(BACKTEST_DIR)
 
 # =============================
 # SESSION INIT
@@ -24,7 +32,7 @@ if "bt_df" not in st.session_state:
     st.session_state.bt_df = pd.DataFrame()
 
 # =============================
-# NSE SECTOR STOCKS
+# STOCKS (ALL SECTORS)
 # =============================
 stocks = [
     "HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK","INDUSINDBK",
@@ -88,7 +96,7 @@ def big_player(df, stock):
     df['StrongCandle'] = df['Body'] > (df['Range'] * 0.6)
 
     entries = []
-    last_signal = None   # ⭐ KEY FIX
+    last_signal = None
 
     for i in range(25, len(df)):
         price = df['Close'].iloc[i]
@@ -102,7 +110,6 @@ def big_player(df, stock):
 
         confidence = f"{score}/5"
 
-        # BUY
         if (
             df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*2.5 and
             price > df['EMA20'].iloc[i] > df['EMA50'].iloc[i] and
@@ -121,7 +128,6 @@ def big_player(df, stock):
                 })
                 last_signal = "BUY"
 
-        # SELL
         elif (
             df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*2.5 and
             price < df['EMA20'].iloc[i] < df['EMA50'].iloc[i] and
@@ -165,7 +171,7 @@ if st.button("🔍 START LIVE"):
     st.session_state.strength = pd.DataFrame(strength_data).sort_values(by="Strength %", ascending=False)
 
 # =============================
-# DISPLAY
+# DISPLAY LIVE
 # =============================
 if st.session_state.live_big:
 
@@ -199,4 +205,58 @@ if st.session_state.live_big:
                 textposition="top center"
             ))
 
-        st.plotly_chart(fig, use_container_width=True, key=f"chart_{stock}_{datetime.now().timestamp()}")
+        st.plotly_chart(fig, use_container_width=True)
+
+# =============================
+# BACKTEST + SAVE
+# =============================
+if st.checkbox("📊 Enable Backtest"):
+
+    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
+
+    bt_big = []
+
+    for s in stocks:
+        df = yf.Ticker(s + ".NS").history(
+            start=bt_date,
+            end=bt_date + timedelta(days=1),
+            interval="5m"
+        )
+
+        if df.empty:
+            continue
+
+        df = df.between_time("09:15","15:30")
+
+        if df.empty:
+            continue
+
+        bt_big += big_player(df, s)
+
+    bt_df = pd.DataFrame(bt_big)
+
+    if bt_df.empty:
+        st.error("No Backtest Data")
+    else:
+        bt_df = bt_df.sort_values(by="TimeRaw")
+
+        st.dataframe(bt_df[["Stock","Type","Price","Time","Confidence"]])
+
+        # SAVE FILE
+        file_path = f"{BACKTEST_DIR}/backtest_{bt_date}.csv"
+        bt_df.to_csv(file_path, index=False)
+        st.success(f"Saved: {file_path}")
+
+# =============================
+# BACKTEST FOLDER VIEW
+# =============================
+st.subheader("📂 BACKTEST FOLDER")
+
+files = os.listdir(BACKTEST_DIR)
+
+if files:
+    selected_file = st.selectbox("Select File", files)
+    df_saved = pd.read_csv(os.path.join(BACKTEST_DIR, selected_file))
+    st.dataframe(df_saved)
+else:
+    st.info("No saved backtests yet")
