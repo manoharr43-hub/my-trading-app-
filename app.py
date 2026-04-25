@@ -222,3 +222,48 @@ if files:
     st.dataframe(df_saved)
 else:
     st.info("No files yet")
+    # ===== BACKTEST CHART =====
+st.subheader("📊 Backtest Chart")
+
+stock = st.selectbox("Select Stock (Backtest)", stocks, key="bt_chart_stock")
+
+df_chart = yf.Ticker(stock + ".NS").history(
+    start=bt_date,
+    end=bt_date + timedelta(days=1),
+    interval="5m"
+)
+
+if not df_chart.empty:
+    df_chart = df_chart.between_time("09:15","15:30")
+
+    fig = go.Figure(data=[go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['Open'],
+        high=df_chart['High'],
+        low=df_chart['Low'],
+        close=df_chart['Close']
+    )])
+
+    df_bt_stock = bt_df[bt_df["Stock"] == stock]
+
+    for _, row in df_bt_stock.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[row["TimeRaw"]],
+            y=[row["Price"]],
+            mode="markers+text",
+            marker=dict(
+                size=12,
+                color="green" if row["Type"]=="BIG BUY" else "red"
+            ),
+            text=[row["Type"]],
+            textposition="top center"
+        ))
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"bt_chart_{stock}_{datetime.now().timestamp()}"
+    )
+
+else:
+    st.warning("No Backtest Chart Data")
