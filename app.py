@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23 FIX", layout="wide")
-st.title("🚀 NSE AI PRO V23 - RUNNING DAY FIXED CHART")
+st.set_page_config(page_title="🔥 NSE AI PRO V22 FIX", layout="wide")
+st.title("🚀 NSE AI PRO V22 - FIXED REVERSAL SYSTEM")
 
 st_autorefresh(interval=60000, key="refresh")
 
@@ -48,7 +48,7 @@ stocks = sector_map[sector]
 @st.cache_data(ttl=60)
 def load_data(stock, interval="5m", period="5d"):
     df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
-    df = df.reset_index()
+    df = df.reset_index()   # 🔥 IMPORTANT FIX
     return df
 
 # =============================
@@ -59,6 +59,10 @@ def indicators(df):
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['EMA200'] = df['Close'].ewm(span=200).mean()
+
+    tp = (df['High'] + df['Low'] + df['Close']) / 3
+    df['VWAP'] = (tp * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
 
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
@@ -69,7 +73,7 @@ def indicators(df):
     return df
 
 # =============================
-# SIGNAL DETECTION
+# REVERSAL DETECTION
 # =============================
 def detect_reversal(df, stock):
     df = indicators(df)
@@ -82,20 +86,30 @@ def detect_reversal(df, stock):
         ema20 = df['EMA20'].iloc[i]
         ema50 = df['EMA50'].iloc[i]
 
-        time = df['Datetime'].iloc[i]
+        time = df['Datetime'].iloc[i] if 'Datetime' in df.columns else df.iloc[i,0]
 
-        if prev_price < ema20 and price > ema20 and rsi > 35:
-            signals.append({"Stock":stock,"Type":"Bullish","Price":price,"Time":time})
+        if prev_price < ema20 and price > ema20 and rsi > 35 and ema20 > ema50:
+            signals.append({
+                "Stock": stock,
+                "Type": "Bullish Reversal",
+                "Price": price,
+                "Time": time
+            })
 
-        elif prev_price > ema20 and price < ema20 and rsi < 65:
-            signals.append({"Stock":stock,"Type":"Bearish","Price":price,"Time":time})
+        elif prev_price > ema20 and price < ema20 and rsi < 65 and ema20 < ema50:
+            signals.append({
+                "Stock": stock,
+                "Type": "Bearish Reversal",
+                "Price": price,
+                "Time": time
+            })
 
     return signals[-10:]
 
 # =============================
-# LIVE RUN
+# LIVE TRADING
 # =============================
-if st.button("🚀 START LIVE"):
+if st.button("🚀 START LIVE TRADING"):
     all_signals = []
 
     for s in stocks:
@@ -106,26 +120,23 @@ if st.button("🚀 START LIVE"):
     st.session_state.signals = all_signals
 
 # =============================
-# DISPLAY
+# DISPLAY SIGNALS
 # =============================
 if st.session_state.signals:
     df_sig = pd.DataFrame(st.session_state.signals)
-    df_sig["Time"] = pd.to_datetime(df_sig["Time"])
 
-    st.subheader("🔄 Signals")
-    st.dataframe(df_sig)
+    df_sig["Time"] = pd.to_datetime(df_sig["Time"])
+    df_sig = df_sig.sort_values("Time")
+
+    st.subheader("🔄 Reversal Signals")
+    st.dataframe(df_sig[["Stock","Type","Price","Time"]])
 
     # =============================
-    # CHART FIX (RUNNING DAY ONLY)
+    # CHART
     # =============================
     stock = st.selectbox("📊 Chart Stock", stocks)
 
     df_chart = load_data(stock, "5m", "5d")
-
-    # 🔥 ONLY RUNNING DAY FILTER
-    df_chart["Datetime"] = pd.to_datetime(df_chart["Datetime"])
-    today = pd.Timestamp.today().date()
-    df_chart = df_chart[df_chart["Datetime"].dt.date == today]
 
     if not df_chart.empty:
         fig = go.Figure(data=[go.Candlestick(
@@ -143,12 +154,12 @@ if st.session_state.signals:
                 x=[r["Time"]],
                 y=[r["Price"]],
                 mode="markers",
-                marker=dict(size=10, color="blue"),
+                marker=dict(size=10, color="blue" if "Bullish" in r["Type"] else "orange"),
                 name=r["Type"]
             ))
 
         fig.update_layout(
-            title=f"{stock} - RUNNING DAY CHART",
+            title=f"{stock} LIVE CHART",
             xaxis_title="Time",
             yaxis_title="Price"
         )
@@ -156,31 +167,63 @@ if st.session_state.signals:
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST (UNCHANGED)
+# BACKTEST
 # =============================
 if st.checkbox("📊 BACKTEST MODE"):
     date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
 
+    bt_all = []
+
     for s in stocks:
         df = yf.Ticker(s + ".NS").history(period="5d", interval="5m")
         df = df.reset_index()
+
         df = df[df['Datetime'].dt.date == date]
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=df['Datetime'],
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close']
-        )])
+        if not df.empty:
+            signals = detect_reversal(df, s)
+            bt_all.extend(signals)
 
-        st.plotly_chart(fig, use_container_width=True)
+            if signals:
+                pd.DataFrame(signals).to_csv(
+                    f"{BACKTEST_DIR}/bt_{s}_{date}.csv",
+                    index=False
+                )
+
+            fig_bt = go.Figure(data=[go.Candlestick(
+                x=df['Datetime'],
+                open=df['Open'],
+                high=df['High'],
+                low=df['Low'],
+                close=df['Close']
+            )])
+
+            for r in signals:
+                fig_bt.add_trace(go.Scatter(
+                    x=[r["Time"]],
+                    y=[r["Price"]],
+                    mode="markers",
+                    marker=dict(size=10, color="blue"),
+                    name=r["Type"]
+                ))
+
+            st.plotly_chart(fig_bt, use_container_width=True)
+
+    st.subheader("📊 BACKTEST RESULTS")
+
+    if bt_all:
+        st.dataframe(pd.DataFrame(bt_all))
+    else:
+        st.warning("No signals found")
 
 # =============================
 # BACKTEST FILES
 # =============================
-st.sidebar.subheader("📂 Files")
+st.sidebar.subheader("📂 Saved Backtests")
 files = os.listdir(BACKTEST_DIR)
 
-for f in files:
-    st.sidebar.write(f)
+if files:
+    for f in files:
+        st.sidebar.write(f)
+else:
+    st.sidebar.write("No files")
