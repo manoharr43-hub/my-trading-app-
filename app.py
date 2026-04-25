@@ -2,19 +2,27 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from streamlit_autorefresh import st_autorefresh
+import datetime as dt
 import plotly.graph_objects as go
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V15", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
+st.set_page_config(page_title="🔥 NSE AI PRO V17", layout="wide")
 
-st.title("🚀 NSE AI PRO V15 - CRASH PROOF + SMART MONEY + SECTORS")
+st.title("🚀 NSE AI PRO V17 - CLEAN INSTITUTIONAL TERMINAL")
 
 # =============================
-# SESSION
+# MARKET TIME FILTER
+# =============================
+now = dt.datetime.now().time()
+market_open = dt.time(9, 15)
+market_close = dt.time(15, 30)
+
+market_live = market_open <= now <= market_close
+
+# =============================
+# SESSION BACKTEST
 # =============================
 if "bt_history" not in st.session_state:
     st.session_state.bt_history = []
@@ -33,46 +41,41 @@ sector_map = {
 all_stocks = list(set(sum(sector_map.values(), [])))
 
 # =============================
-# SAFE DATA LOADER (CRASH FIX)
+# SAFE DATA LOADER
 # =============================
 @st.cache_data(ttl=300)
 def load_data(stock):
     try:
         df = yf.Ticker(stock + ".NS").history(period="5d", interval="5m")
-
         if df is None or df.empty or len(df) < 20:
             return None
-
         return df
-
     except:
         return None
 
 # =============================
-# SAFE ANALYSIS ENGINE
+# CORE ENGINE
 # =============================
 def analyze(df):
 
-    # 🔥 SAFETY FIRST
     if df is None or len(df) < 20:
         return "NO DATA", "NO DATA", "NO DATA"
 
     df = df.dropna()
 
-    price = df['Close'].iloc[-1]
-
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    resistance = df['High'].rolling(20).max().iloc[-2] if len(df) > 20 else df['High'].max()
-    support = df['Low'].rolling(20).min().iloc[-2] if len(df) > 20 else df['Low'].min()
+    price = df['Close'].iloc[-1]
 
-    vol_avg = df['Volume'].rolling(20).mean().iloc[-1] if len(df) > 20 else df['Volume'].mean()
+    resistance = df['High'].rolling(20).max().iloc[-2]
+    support = df['Low'].rolling(20).min().iloc[-2]
 
-    breakout = "NONE"
-    big_entry = "NONE"
+    vol_avg = df['Volume'].rolling(20).mean().iloc[-1]
 
     signal = "WAIT"
+    breakout = "NONE"
+    big_entry = "NONE"
 
     # TREND
     if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]:
@@ -86,7 +89,7 @@ def analyze(df):
     elif price < support:
         breakout = "DOWN BREAKOUT"
 
-    # SMART MONEY (VOLUME TRAP)
+    # SMART MONEY
     if df['Volume'].iloc[-1] > vol_avg * 1.8:
 
         if breakout == "UP BREAKOUT":
@@ -98,13 +101,9 @@ def analyze(df):
     return signal, breakout, big_entry
 
 # =============================
-# CHART (SAFE ALWAYS)
+# CHART SYSTEM
 # =============================
 def show_chart(df, stock):
-
-    if df is None:
-        st.error("⚠️ NO DATA FOR CHART")
-        return
 
     signal, breakout, big_entry = analyze(df)
 
@@ -130,7 +129,7 @@ def show_chart(df, stock):
         name="EMA50"
     ))
 
-    # MARKERS
+    # BREAKOUT MARKER
     if breakout != "NONE":
         fig.add_scatter(
             x=[df.index[-1]],
@@ -140,6 +139,7 @@ def show_chart(df, stock):
             text=[breakout]
         )
 
+    # BIG ENTRY MARKER
     if big_entry != "NONE":
         color = "green" if "BUY" in big_entry else "red"
 
@@ -151,16 +151,25 @@ def show_chart(df, stock):
             text=[big_entry]
         )
 
-    st.subheader(f"📊 {stock}")
+    st.subheader(f"📊 {stock} | {signal}")
     st.plotly_chart(fig, use_container_width=True, key=stock)
+
+# =============================
+# MARKET STATUS
+# =============================
+st.subheader("⏱ MARKET STATUS")
+
+if market_live:
+    st.success("🟢 MARKET OPEN (9:15 - 3:30)")
+else:
+    st.error("🔴 MARKET CLOSED")
 
 # =============================
 # SECTOR SCANNER
 # =============================
 st.subheader("📡 NSE SECTOR SCANNER")
 
-buy_list = []
-sell_list = []
+buy, sell, wait = [], [], []
 
 for sector, stocks in sector_map.items():
 
@@ -185,27 +194,32 @@ for sector, stocks in sector_map.items():
         })
 
         if big_entry == "BIG BUY ENTRY":
-            buy_list.append(s)
-
-        if big_entry == "BIG SELL ENTRY":
-            sell_list.append(s)
+            buy.append(s)
+        elif big_entry == "BIG SELL ENTRY":
+            sell.append(s)
+        else:
+            wait.append(s)
 
     st.dataframe(pd.DataFrame(table))
 
 # =============================
-# TOP BUY / SELL
+# TODAY STOCK LIST
 # =============================
-st.subheader("🔥 ALL SECTOR TOP LIST")
+st.subheader("🔥 TODAY STOCK LIST")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.success("🚀 BIG BUY STOCKS")
-    st.write(list(set(buy_list)))
+    st.success("🚀 BUY")
+    st.write(list(set(buy)))
 
 with col2:
-    st.error("💀 BIG SELL STOCKS")
-    st.write(list(set(sell_list)))
+    st.error("💀 SELL")
+    st.write(list(set(sell)))
+
+with col3:
+    st.info("⏳ WAIT")
+    st.write(list(set(wait)))
 
 # =============================
 # STOCK CHART VIEW
@@ -219,7 +233,7 @@ df = load_data(selected)
 show_chart(df, selected)
 
 # =============================
-# BACKTEST (SAFE + DATE READY)
+# BACKTEST SYSTEM
 # =============================
 st.subheader("📁 BACKTEST SYSTEM")
 
@@ -253,7 +267,7 @@ if st.button("RUN BACKTEST"):
     st.dataframe(df_res)
 
 # =============================
-# BACKTEST HISTORY (ALWAYS SHOW)
+# BACKTEST HISTORY
 # =============================
 st.subheader("📁 BACKTEST HISTORY")
 
