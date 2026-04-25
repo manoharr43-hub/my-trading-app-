@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V15", layout="wide")
-st.title("🚀 NSE AI PRO V15 (FINAL STABLE)")
+st.set_page_config(page_title="🔥 NSE AI PRO V16", layout="wide")
+st.title("🚀 NSE AI PRO V16 (FINAL ZERO ERROR)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -29,7 +29,7 @@ if "strength" not in st.session_state:
     st.session_state.strength = pd.DataFrame()
 
 # =============================
-# STOCKS (ALL SECTORS)
+# STOCKS
 # =============================
 stocks = [
     "HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK","INDUSINDBK",
@@ -60,7 +60,7 @@ def load_data(stock, period="1d"):
         return pd.DataFrame()
 
 # =============================
-# BIG PLAYER LOGIC (IMPROVED)
+# BIG PLAYER LOGIC
 # =============================
 def big_player(df, stock):
     if df.empty or len(df) < 30:
@@ -176,7 +176,7 @@ if st.session_state.live_big:
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST
+# BACKTEST (FIXED)
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
@@ -195,22 +195,62 @@ if st.checkbox("📊 Enable Backtest"):
             continue
 
         df = df.between_time("09:15","15:30")
-
         bt_big += big_player(df, s)
 
     bt_df = pd.DataFrame(bt_big)
 
     if not bt_df.empty:
+
         st.dataframe(bt_df)
 
+        # SAVE
         file_path = f"{BACKTEST_DIR}/bt_{bt_date}.csv"
         bt_df.to_csv(file_path, index=False)
         st.success(f"Saved: {file_path}")
+
+        # ===== BACKTEST CHART =====
+        st.subheader("📊 Backtest Chart")
+
+        stock = st.selectbox("Select Stock (Backtest)", stocks, key="bt_stock")
+
+        df_chart = yf.Ticker(stock + ".NS").history(
+            start=bt_date,
+            end=bt_date + timedelta(days=1),
+            interval="5m"
+        )
+
+        if not df_chart.empty:
+            df_chart = df_chart.between_time("09:15","15:30")
+
+            fig = go.Figure(data=[go.Candlestick(
+                x=df_chart.index,
+                open=df_chart['Open'],
+                high=df_chart['High'],
+                low=df_chart['Low'],
+                close=df_chart['Close']
+            )])
+
+            df_bt_stock = bt_df[bt_df["Stock"] == stock]
+
+            for _, row in df_bt_stock.iterrows():
+                fig.add_trace(go.Scatter(
+                    x=[row["TimeRaw"]],
+                    y=[row["Price"]],
+                    mode="markers+text",
+                    marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
+                    text=[row["Type"]],
+                    textposition="top center"
+                ))
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No Chart Data")
+
     else:
         st.warning("No Backtest Data")
 
 # =============================
-# BACKTEST FOLDER VIEW
+# BACKTEST FILES
 # =============================
 st.subheader("📂 BACKTEST FILES")
 
@@ -222,48 +262,3 @@ if files:
     st.dataframe(df_saved)
 else:
     st.info("No files yet")
-    # ===== BACKTEST CHART =====
-st.subheader("📊 Backtest Chart")
-
-stock = st.selectbox("Select Stock (Backtest)", stocks, key="bt_chart_stock")
-
-df_chart = yf.Ticker(stock + ".NS").history(
-    start=bt_date,
-    end=bt_date + timedelta(days=1),
-    interval="5m"
-)
-
-if not df_chart.empty:
-    df_chart = df_chart.between_time("09:15","15:30")
-
-    fig = go.Figure(data=[go.Candlestick(
-        x=df_chart.index,
-        open=df_chart['Open'],
-        high=df_chart['High'],
-        low=df_chart['Low'],
-        close=df_chart['Close']
-    )])
-
-    df_bt_stock = bt_df[bt_df["Stock"] == stock]
-
-    for _, row in df_bt_stock.iterrows():
-        fig.add_trace(go.Scatter(
-            x=[row["TimeRaw"]],
-            y=[row["Price"]],
-            mode="markers+text",
-            marker=dict(
-                size=12,
-                color="green" if row["Type"]=="BIG BUY" else "red"
-            ),
-            text=[row["Type"]],
-            textposition="top center"
-        ))
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        key=f"bt_chart_{stock}_{datetime.now().timestamp()}"
-    )
-
-else:
-    st.warning("No Backtest Chart Data")
