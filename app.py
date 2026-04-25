@@ -171,6 +171,26 @@ if st.checkbox("📊 BACKTEST MODE"):
         df = df[df.index.date == date]
         signals = high_quality_signals(df, s)
         bt_all.extend(signals)
+
+        # 👉 Chart integration for backtest
+        if not df.empty:
+            fig_bt = go.Figure(data=[go.Candlestick(
+                x=df.index,
+                open=df['Open'],
+                high=df['High'],
+                low=df['Low'],
+                close=df['Close']
+            )])
+            df_s = pd.DataFrame(signals)
+            for _, r in df_s.iterrows():
+                fig_bt.add_trace(go.Scatter(
+                    x=[r["Time"]],
+                    y=[r["Price"]],
+                    mode="markers",
+                    marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
+                ))
+            st.plotly_chart(fig_bt, use_container_width=True)
+
     st.subheader("📊 BACKTEST RESULTS")
     if bt_all:
         st.dataframe(pd.DataFrame(bt_all))
