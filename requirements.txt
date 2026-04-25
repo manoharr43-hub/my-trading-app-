@@ -3,4 +3,5 @@ yfinance
 pandas
 plotly
 streamlit-autorefresh
+ta==0.10.2
 
