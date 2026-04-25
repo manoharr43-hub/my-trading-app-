@@ -10,20 +10,28 @@ from sklearn.linear_model import LinearRegression
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V6", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V7", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO V6 - LIVE + SMART MONEY + BACKTEST")
+st.title("🚀 NSE AI PRO V7 - AUTO TRADING + PAPER + LIVE SIGNALS")
 st.markdown("---")
 
 # =============================
-# SESSION
+# SESSION STATE
 # =============================
 if "bt_history" not in st.session_state:
     st.session_state.bt_history = []
 
+if "paper_trade" not in st.session_state:
+    st.session_state.paper_trade = {
+        "position": None,
+        "entry_price": 0,
+        "pnl": 0,
+        "trades": []
+    }
+
 # =============================
-# SECTORS
+# STOCKS
 # =============================
 sector_map = {
     "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
@@ -52,7 +60,7 @@ def rsi(df, period=14):
     return 100 - (100 / (1 + rs))
 
 # =============================
-# AI
+# AI PREDICT
 # =============================
 def ai_predict(df):
     df = df.copy().dropna()
@@ -136,7 +144,7 @@ def analyze(df):
     return signal, round(r,2), final
 
 # =============================
-# ENTRY + SL + TARGET
+# ENTRY SYSTEM
 # =============================
 def entry_system(df):
     price = df['Close'].iloc[-1]
@@ -148,9 +156,53 @@ def entry_system(df):
     return round(sl,2), round(tgt,2)
 
 # =============================
-# CHART
+# PAPER TRADING ENGINE
+# =============================
+def paper_trade_engine(stock, signal, price):
+
+    acc = st.session_state.paper_trade
+
+    if signal == "STRONG BUY" and acc["position"] is None:
+        acc["position"] = "LONG"
+        acc["entry_price"] = price
+
+        acc["trades"].append({
+            "Stock": stock,
+            "Action": "BUY",
+            "Price": price
+        })
+
+        st.success(f"🟢 PAPER BUY: {stock} @ {price}")
+
+    elif signal == "STRONG SELL" and acc["position"] == "LONG":
+
+        entry = acc["entry_price"]
+        pnl = price - entry
+
+        acc["pnl"] += pnl
+        acc["position"] = None
+
+        acc["trades"].append({
+            "Stock": stock,
+            "Action": "SELL",
+            "Price": price,
+            "PnL": pnl
+        })
+
+        st.error(f"🔴 PAPER SELL: {stock} @ {price} | PnL: {round(pnl,2)}")
+
+# =============================
+# CHART WITH ARROWS
 # =============================
 def show_chart(df, stock):
+
+    df = df.copy()
+
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
+    buy = df[df['EMA20'] > df['EMA50']]
+    sell = df[df['EMA20'] < df['EMA50']]
 
     fig = go.Figure()
 
@@ -162,16 +214,23 @@ def show_chart(df, stock):
         close=df['Close']
     ))
 
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name="EMA20"))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name="EMA50"))
+
     fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df['Close'].ewm(span=20).mean(),
-        name="EMA20"
+        x=buy.index,
+        y=buy['Close'],
+        mode="markers",
+        marker=dict(symbol="triangle-up", size=10, color="green"),
+        name="BUY"
     ))
 
     fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df['Close'].ewm(span=50).mean(),
-        name="EMA50"
+        x=sell.index,
+        y=sell['Close'],
+        mode="markers",
+        marker=dict(symbol="triangle-down", size=10, color="red"),
+        name="SELL"
     ))
 
     fig.update_layout(title=stock, height=500)
@@ -179,9 +238,9 @@ def show_chart(df, stock):
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# LIVE SCANNER (SECTOR)
+# LIVE SCANNER
 # =============================
-st.subheader("📡 LIVE SECTOR SCANNER")
+st.subheader("📡 LIVE SCANNER")
 
 for sector, stocks in sector_map.items():
 
@@ -201,9 +260,14 @@ for sector, stocks in sector_map.items():
         score = strength(df)
         sl, tgt = entry_system(df)
 
+        price = df['Close'].iloc[-1]
+
+        # PAPER TRADE
+        paper_trade_engine(stock, final, price)
+
         data.append({
             "Stock": stock,
-            "Signal": signal,
+            "Signal": final,
             "RSI": rsi_val,
             "Strength": score,
             "SL": sl,
@@ -214,12 +278,11 @@ for sector, stocks in sector_map.items():
     st.dataframe(pd.DataFrame(data))
 
 # =============================
-# STRONG STOCK LIST
+# STRONG LIST
 # =============================
-st.subheader("🔥 STRONG BUY / SELL")
+st.subheader("🔥 STRONG STOCKS")
 
-buy = []
-sell = []
+buy, sell = [], []
 
 for stock in all_stocks:
 
@@ -246,7 +309,7 @@ with col2:
     st.write(sell)
 
 # =============================
-# CHART VIEW
+# CHART
 # =============================
 st.subheader("📊 CHART")
 
@@ -258,11 +321,20 @@ if df is not None:
     show_chart(df, selected)
 
 # =============================
-# BACKTEST DATE
+# PAPER TRADING DASHBOARD
+# =============================
+st.subheader("💰 PAPER TRADING")
+
+acc = st.session_state.paper_trade
+
+st.metric("Total PnL", round(acc["pnl"], 2))
+st.write("Position:", acc["position"])
+st.dataframe(pd.DataFrame(acc["trades"]))
+
+# =============================
+# BACKTEST
 # =============================
 st.markdown("---")
-
-bt_date = st.date_input("📅 Backtest Date", datetime.now().date() - timedelta(days=1))
 
 if st.button("📊 RUN BACKTEST"):
 
@@ -277,19 +349,14 @@ if st.button("📊 RUN BACKTEST"):
             continue
 
         signal, rsi_val, final = analyze(df)
-        bp, _ = big_player(df)
-        score = strength(df)
-
         sl, tgt = entry_system(df)
 
         results.append({
             "Stock": stock,
-            "Signal": signal,
+            "Signal": final,
             "RSI": rsi_val,
-            "Final": final,
             "SL": sl,
-            "TARGET": tgt,
-            "Big": bp if bp else "NONE"
+            "TARGET": tgt
         })
 
         progress.progress((i+1)/len(all_stocks))
@@ -297,26 +364,13 @@ if st.button("📊 RUN BACKTEST"):
     df_res = pd.DataFrame(results)
     st.session_state.bt_history.append(df_res)
 
-    st.success("✅ Backtest Done")
-
     st.dataframe(df_res)
-
-    st.subheader("📊 Backtest Chart (First Stock)")
-    if len(df_res) > 0:
-        show_chart(load_data(df_res.iloc[0]['Stock']), df_res.iloc[0]['Stock'])
 
 # =============================
 # BACKTEST HISTORY
 # =============================
-st.subheader("📁 BACKTEST FOLDER")
+st.subheader("📁 BACKTEST HISTORY")
 
-if st.session_state.bt_history:
-
-    for i, df in enumerate(st.session_state.bt_history[::-1]):
-
-        with st.expander(f"Run #{i+1}"):
-
-            st.dataframe(df)
-
-else:
-    st.info("No backtest yet")
+for i, df in enumerate(st.session_state.bt_history[::-1]):
+    with st.expander(f"Run #{i+1}"):
+        st.dataframe(df)
