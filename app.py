@@ -8,9 +8,9 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V19", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V20", layout="wide")
 
-st.title("🚀 NSE AI PRO V19 - CLEAN INSTITUTIONAL SYSTEM")
+st.title("🚀 NSE AI PRO V20 - FULL TIME + 1 DAY CHART SYSTEM")
 
 # =============================
 # SESSION
@@ -21,15 +21,15 @@ if "bt_history" not in st.session_state:
 # =============================
 # STOCK LIST
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","M&M"]
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC"]
 
 # =============================
-# SAFE DATA LOADER
+# DATA (1 DAY CHART FIX)
 # =============================
 @st.cache_data(ttl=300)
 def load_data(stock):
     try:
-        df = yf.Ticker(stock + ".NS").history(period="5d", interval="5m")
+        df = yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
         if df is None or df.empty or len(df) < 20:
             return None
         return df
@@ -37,12 +37,12 @@ def load_data(stock):
         return None
 
 # =============================
-# CORE LOGIC (SMART MONEY)
+# CORE ANALYSIS (WITH TIME)
 # =============================
 def analyze(df):
 
     if df is None or len(df) < 20:
-        return "NO DATA", "NONE", "NONE", None
+        return "NO DATA", "NONE", "NONE", None, None
 
     df = df.dropna()
 
@@ -59,7 +59,10 @@ def analyze(df):
     signal = "WAIT"
     breakout = "NONE"
     big_entry = "NONE"
+
+    signal_time = df.index[-1]
     breakout_time = None
+    entry_time = None
 
     # TREND
     if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]:
@@ -67,7 +70,7 @@ def analyze(df):
     else:
         signal = "SELL"
 
-    # BREAKOUT + TIME
+    # BREAKOUT
     if price > resistance:
         breakout = "UP BREAKOUT"
         breakout_time = df.index[-1]
@@ -81,18 +84,20 @@ def analyze(df):
 
         if breakout == "UP BREAKOUT":
             big_entry = "BIG BUY ENTRY"
+            entry_time = df.index[-1]
 
-        if breakout == "DOWN BREAKOUT":
+        elif breakout == "DOWN BREAKOUT":
             big_entry = "BIG SELL ENTRY"
+            entry_time = df.index[-1]
 
-    return signal, breakout, big_entry, breakout_time
+    return signal, breakout, big_entry, breakout_time, entry_time
 
 # =============================
-# CHART ENGINE
+# CHART (1 DAY FIX)
 # =============================
 def show_chart(df, stock):
 
-    signal, breakout, big_entry, btime = analyze(df)
+    signal, breakout, big_entry, btime, etime = analyze(df)
 
     fig = go.Figure()
 
@@ -131,6 +136,7 @@ def show_chart(df, stock):
 
     # BIG ENTRY MARKER
     if big_entry != "NONE":
+        st.success(f"💰 BIG ENTRY TIME: {etime}")
 
         color = "green" if "BUY" in big_entry else "red"
 
@@ -143,12 +149,13 @@ def show_chart(df, stock):
         )
 
     st.subheader(f"📊 {stock} | {signal}")
+
     st.plotly_chart(fig, use_container_width=True, key=stock)
 
 # =============================
-# LIVE CHART
+# TODAY CHART
 # =============================
-st.subheader("📊 TODAY CHART")
+st.subheader("📊 TODAY 1 DAY CHART")
 
 selected = st.selectbox("Select Stock", stocks)
 
@@ -157,14 +164,14 @@ df = load_data(selected)
 if df is not None:
     show_chart(df, selected)
 else:
-    st.error("⚠️ NO DATA AVAILABLE")
+    st.error("⚠️ NO DATA")
 
 # =============================
-# SCANNER
+# TABLE WITH ALL TIME COLUMNS
 # =============================
-st.subheader("📡 NSE TODAY SCANNER")
+st.subheader("📡 LIVE STOCK TABLE (WITH TIME)")
 
-buy, sell, wait = [], [], []
+table = []
 
 for s in stocks:
 
@@ -173,37 +180,26 @@ for s in stocks:
     if df is None:
         continue
 
-    signal, breakout, big_entry, btime = analyze(df)
+    signal, breakout, big_entry, btime, etime = analyze(df)
 
-    if big_entry == "BIG BUY ENTRY":
-        buy.append(s)
+    table.append({
+        "Stock": s,
+        "Signal": signal,
+        "SignalTime": str(df.index[-1]),
+        "Breakout": breakout,
+        "BreakoutTime": str(btime),
+        "BigEntry": big_entry,
+        "EntryTime": str(etime)
+    })
 
-    elif big_entry == "BIG SELL ENTRY":
-        sell.append(s)
-
-    else:
-        wait.append(s)
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.success("🚀 BUY")
-    st.write(buy)
-
-with col2:
-    st.error("💀 SELL")
-    st.write(sell)
-
-with col3:
-    st.info("⏳ WAIT")
-    st.write(wait)
+st.dataframe(pd.DataFrame(table))
 
 # =============================
-# BACKTEST SYSTEM (WITH TIME)
+# BACKTEST WITH TIME
 # =============================
 st.subheader("📁 BACKTEST SYSTEM")
 
-bt_date = st.date_input("Select Backtest Date")
+bt_date = st.date_input("Select Date")
 
 if st.button("RUN BACKTEST"):
 
@@ -218,14 +214,15 @@ if st.button("RUN BACKTEST"):
         if df is None:
             continue
 
-        signal, breakout, big_entry, btime = analyze(df)
+        signal, breakout, big_entry, btime, etime = analyze(df)
 
         results.append({
             "Stock": s,
             "Signal": signal,
             "Breakout": breakout,
+            "BreakoutTime": str(btime),
             "BigEntry": big_entry,
-            "BreakoutTime": str(btime)
+            "EntryTime": str(etime)
         })
 
     df_res = pd.DataFrame(results)
