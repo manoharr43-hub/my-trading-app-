@@ -102,7 +102,7 @@ if st.button("🚀 START HQ LIVE TRADING"):
     st.session_state.signals = all_signals
 
 # =============================
-# DISPLAY
+# DISPLAY + LIVE CHART
 # =============================
 if st.session_state.signals:
     df_sig = pd.DataFrame(st.session_state.signals)
@@ -111,6 +111,33 @@ if st.session_state.signals:
 
     st.subheader("🔄 Reversal Detection Signals")
     st.dataframe(df_sig[["Stock","Type","Price","Time"]])
+
+    stock = st.selectbox("📊 Chart", stocks)
+    df_chart = load_data(stock, "5m", "5d")   # 👉 LIVE chart కూడా 5m intervalలో ఉండాలి
+
+    if not df_chart.empty:
+        fig = go.Figure(data=[go.Candlestick(
+            x=df_chart.index,
+            open=df_chart['Open'],
+            high=df_chart['High'],
+            low=df_chart['Low'],
+            close=df_chart['Close']
+        )])
+
+        df_s = df_sig[df_sig["Stock"]==stock]
+        if not df_s.empty:
+            for _, r in df_s.iterrows():
+                fig.add_trace(go.Scatter(
+                    x=[r["Time"]],
+                    y=[r["Price"]],
+                    mode="markers",
+                    marker=dict(size=12, color="blue" if "Bullish" in r["Type"] else "orange"),
+                    name=r["Type"]
+                ))
+
+        fig.update_layout(title=f"{stock} - Live Reversal Chart", 
+                          xaxis_title="Time", yaxis_title="Price")
+        st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # BACKTEST
@@ -126,6 +153,12 @@ if st.checkbox("📊 BACKTEST MODE"):
         if not df.empty:
             signals = detect_reversal(df, s)
             bt_all.extend(signals)
+
+            # Save signals to CSV in backtest folder
+            if signals:
+                df_save = pd.DataFrame(signals)
+                filename = f"{BACKTEST_DIR}/backtest_{s}_{date}.csv"
+                df_save.to_csv(filename, index=False)
 
             fig_bt = go.Figure(data=[go.Candlestick(
                 x=df.index,
@@ -147,14 +180,3 @@ if st.checkbox("📊 BACKTEST MODE"):
                     ))
 
             fig_bt.update_layout(title=f"{s} - Backtest Reversal Chart ({date})",
-                                 xaxis_title="Time", yaxis_title="Price")
-            st.plotly_chart(fig_bt, use_container_width=True)
-
-    st.subheader("📊 BACKTEST RESULTS")
-    if bt_all:
-        df_bt = pd.DataFrame(bt_all)
-        df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%I:%M %p")
-        df_bt = df_bt.sort_values(by="Time").reset_index(drop=True)
-        st.dataframe(df_bt[["Stock","Type","Price","Time"]])
-    else:
-        st.warning("No signals found for selected date")
