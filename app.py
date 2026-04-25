@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.4", layout="wide")
-st.title("🚀 NSE AI PRO V9.4 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.5", layout="wide")
+st.title("🚀 NSE AI PRO V9.5 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -19,8 +19,6 @@ if "live_big" not in st.session_state:
     st.session_state.live_big = []
 if "strength" not in st.session_state:
     st.session_state.strength = pd.DataFrame()
-if "bt_df" not in st.session_state:
-    st.session_state.bt_df = pd.DataFrame()
 
 # =============================
 # SECTOR STOCK LIST
@@ -122,14 +120,14 @@ if st.button("🔍 START LIVE"):
 # =============================
 if len(st.session_state.live_big) > 0:
     st.subheader("🐋 BIG PLAYER")
-    df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]]
+    df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time","TimeRaw"]]
     st.dataframe(df_signals)
 
     # BUY & SELL BOXES
     st.markdown("### ✅ BIG BUY BOX")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"])
+    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"][["Stock","Price","Time"]])
     st.markdown("### ❌ BIG SELL BOX")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"])
+    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"][["Stock","Price","Time"]])
 
     if not st.session_state.strength.empty:
         st.subheader("🔥 STRONG STOCKS"); st.dataframe(st.session_state.strength.head(5))
