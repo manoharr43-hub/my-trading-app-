@@ -9,8 +9,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V21", layout="wide")
-st.title("🚀 NSE AI PRO V21 (Big Player + Trend + S/R)")
+st.set_page_config(page_title="🔥 NSE AI PRO V22", layout="wide")
+st.title("🚀 NSE AI PRO V22 (Big Player + Trend + S/R)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -68,7 +68,7 @@ def get_15m_trend(stock):
 
 # ===== SUPPORT / RESISTANCE =====
 def get_sr_levels(df, window=20):
-    if df.empty: return []
+    if df.empty: return (None, None)
     highs = df['High'].rolling(window).max()
     lows = df['Low'].rolling(window).min()
     return highs.iloc[-1], lows.iloc[-1]
@@ -113,9 +113,9 @@ if st.button("🔍 START LIVE"):
         trend = get_15m_trend(s)
         sr_high, sr_low = get_sr_levels(df)
         for sig in signals:
-            if trend == "UP" and sig["Type"] == "BIG BUY" and sig["Price"] > sr_high:
+            if trend == "UP" and sig["Type"] == "BIG BUY" and sr_high and sig["Price"] > sr_high:
                 filtered_signals.append(sig)
-            elif trend == "DOWN" and sig["Type"] == "BIG SELL" and sig["Price"] < sr_low:
+            elif trend == "DOWN" and sig["Type"] == "BIG SELL" and sr_low and sig["Price"] < sr_low:
                 filtered_signals.append(sig)
     st.session_state.live_big = sorted(filtered_signals, key=lambda x: x["TimeRaw"])
 
@@ -142,7 +142,6 @@ if st.session_state.live_big:
                 x=[row["TimeRaw"]], y=[row["Price"]],
                 mode="markers", marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red")
             ))
-        # Draw S/R lines
-        fig.add_hline(y=sr_high, line_dash="dot", line_color="blue", annotation_text="Resistance")
-        fig.add_hline(y=sr_low, line_dash="dot", line_color="orange", annotation_text="Support")
+        if sr_high: fig.add_hline(y=sr_high, line_dash="dot", line_color="blue", annotation_text="Resistance")
+        if sr_low: fig.add_hline(y=sr_low, line_dash="dot", line_color="orange", annotation_text="Support")
         st.plotly_chart(fig, use_container_width=True)
