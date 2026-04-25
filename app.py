@@ -11,7 +11,7 @@ import os
 # CONFIG
 # =============================
 st.set_page_config(page_title="🔥 NSE AI PRO V21 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V21 - High Quality Trade System (Daily Frame)")
+st.title("🚀 NSE AI PRO V21 - High Quality Trade System")
 
 st_autorefresh(interval=60000, key="refresh")
 
@@ -43,11 +43,11 @@ sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
 stocks = sector_map[sector]
 
 # =============================
-# DATA (Daily Frame)
+# DATA
 # =============================
 @st.cache_data(ttl=60)
-def load_data(stock, interval="1d"):
-    df = yf.Ticker(stock + ".NS").history(period="6mo", interval=interval)
+def load_data(stock, interval="5m"):
+    df = yf.Ticker(stock + ".NS").history(period="5d", interval=interval)
     return df
 
 # =============================
@@ -126,7 +126,7 @@ def high_quality_signals(df, stock):
 if st.button("🚀 START HQ LIVE TRADING"):
     all_signals = []
     for s in stocks:
-        df = load_data(s, "1d")   # 👉 Daily Frame
+        df = load_data(s, "5m")
         signals = high_quality_signals(df, s)
         all_signals.extend(signals)
     st.session_state.signals = all_signals
@@ -136,14 +136,16 @@ if st.button("🚀 START HQ LIVE TRADING"):
 # =============================
 if st.session_state.signals:
     df_sig = pd.DataFrame(st.session_state.signals)
-    df_sig["Time"] = pd.to_datetime(df_sig["Time"]).dt.strftime("%d-%b %Y")
+
+    # 👉 Clean Time format (9:00 AM style) + sequential order
+    df_sig["Time"] = pd.to_datetime(df_sig["Time"]).dt.strftime("%I:%M %p")
     df_sig = df_sig.sort_values(by="Time").reset_index(drop=True)
 
-    st.subheader("🐋 HQ AUTO SIGNALS (Daily Frame)")
+    st.subheader("🐋 HQ AUTO SIGNALS (Big Player + Trend + S/R)")
     st.dataframe(df_sig)
 
     stock = st.selectbox("📊 Chart", stocks)
-    df_chart = load_data(stock, "1d")
+    df_chart = load_data(stock, "5m")
 
     if not df_chart.empty:
         fig = go.Figure(data=[go.Candlestick(
@@ -161,7 +163,7 @@ if st.session_state.signals:
                 mode="markers",
                 marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
             ))
-        fig.update_layout(title=f"{stock} - Daily Chart", xaxis_title="Date", yaxis_title="Price")
+        fig.update_layout(title=f"{stock} - Live Chart", xaxis_title="Time", yaxis_title="Price")
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
@@ -171,7 +173,7 @@ if st.checkbox("📊 BACKTEST MODE"):
     date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
     bt_all = []
     for s in stocks:
-        df = yf.Ticker(s + ".NS").history(period="6mo", interval="1d")
+        df = yf.Ticker(s + ".NS").history(period="5d", interval="5m")
         df = df[df.index.date == date]
         signals = high_quality_signals(df, s)
         bt_all.extend(signals)
@@ -192,13 +194,13 @@ if st.checkbox("📊 BACKTEST MODE"):
                     mode="markers",
                     marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
                 ))
-            fig_bt.update_layout(title=f"{s} - Backtest Daily Chart ({date})", xaxis_title="Date", yaxis_title="Price")
+            fig_bt.update_layout(title=f"{s} - Backtest Chart ({date})", xaxis_title="Time", yaxis_title="Price")
             st.plotly_chart(fig_bt, use_container_width=True)
 
     st.subheader("📊 BACKTEST RESULTS")
     if bt_all:
         df_bt = pd.DataFrame(bt_all)
-        df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%d-%b %Y")
+        df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%I:%M %p")
         df_bt = df_bt.sort_values(by="Time").reset_index(drop=True)
         st.dataframe(df_bt)
     else:
