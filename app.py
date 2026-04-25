@@ -158,6 +158,8 @@ if st.session_state.signals:
                 mode="markers",
                 marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
             ))
+        # 👉 Chart titleలో stock name చూపించడానికి
+        fig.update_layout(title=f"{stock} - Live Chart", xaxis_title="Time", yaxis_title="Price")
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
@@ -172,7 +174,6 @@ if st.checkbox("📊 BACKTEST MODE"):
         signals = high_quality_signals(df, s)
         bt_all.extend(signals)
 
-        # 👉 Chart integration for backtest
         if not df.empty:
             fig_bt = go.Figure(data=[go.Candlestick(
                 x=df.index,
@@ -189,6 +190,8 @@ if st.checkbox("📊 BACKTEST MODE"):
                     mode="markers",
                     marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
                 ))
+            # 👉 Backtest chartలో కూడా stock name చూపించడానికి
+            fig_bt.update_layout(title=f"{s} - Backtest Chart ({date})", xaxis_title="Time", yaxis_title="Price")
             st.plotly_chart(fig_bt, use_container_width=True)
 
     st.subheader("📊 BACKTEST RESULTS")
