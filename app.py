@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
@@ -10,8 +9,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V18", layout="wide")
-st.title("🚀 NSE AI PRO V18 (FINAL STABLE)")
+st.set_page_config(page_title="🔥 NSE AI PRO V19", layout="wide")
+st.title("🚀 NSE AI PRO V19 (15m Trend Filter)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -25,8 +24,6 @@ os.makedirs(BACKTEST_DIR, exist_ok=True)
 # =============================
 if "live_big" not in st.session_state:
     st.session_state.live_big = []
-if "strength" not in st.session_state:
-    st.session_state.strength = pd.DataFrame()
 
 # =============================
 # STOCKS
@@ -40,10 +37,28 @@ def clean_time(ts):
     return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
 
 @st.cache_data(ttl=60)
-def load_data(stock, period="1d"):
-    df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
-    return df.between_time("09:15","15:30") if not df.empty else pd.DataFrame()
+def load_data(stock, interval="5m"):
+    try:
+        df = yf.Ticker(stock + ".NS").history(period="1d", interval=interval)
+        return df.between_time("09:15","15:30") if not df.empty else pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
+# ===== 15m TREND =====
+@st.cache_data(ttl=60)
+def get_15m_trend(stock):
+    df = load_data(stock, "15m")
+    if df.empty or len(df) < 20:
+        return "UNKNOWN"
+
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+
+    if df['Close'].iloc[-1] > df['EMA20'].iloc[-1]:
+        return "UP"
+    else:
+        return "DOWN"
+
+# ===== BIG PLAYER =====
 def big_player(df, stock):
     if df.empty or len(df) < 30:
         return []
@@ -86,11 +101,22 @@ def big_player(df, stock):
 # LIVE
 # =============================
 if st.button("🔍 START LIVE"):
-    all_big = []
+
+    filtered_signals = []
+
     for s in stocks:
-        df = load_data(s)
-        all_big += big_player(df, s)
-    st.session_state.live_big = sorted(all_big, key=lambda x: x["TimeRaw"])
+        df = load_data(s, "5m")
+        signals = big_player(df, s)
+
+        trend = get_15m_trend(s)
+
+        for sig in signals:
+            if trend == "UP" and sig["Type"] == "BIG BUY":
+                filtered_signals.append(sig)
+            elif trend == "DOWN" and sig["Type"] == "BIG SELL":
+                filtered_signals.append(sig)
+
+    st.session_state.live_big = sorted(filtered_signals, key=lambda x: x["TimeRaw"])
 
 # =============================
 # LIVE DISPLAY
@@ -98,12 +124,18 @@ if st.button("🔍 START LIVE"):
 if st.session_state.live_big:
 
     df_signals = pd.DataFrame(st.session_state.live_big)
+    st.subheader("🐋 FILTERED SIGNALS (15m TREND)")
     st.dataframe(df_signals)
 
     stock = st.selectbox("📈 Chart", stocks)
-    df_chart = load_data(stock)
+
+    df_chart = load_data(stock, "5m")
 
     if not df_chart.empty:
+
+        trend = get_15m_trend(stock)
+        st.markdown(f"📊 15m Trend: **{trend}**")
+
         fig = go.Figure(data=[go.Candlestick(
             x=df_chart.index,
             open=df_chart['Open'],
@@ -125,7 +157,7 @@ if st.session_state.live_big:
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST (FINAL FIXED)
+# BACKTEST
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
@@ -144,11 +176,19 @@ if st.checkbox("📊 Enable Backtest"):
             continue
 
         df = df.between_time("09:15","15:30")
-        bt_big += big_player(df, s)
+
+        signals = big_player(df, s)
+        trend = get_15m_trend(s)
+
+        for sig in signals:
+            if trend == "UP" and sig["Type"] == "BIG BUY":
+                bt_big.append(sig)
+            elif trend == "DOWN" and sig["Type"] == "BIG SELL":
+                bt_big.append(sig)
 
     bt_df = pd.DataFrame(bt_big)
 
-    # ===== ALWAYS SHOW CHART =====
+    # ===== CHART ALWAYS SHOW =====
     st.subheader("📊 Backtest Chart")
 
     stock_bt = st.selectbox("Select Stock", stocks, key="bt")
@@ -185,10 +225,9 @@ if st.checkbox("📊 Enable Backtest"):
         st.plotly_chart(fig_bt, use_container_width=True)
 
     else:
-        st.error("No data for selected date")
+        st.error("No data")
 
-    # ===== TABLE =====
     if not bt_df.empty:
         st.dataframe(bt_df)
     else:
-        st.warning("No signals (chart still visible)")
+        st.warning("No signals (filtered by 15m trend)")
