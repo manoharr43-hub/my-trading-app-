@@ -9,8 +9,8 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V10", layout="wide")
-st.title("🚀 NSE AI PRO V10 (ACCURACY BOOST)")
+st.set_page_config(page_title="🔥 NSE AI PRO V11", layout="wide")
+st.title("🚀 NSE AI PRO V11 (ZERO ERROR FINAL)")
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -29,14 +29,11 @@ if "bt_df" not in st.session_state:
 stocks = ["HDFCBANK","ICICIBANK","SBIN","RELIANCE","INFY","TCS","ITC","LT","AXISBANK","KOTAKBANK"]
 
 # =============================
-# TIME FORMAT
+# FUNCTIONS
 # =============================
 def clean_time(ts):
     return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
 
-# =============================
-# LOAD DATA
-# =============================
 @st.cache_data(ttl=60)
 def load_data(stock, period="1d"):
     df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
@@ -45,7 +42,7 @@ def load_data(stock, period="1d"):
     return df.between_time("09:15","15:30")
 
 # =============================
-# BIG PLAYER V10 LOGIC
+# BIG PLAYER LOGIC V11
 # =============================
 def big_player(df, stock):
     if df.empty or len(df) < 30:
@@ -53,7 +50,6 @@ def big_player(df, stock):
 
     df = df.copy()
 
-    # ===== INDICATORS =====
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
@@ -76,7 +72,6 @@ def big_player(df, stock):
     for i in range(25, len(df)):
         price = df['Close'].iloc[i]
 
-        # ===== CONFIDENCE SCORE =====
         score = 0
         if price > df['EMA20'].iloc[i]: score += 1
         if price > df['EMA50'].iloc[i]: score += 1
@@ -86,7 +81,6 @@ def big_player(df, stock):
 
         confidence = f"{score}/5"
 
-        # ===== BUY =====
         if (
             df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*2.5 and
             price > df['EMA20'].iloc[i] > df['EMA50'].iloc[i] and
@@ -103,7 +97,6 @@ def big_player(df, stock):
                 "Confidence": confidence
             })
 
-        # ===== SELL =====
         elif (
             df['Volume'].iloc[i] > df['AvgVol'].iloc[i]*2.5 and
             price < df['EMA20'].iloc[i] < df['EMA50'].iloc[i] and
@@ -120,15 +113,8 @@ def big_player(df, stock):
                 "Confidence": confidence
             })
 
-    # Only latest signals
-    if len(entries) > 0:
-        entries = entries[-5:]
+    return entries[-5:] if entries else []
 
-    return entries
-
-# =============================
-# STRENGTH
-# =============================
 def strength_meter(df):
     if df.empty:
         return 0
@@ -143,56 +129,46 @@ if st.button("🔍 START LIVE"):
     for s in stocks:
         try:
             df = load_data(s)
-            if df.empty: continue
+            if df.empty:
+                continue
 
-            signals = big_player(df, s)
-            all_big += signals
-
-            strength_data.append({
-                "Stock": s,
-                "Strength %": strength_meter(df)
-            })
+            all_big += big_player(df, s)
+            strength_data.append({"Stock": s, "Strength %": strength_meter(df)})
 
         except Exception as e:
             st.warning(f"{s} error: {e}")
 
-    all_big = sorted(all_big, key=lambda x: x["TimeRaw"])
-    strength_df = pd.DataFrame(strength_data).sort_values(by="Strength %", ascending=False)
-
-    st.session_state.live_big = all_big
-    st.session_state.strength = strength_df
+    st.session_state.live_big = sorted(all_big, key=lambda x: x["TimeRaw"])
+    st.session_state.strength = pd.DataFrame(strength_data).sort_values(by="Strength %", ascending=False)
 
 # =============================
-# DISPLAY
+# DISPLAY LIVE
 # =============================
-if len(st.session_state.live_big) > 0:
+if st.session_state.live_big:
+
+    df_signals = pd.DataFrame(st.session_state.live_big)
 
     st.subheader("🐋 BIG PLAYER SIGNALS")
-    df_signals = pd.DataFrame(st.session_state.live_big)
-    st.dataframe(df_signals.sort_values(by="TimeRaw", ascending=False))
+    st.dataframe(df_signals.sort_values(by="TimeRaw", ascending=False), use_container_width=True)
 
     st.markdown("### ✅ BIG BUY")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"][["Stock","Price","Time","Confidence"]])
+    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"][["Stock","Price","Time","Confidence"]], use_container_width=True)
 
     st.markdown("### ❌ BIG SELL")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"][["Stock","Price","Time","Confidence"]])
+    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"][["Stock","Price","Time","Confidence"]], use_container_width=True)
 
     if not st.session_state.strength.empty:
         st.subheader("🔥 STRONG STOCKS")
-        st.dataframe(st.session_state.strength.head(5))
+        st.dataframe(st.session_state.strength.head(5), use_container_width=True)
 
         st.subheader("❄️ WEAK STOCKS")
-        st.dataframe(st.session_state.strength.tail(5))
+        st.dataframe(st.session_state.strength.tail(5), use_container_width=True)
 
-    # =============================
-    # CHART
-    # =============================
-    stock = st.selectbox("📈 Chart", stocks)
+    # ===== CHART =====
+    stock = st.selectbox("📈 Chart", stocks, key="live_stock")
     df_chart = load_data(stock)
 
-    if df_chart.empty:
-        st.warning("No data available")
-    else:
+    if not df_chart.empty:
         fig = go.Figure(data=[go.Candlestick(
             x=df_chart.index,
             open=df_chart['Open'],
@@ -213,16 +189,18 @@ if len(st.session_state.live_big) > 0:
                 textposition="top center"
             ))
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"live_chart_{stock}_{datetime.now().timestamp()}")
+    else:
+        st.warning("No data for chart")
 
 # =============================
 # BACKTEST
 # =============================
 if st.checkbox("📊 Enable Backtest"):
 
-    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
-    bt_big = []
+    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1), key="bt_date")
 
+    bt_big = []
     for s in stocks:
         try:
             df = yf.Ticker(s + ".NS").history(
@@ -231,29 +209,31 @@ if st.checkbox("📊 Enable Backtest"):
                 interval="5m"
             ).between_time("09:15","15:30")
 
-            if df.empty: continue
+            if df.empty:
+                continue
+
             bt_big += big_player(df, s)
 
         except Exception as e:
             st.warning(f"{s} error: {e}")
 
-    bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
-    bt_df = pd.DataFrame(bt_big)
+    bt_df = pd.DataFrame(sorted(bt_big, key=lambda x: x["TimeRaw"]))
+    st.session_state.bt_df = bt_df
 
     if not bt_df.empty:
-        st.subheader("🐋 BACKTEST RESULTS")
-        st.dataframe(bt_df[["Stock","Type","Price","Time","Confidence"]])
 
-        stock = st.selectbox("📉 Backtest Chart", stocks)
+        st.subheader("🐋 BACKTEST RESULTS")
+        st.dataframe(bt_df[["Stock","Type","Price","Time","Confidence"]], use_container_width=True)
+
+        stock = st.selectbox("📉 Backtest Chart", stocks, key="bt_stock")
+
         df_chart = yf.Ticker(stock + ".NS").history(
             start=bt_date,
             end=bt_date + timedelta(days=1),
             interval="5m"
         ).between_time("09:15","15:30")
 
-        if df_chart.empty:
-            st.warning("No data")
-        else:
+        if not df_chart.empty:
             fig = go.Figure(data=[go.Candlestick(
                 x=df_chart.index,
                 open=df_chart['Open'],
@@ -274,4 +254,6 @@ if st.checkbox("📊 Enable Backtest"):
                     textposition="top center"
                 ))
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"bt_chart_{stock}_{datetime.now().timestamp()}")
+        else:
+            st.warning("No backtest data")
