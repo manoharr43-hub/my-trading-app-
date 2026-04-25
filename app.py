@@ -154,8 +154,69 @@ def analyze(df):
     return signal, round(r.iloc[-1],2), final
 
 # =============================
-# BACKTEST RUN
+# BACKTEST
 # =============================
-bt_date = st.sidebar.date_input("📅 Backtest Date", datetime.now().date() - timedelta(days=1))
+bt_date = st.sidebar.date_input(
+    "📅 Backtest Date",
+    datetime.now().date() - timedelta(days=1)
+)
 
-if st.button("📊 RUN
+if st.button("📊 RUN BACKTEST"):
+
+    results = []
+    progress = st.progress(0)
+    total = len(all_stocks)
+
+    for i, stock in enumerate(all_stocks):
+
+        df = load_data(stock)
+
+        if df is None or len(df) < 50:
+            continue
+
+        out = analyze(df)
+        if out:
+            signal, rsi_val, final = out
+        else:
+            continue
+
+        bp_signal, bp_price = big_player(df)
+        score = strength(df)
+
+        results.append({
+            "Stock": stock,
+            "Signal": signal,
+            "RSI": rsi_val,
+            "Final": final,
+            "Big_Player": bp_signal if bp_signal else "NONE",
+            "Strength": score,
+            "Price": round(df['Close'].iloc[-1], 2)
+        })
+
+        progress.progress((i + 1) / total)
+
+    st.session_state.bt_history.append(pd.DataFrame(results))
+
+    st.success("✅ Backtest Completed")
+
+# =============================
+# BACKTEST FOLDER VIEW
+# =============================
+st.subheader("📁 Backtest Folder")
+
+if st.session_state.bt_history:
+
+    for i, df in enumerate(st.session_state.bt_history[::-1]):
+
+        with st.expander(f"📊 Run #{len(st.session_state.bt_history)-i}"):
+
+            st.dataframe(df)
+
+            st.download_button(
+                "⬇️ Download CSV",
+                df.to_csv(index=False),
+                file_name=f"backtest_{i}.csv",
+                mime="text/csv"
+            )
+else:
+    st.info("No backtest yet. Run Backtest first.")
