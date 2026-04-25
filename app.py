@@ -66,10 +66,11 @@ def indicators(df):
     rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     df['AvgVol'] = df['Volume'].rolling(20).mean()
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()  # Simple ATR approx
     return df
 
 # =============================
-# REVERSAL DETECTION
+# REVERSAL DETECTION (Entry/SL/TP)
 # =============================
 def detect_reversal(df, stock):
     df = indicators(df)
@@ -80,13 +81,33 @@ def detect_reversal(df, stock):
         rsi = df['RSI'].iloc[i]
         ema20 = df['EMA20'].iloc[i]
         ema50 = df['EMA50'].iloc[i]
-        ema200 = df['EMA200'].iloc[i]
+        atr = df['ATR'].iloc[i]
 
         if prev_price < ema20 and price > ema20 and rsi > 35 and ema20 > ema50:
-            signals.append({"Stock":stock,"Type":"Bullish Reversal","Price":price,"Time":df.index[i]})
+            entry = price
+            sl = round(entry - atr, 2)
+            tp = round(entry + 2*atr, 2)
+            signals.append({
+                "Stock": stock,
+                "Type": "Bullish Reversal",
+                "Entry": entry,
+                "StopLoss": sl,
+                "Target": tp,
+                "Time": df.index[i]
+            })
 
         elif prev_price > ema20 and price < ema20 and rsi < 65 and ema20 < ema50:
-            signals.append({"Stock":stock,"Type":"Bearish Reversal","Price":price,"Time":df.index[i]})
+            entry = price
+            sl = round(entry + atr, 2)
+            tp = round(entry - 2*atr, 2)
+            signals.append({
+                "Stock": stock,
+                "Type": "Bearish Reversal",
+                "Entry": entry,
+                "StopLoss": sl,
+                "Target": tp,
+                "Time": df.index[i]
+            })
 
     return signals[-10:]
 
@@ -110,7 +131,7 @@ if st.session_state.signals:
     df_sig = df_sig.sort_values(by="Time").reset_index(drop=True)
 
     st.subheader("🔄 Reversal Detection Signals")
-    st.dataframe(df_sig[["Stock","Type","Price","Time"]])
+    st.dataframe(df_sig[["Stock","Type","Entry","StopLoss","Target","Time"]])
 
     stock = st.selectbox("📊 Chart", stocks)
     df_chart = load_data(stock, "5m", "5d")
@@ -129,10 +150,10 @@ if st.session_state.signals:
             for _, r in df_s.iterrows():
                 fig.add_trace(go.Scatter(
                     x=[r["Time"]],
-                    y=[r["Price"]],
+                    y=[r["Entry"]],
                     mode="markers",
                     marker=dict(size=12, color="blue" if "Bullish" in r["Type"] else "orange"),
-                    name=r["Type"]
+                    name=f"{r['Type']} Entry"
                 ))
 
         fig.update_layout(
@@ -175,10 +196,10 @@ if st.checkbox("📊 BACKTEST MODE"):
                 for _, r in df_s.iterrows():
                     fig_bt.add_trace(go.Scatter(
                         x=[r["Time"]],
-                        y=[r["Price"]],
+                        y=[r["Entry"]],
                         mode="markers",
                         marker=dict(size=12, color="blue" if "Bullish" in r["Type"] else "orange"),
-                        name=f"{s} {r['Type']}"
+                        name=f"{s} {r['Type']} Entry"
                     ))
 
             fig_bt.update_layout(
@@ -193,7 +214,7 @@ if st.checkbox("📊 BACKTEST MODE"):
         df_bt = pd.DataFrame(bt_all)
         df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%I:%M %p")
         df_bt = df_bt.sort_values(by="Time").reset_index(drop=True)
-        st.dataframe(df_bt[["Stock","Type","Price","Time"]])
+        st.dataframe(df_bt[["Stock","Type","Entry","StopLoss","Target","Time"]])
     else:
         st.warning("No signals found for selected date")
 
