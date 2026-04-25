@@ -1,4 +1,3 @@
-import ta
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -9,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.7", layout="wide")
-st.title("🚀 NSE AI PRO V9.7 (FINAL UPGRADED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.8", layout="wide")
+st.title("🚀 NSE AI PRO V9.8 (FINAL UPGRADED)")
 st.markdown("---")
 
 # =============================
@@ -73,7 +72,7 @@ def big_player(df, stock):
 
     df = df.copy()
     df['AvgVol'] = df['Volume'].rolling(20).mean()
-    df['Spike'] = df['Volume'] > df['AvgVol'] * 1.5   # relaxed condition
+    df['Spike'] = df['Volume'] > df['AvgVol'] * 1.5
     df['Move'] = df['Close'].diff()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
 
@@ -89,6 +88,18 @@ def big_player(df, stock):
             entries.append({"Stock": stock,"Type": "BIG SELL","Price": price,
                             "TimeRaw": df.index[i],"Time": clean_time(df.index[i])})
     return entries
+
+# =============================
+# ALTERNATE FILTER
+# =============================
+def filter_alternate_signals(signals):
+    if not signals:
+        return []
+    filtered = [signals[0]]
+    for sig in signals[1:]:
+        if sig["Type"] != filtered[-1]["Type"]:
+            filtered.append(sig)
+    return filtered
 
 # =============================
 # STRENGTH
@@ -108,6 +119,7 @@ if st.button("🔍 START LIVE"):
             df = load_data(s)
             if df.empty: continue
             signals = big_player(df, s)
+            signals = filter_alternate_signals(signals)   # NEW FILTER
             all_big += signals
             strength_data.append({"Stock": s,"Strength": strength_meter(df)})
         except Exception as e:
@@ -126,7 +138,6 @@ if len(st.session_state.live_big) > 0:
     df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time","TimeRaw"]]
     st.dataframe(df_signals)
 
-    # BUY & SELL BOXES
     st.markdown("### ✅ BIG BUY BOX")
     st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"][["Stock","Price","Time"]])
     st.markdown("### ❌ BIG SELL BOX")
@@ -170,7 +181,8 @@ if st.checkbox("📊 Enable Backtest"):
                 continue
 
             signals = big_player(df, s)
-            st.write(f"{s} backtest signals: {len(signals)}")   # Debug print
+            signals = filter_alternate_signals(signals)   # NEW FILTER
+            st.write(f"{s} backtest signals: {len(signals)}")
             bt_big += signals
         except Exception as e:
             st.warning(f"{s} backtest error: {e}")
@@ -201,21 +213,4 @@ if st.checkbox("📊 Enable Backtest"):
         )])
 
         df_bt = bt_df[bt_df["Stock"] == stock]
-        for _, row in df_bt.iterrows():
-            fig.add_trace(go.Scatter(
-                x=[row["TimeRaw"]],
-                y=[row["Price"]],
-                mode="markers+text",
-                marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
-                text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
-                textposition="top center"
-            ))
-
-        st.plotly_chart(fig, use_container_width=True)
-        # Trend Indicators
-df['EMA50'] = df['Close'].ewm(span=50).mean()
-df['EMA200'] = df['Close'].ewm(span=200).mean()
-df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
-df['MACD'] = ta.trend.MACD(df['Close']).macd()
-df['MACD_signal'] = ta.trend.MACD(df['Close']).macd_signal()
-
+        for _, row in df_bt.iterrows
