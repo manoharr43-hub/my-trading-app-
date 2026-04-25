@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
@@ -9,8 +10,9 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V20", layout="wide")
-st.title("🚀 NSE AI PRO V20 (Sector-wise + 15m Trend)")
+st.set_page_config(page_title="🔥 NSE AI PRO V21", layout="wide")
+st.title("🚀 NSE AI PRO V21 - AI + Auto Trade + Smart Big Player")
+
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -22,8 +24,8 @@ os.makedirs(BACKTEST_DIR, exist_ok=True)
 # =============================
 # SESSION
 # =============================
-if "live_big" not in st.session_state:
-    st.session_state.live_big = []
+if "signals" not in st.session_state:
+    st.session_state.signals = []
 
 # =============================
 # SECTOR MAP
@@ -31,148 +33,184 @@ if "live_big" not in st.session_state:
 sector_map = {
     "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
     "IT": ["INFY","TCS","HCLTECH","WIPRO","TECHM"],
-    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA","DIVISLAB"],
-    "Auto": ["MARUTI","M&M","TATAMOTORS","HEROMOTOCO","BAJAJ-AUTO"],
-    "Metals": ["JSWSTEEL","TATASTEEL","HINDALCO","VEDL"],
-    "FMCG": ["ITC","HINDUNILVR","NESTLEIND","BRITANNIA","DABUR"],
-    "Oil & Gas": ["RELIANCE","ONGC","BPCL","IOC","GAIL"],
-    "Infra": ["LT","ADANIPORTS","POWERGRID","NTPC"],
-    "Telecom": ["BHARTIARTL","IDEA"]
+    "Auto": ["MARUTI","M&M","TATAMOTORS","HEROMOTOCO"],
+    "FMCG": ["ITC","HINDUNILVR","NESTLEIND"],
+    "Oil": ["RELIANCE","ONGC","BPCL"],
+    "Metals": ["TATASTEEL","JSWSTEEL","HINDALCO"],
 }
 
-selected_sector = st.sidebar.selectbox("📂 Select Sector", list(sector_map.keys()))
-stocks = sector_map[selected_sector]
+sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
+stocks = sector_map[sector]
 
 # =============================
-# FUNCTIONS
+# DATA
 # =============================
-def clean_time(ts):
-    return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
-
 @st.cache_data(ttl=60)
 def load_data(stock, interval="5m"):
-    try:
-        df = yf.Ticker(stock + ".NS").history(period="1d", interval=interval)
-        return df.between_time("09:15","15:30") if not df.empty else pd.DataFrame()
-    except:
-        return pd.DataFrame()
+    df = yf.Ticker(stock + ".NS").history(period="5d", interval=interval)
+    return df
 
-# ===== 15m TREND =====
-@st.cache_data(ttl=60)
-def get_15m_trend(stock):
-    df = load_data(stock, "15m")
-    if df.empty or len(df) < 20:
-        return "UNKNOWN"
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    return "UP" if df['Close'].iloc[-1] > df['EMA20'].iloc[-1] else "DOWN"
-
-# ===== BIG PLAYER =====
-def big_player(df, stock):
-    if df.empty or len(df) < 30:
-        return []
+# =============================
+# INDICATORS
+# =============================
+def indicators(df):
     df = df.copy()
+
     df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+
     tp = (df['High'] + df['Low'] + df['Close']) / 3
-    df['VWAP'] = (tp * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1)
+    df['VWAP'] = (tp * df['Volume']).cumsum() / df['Volume'].cumsum()
+
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
+
     df['AvgVol'] = df['Volume'].rolling(20).mean()
 
-    entries, last_signal = [], None
-    for i in range(25, len(df)):
-        price = df['Close'].iloc[i]
-        vol = df['Volume'].iloc[i] > df['AvgVol'].iloc[i] * 1.5
-        buy = price > df['EMA20'].iloc[i] and price > df['VWAP'].iloc[i] and df['RSI'].iloc[i] > 52
-        sell = price < df['EMA20'].iloc[i] and price < df['VWAP'].iloc[i] and df['RSI'].iloc[i] < 48
-        if vol and buy and last_signal != "BUY":
-            entries.append({"Stock":stock,"Type":"BIG BUY","Price":price,"TimeRaw":df.index[i],"Time":clean_time(df.index[i]),"Confidence":"MEDIUM"})
-            last_signal = "BUY"
-        elif vol and sell and last_signal != "SELL":
-            entries.append({"Stock":stock,"Type":"BIG SELL","Price":price,"TimeRaw":df.index[i],"Time":clean_time(df.index[i]),"Confidence":"MEDIUM"})
-            last_signal = "SELL"
-    return entries[-10:]
+    return df
 
 # =============================
-# LIVE
+# AUTO TRADE ENGINE (SL/TP)
 # =============================
-if st.button("🔍 START LIVE"):
-    filtered_signals = []
+def trade_engine(price, atr, side):
+    if side == "BUY":
+        return {
+            "Entry": price,
+            "SL": price - (1.5 * atr),
+            "Target": price + (3 * atr)
+        }
+    else:
+        return {
+            "Entry": price,
+            "SL": price + (1.5 * atr),
+            "Target": price - (3 * atr)
+        }
+
+# =============================
+# SMART BIG PLAYER DETECTION
+# =============================
+def big_player(df, stock):
+    if df.empty or len(df) < 50:
+        return []
+
+    df = indicators(df)
+
+    signals = []
+    last = None
+
+    for i in range(50, len(df)):
+        price = df['Close'].iloc[i]
+
+        vol_spike = df['Volume'].iloc[i] > df['AvgVol'].iloc[i] * 2
+        trend_up = df['EMA20'].iloc[i] > df['EMA50'].iloc[i]
+
+        buy = (
+            price > df['VWAP'].iloc[i] and
+            trend_up and
+            df['RSI'].iloc[i] > 55 and
+            vol_spike
+        )
+
+        sell = (
+            price < df['VWAP'].iloc[i] and
+            not trend_up and
+            df['RSI'].iloc[i] < 45 and
+            vol_spike
+        )
+
+        atr = (df['High'] - df['Low']).rolling(14).mean().iloc[i]
+
+        if buy and last != "BUY":
+            trade = trade_engine(price, atr, "BUY")
+            signals.append({
+                "Stock": stock,
+                "Type": "AUTO BUY",
+                "Price": price,
+                "Time": df.index[i],
+                **trade
+            })
+            last = "BUY"
+
+        elif sell and last != "SELL":
+            trade = trade_engine(price, atr, "SELL")
+            signals.append({
+                "Stock": stock,
+                "Type": "AUTO SELL",
+                "Price": price,
+                "Time": df.index[i],
+                **trade
+            })
+            last = "SELL"
+
+    return signals[-10:]
+
+# =============================
+# LIVE SYSTEM
+# =============================
+if st.button("🚀 START AI LIVE TRADING"):
+    all_signals = []
+
     for s in stocks:
         df = load_data(s, "5m")
         signals = big_player(df, s)
-        trend = get_15m_trend(s)
-        for sig in signals:
-            if trend == "UP" and sig["Type"] == "BIG BUY":
-                filtered_signals.append(sig)
-            elif trend == "DOWN" and sig["Type"] == "BIG SELL":
-                filtered_signals.append(sig)
-    st.session_state.live_big = sorted(filtered_signals, key=lambda x: x["TimeRaw"])
+        all_signals.extend(signals)
+
+    st.session_state.signals = all_signals
 
 # =============================
-# LIVE DISPLAY
+# DISPLAY
 # =============================
-if st.session_state.live_big:
-    df_signals = pd.DataFrame(st.session_state.live_big)
-    st.subheader("🐋 FILTERED SIGNALS (15m TREND)")
-    st.dataframe(df_signals)
-    stock = st.selectbox("📈 Chart", stocks)
+if st.session_state.signals:
+    df_sig = pd.DataFrame(st.session_state.signals)
+
+    st.subheader("🐋 AI AUTO SIGNALS (BIG PLAYER + SL/TP)")
+    st.dataframe(df_sig)
+
+    stock = st.selectbox("📊 Chart", stocks)
     df_chart = load_data(stock, "5m")
+
     if not df_chart.empty:
-        trend = get_15m_trend(stock)
-        st.markdown(f"📊 15m Trend: **{trend}**")
         fig = go.Figure(data=[go.Candlestick(
-            x=df_chart.index, open=df_chart['Open'], high=df_chart['High'],
-            low=df_chart['Low'], close=df_chart['Close']
+            x=df_chart.index,
+            open=df_chart['Open'],
+            high=df_chart['High'],
+            low=df_chart['Low'],
+            close=df_chart['Close']
         )])
-        df_big = df_signals[df_signals["Stock"] == stock]
-        for _, row in df_big.iterrows():
+
+        df_s = df_sig[df_sig["Stock"] == stock]
+
+        for _, r in df_s.iterrows():
             fig.add_trace(go.Scatter(
-                x=[row["TimeRaw"]], y=[row["Price"]],
-                mode="markers", marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red")
+                x=[r["Time"]],
+                y=[r["Price"]],
+                mode="markers",
+                marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
             ))
+
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
 # BACKTEST
 # =============================
-if st.checkbox("📊 Enable Backtest"):
-    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
-    bt_big = []
+if st.checkbox("📊 BACKTEST MODE"):
+    date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
+
+    bt_all = []
+
     for s in stocks:
-        df = yf.Ticker(s + ".NS").history(start=bt_date, end=bt_date + timedelta(days=1), interval="5m")
-        if df.empty: continue
-        df = df.between_time("09:15","15:30")
+        df = yf.Ticker(s + ".NS").history(period="5d", interval="5m")
+        df = df[df.index.date == date]
+
         signals = big_player(df, s)
-        trend = get_15m_trend(s)
-        for sig in signals:
-            if trend == "UP" and sig["Type"] == "BIG BUY":
-                bt_big.append(sig)
-            elif trend == "DOWN" and sig["Type"] == "BIG SELL":
-                bt_big.append(sig)
-    bt_df = pd.DataFrame(bt_big)
-    st.subheader("📊 Backtest Chart")
-    stock_bt = st.selectbox("Select Stock", stocks, key="bt")
-    df_chart_bt = yf.Ticker(stock_bt + ".NS").history(start=bt_date, end=bt_date + timedelta(days=1), interval="5m")
-    if not df_chart_bt.empty:
-        df_chart_bt = df_chart_bt.between_time("09:15","15:30")
-        fig_bt = go.Figure(data=[go.Candlestick(
-            x=df_chart_bt.index, open=df_chart_bt['Open'], high=df_chart_bt['High'],
-            low=df_chart_bt['Low'], close=df_chart_bt['Close']
-        )])
-        if not bt_df.empty:
-            df_bt_stock = bt_df[bt_df["Stock"] == stock_bt]
-            for _, row in df_bt_stock.iterrows():
-                fig_bt.add_trace(go.Scatter(
-                    x=[row["TimeRaw"]], y=[row["Price"]],
-                    mode="markers", marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red")
-                ))
-        st.plotly_chart(fig_bt, use_container_width=True)
+        bt_all.extend(signals)
+
+    st.subheader("📊 BACKTEST RESULTS")
+
+    if bt_all:
+        st.dataframe(pd.DataFrame(bt_all))
     else:
-        st.error("No data")
-    if not bt_df.empty:
-        st.dataframe(bt_df)
-    else:
-        st.warning("No signals (filtered by 15m trend)")
+        st.warning("No signals found")
