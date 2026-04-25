@@ -4,203 +4,125 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.6", layout="wide")
-st.title("🚀 NSE AI PRO V9.6 (FINAL UPGRADED)")
-st.markdown("---")
+st.set_page_config(page_title="🤖 NSE AUTO TRADER V10", layout="wide")
+st.title("🤖 NSE AUTO TRADER V10 (AUTO PAPER TRADING)")
+st_autorefresh(interval=60000, key="refresh")
 
 # =============================
-# SAFE SESSION INIT
+# SESSION INIT
 # =============================
-if "live_big" not in st.session_state:
-    st.session_state.live_big = []
-if "strength" not in st.session_state:
-    st.session_state.strength = pd.DataFrame()
-if "bt_df" not in st.session_state:
-    st.session_state.bt_df = pd.DataFrame()
+if "trades" not in st.session_state:
+    st.session_state.trades = []
+if "balance" not in st.session_state:
+    st.session_state.balance = 100000  # demo capital
 
 # =============================
-# SECTOR STOCK LIST
+# STOCKS
 # =============================
-BANKING = ["HDFCBANK","ICICIBANK","SBIN","KOTAKBANK","AXISBANK","INDUSINDBK","BANKBARODA","PNB"]
-IT = ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","PERSISTENT"]
-OIL = ["RELIANCE","ONGC","IOC","BPCL","HPCL"]
-AUTO = ["MARUTI","TATAMOTORS","M&M","HEROMOTOCO","BAJAJ-AUTO"]
-INFRA = ["LT","ULTRACEMCO","JSWSTEEL","TATASTEEL","HINDALCO"]
-PHARMA = ["SUNPHARMA","DRREDDY","CIPLA","DIVISLAB"]
-FMCG = ["HINDUNILVR","ITC","NESTLEIND","BRITANNIA"]
-
-sector_map = {
-    "ALL": list(set(BANKING + IT + OIL + AUTO + INFRA + PHARMA + FMCG)),
-    "BANKING": BANKING,
-    "IT": IT,
-    "OIL": OIL,
-    "AUTO": AUTO,
-    "INFRA": INFRA,
-    "PHARMA": PHARMA,
-    "FMCG": FMCG
-}
-
-selected_sector = st.selectbox("📊 Select Sector", sector_map.keys())
-stocks = sector_map[selected_sector]
-
-# =============================
-# TIME FORMAT
-# =============================
-def clean_time(ts):
-    return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
+stocks = ["HDFCBANK","ICICIBANK","RELIANCE","INFY","TCS","SBIN"]
 
 # =============================
 # LOAD DATA
 # =============================
 @st.cache_data(ttl=60)
-def load_data(stock, period="1d"):
-    df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
-    if df.empty:
-        return pd.DataFrame()
+def load(stock):
+    df = yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
     return df.between_time("09:15","15:30")
 
 # =============================
-# BIG PLAYER LOGIC
+# SIGNAL LOGIC (UPGRADED)
 # =============================
-def big_player(df, stock):
-    if df.empty or len(df) < 25:
-        return []
+def signal(df):
+    if len(df) < 30:
+        return None
 
-    df = df.copy()
-    df['AvgVol'] = df['Volume'].rolling(20).mean()
-    df['Spike'] = df['Volume'] > df['AvgVol'] * 2
-    df['Move'] = df['Close'].diff()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['AvgVol'] = df['Volume'].rolling(20).mean()
 
-    entries = []
-    for i in range(20, len(df)):
-        price = df['Close'].iloc[i]
-        ema = df['EMA20'].iloc[i]
+    last = df.iloc[-1]
 
-        if df['Spike'].iloc[i] and df['Move'].iloc[i] > 0 and price > ema:
-            entries.append({"Stock": stock,"Type": "BIG BUY","Price": price,
-                            "TimeRaw": df.index[i],"Time": clean_time(df.index[i])})
-        elif df['Spike'].iloc[i] and df['Move'].iloc[i] < 0 and price < ema:
-            entries.append({"Stock": stock,"Type": "BIG SELL","Price": price,
-                            "TimeRaw": df.index[i],"Time": clean_time(df.index[i])})
-    return entries
+    if last['Volume'] > last['AvgVol']*2.5 and last['Close'] > last['EMA20'] > last['EMA50']:
+        return "BUY"
+    elif last['Volume'] > last['AvgVol']*2.5 and last['Close'] < last['EMA20'] < last['EMA50']:
+        return "SELL"
+    return None
 
 # =============================
-# STRENGTH
+# AUTO TRADING ENGINE
 # =============================
-def strength_meter(df):
-    if df.empty:
-        return 0
-    return (df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]
-
-# =============================
-# LIVE
-# =============================
-if st.button("🔍 START LIVE"):
-    all_big, strength_data = [], []
+if st.button("🚀 START AUTO TRADING"):
     for s in stocks:
-        try:
-            df = load_data(s)
-            if df.empty: continue
-            signals = big_player(df, s)
-            all_big += signals
-            strength_data.append({"Stock": s,"Strength": strength_meter(df)})
-        except Exception as e:
-            st.warning(f"{s} error: {e}")
+        df = load(s)
+        sig = signal(df)
 
-    all_big = sorted(all_big, key=lambda x: x["TimeRaw"])
-    strength_df = pd.DataFrame(strength_data).sort_values(by="Strength", ascending=False)
-    st.session_state.live_big = all_big
-    st.session_state.strength = strength_df
+        if sig:
+            price = df['Close'].iloc[-1]
+            qty = int(10000 / price)
 
-# =============================
-# LIVE DISPLAY
-# =============================
-if len(st.session_state.live_big) > 0:
-    st.subheader("🐋 BIG PLAYER")
-    df_signals = pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time","TimeRaw"]]
-    st.dataframe(df_signals)
+            trade = {
+                "Stock": s,
+                "Type": sig,
+                "Entry": price,
+                "Time": datetime.now().strftime("%H:%M"),
+                "Qty": qty,
+                "Exit": None,
+                "PnL": 0
+            }
 
-    # BUY & SELL BOXES
-    st.markdown("### ✅ BIG BUY BOX")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG BUY"][["Stock","Price","Time"]])
-    st.markdown("### ❌ BIG SELL BOX")
-    st.dataframe(df_signals[df_signals["Type"]=="BIG SELL"][["Stock","Price","Time"]])
-
-    if not st.session_state.strength.empty:
-        st.subheader("🔥 STRONG STOCKS"); st.dataframe(st.session_state.strength.head(5))
-        st.subheader("❄️ WEAK STOCKS"); st.dataframe(st.session_state.strength.tail(5))
-
-    stock = st.selectbox("📈 Chart", stocks)
-    df_chart = load_data(stock)
-    fig = go.Figure(data=[go.Candlestick(x=df_chart.index,open=df_chart['Open'],
-                                         high=df_chart['High'],low=df_chart['Low'],
-                                         close=df_chart['Close'])])
-    df_big = df_signals[df_signals["Stock"] == stock]
-    for _, row in df_big.iterrows():
-        fig.add_trace(go.Scatter(x=[row["TimeRaw"]],y=[row["Price"]],
-                                 mode="markers+text",
-                                 marker=dict(size=10,color="green" if row["Type"]=="BIG BUY" else "red"),
-                                 text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
-                                 textposition="top center"))
-    st.plotly_chart(fig, use_container_width=True)
+            st.session_state.trades.append(trade)
 
 # =============================
-# BACKTEST
+# AUTO EXIT LOGIC
 # =============================
-if st.checkbox("📊 Enable Backtest"):
-    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
-    bt_big = []
+for t in st.session_state.trades:
+    if t["Exit"] is None:
+        df = load(t["Stock"])
+        price = df['Close'].iloc[-1]
 
-    for s in stocks:
-        try:
-            df = yf.Ticker(s + ".NS").history(
-                start=bt_date,
-                end=bt_date + timedelta(days=1),
-                interval="5m"
-            ).between_time("09:15","15:30")
+        # 1% target / 0.5% SL
+        if t["Type"] == "BUY":
+            if price >= t["Entry"] * 1.01 or price <= t["Entry"] * 0.995:
+                t["Exit"] = price
+        else:
+            if price <= t["Entry"] * 0.99 or price >= t["Entry"] * 1.005:
+                t["Exit"] = price
 
-            if df.empty: continue
-            bt_big += big_player(df, s)
-        except Exception as e:
-            st.warning(f"{s} backtest error: {e}")
+        if t["Exit"]:
+            pnl = (t["Exit"] - t["Entry"]) * t["Qty"]
+            if t["Type"] == "SELL":
+                pnl = -pnl
 
-    bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
-    bt_df = pd.DataFrame(bt_big)
-    st.session_state.bt_df = bt_df
+            t["PnL"] = round(pnl, 2)
+            st.session_state.balance += pnl
 
-    if len(bt_big) > 0:
-        st.subheader("🐋 BACKTEST RESULTS")
-        st.dataframe(bt_df[["Stock","Type","Price","Time"]])
+# =============================
+# DISPLAY
+# =============================
+st.subheader("💼 Trades")
+df_trades = pd.DataFrame(st.session_state.trades)
+st.dataframe(df_trades)
 
-        stock = st.selectbox("📉 Backtest Chart", stocks)
-        df_chart = yf.Ticker(stock + ".NS").history(
-            start=bt_date,
-            end=bt_date + timedelta(days=1),
-            interval="5m"
-        ).between_time("09:15","15:30")
+st.subheader("💰 Balance")
+st.success(f"₹ {round(st.session_state.balance,2)}")
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=df_chart.index,
-            open=df_chart['Open'],
-            high=df_chart['High'],
-            low=df_chart['Low'],
-            close=df_chart['Close']
-        )])
+# =============================
+# CHART
+# =============================
+stock = st.selectbox("Chart", stocks)
+df = load(stock)
 
-        df_bt = bt_df[bt_df["Stock"] == stock]
-        for _, row in df_bt.iterrows():
-            fig.add_trace(go.Scatter(
-                x=[row["TimeRaw"]],
-                y=[row["Price"]],
-                mode="markers+text",
-                marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
-                text=[f"{row['Type']} @ {row['Price']} ({row['Time']})"],
-                textposition="top center"
-            ))
+fig = go.Figure(data=[go.Candlestick(
+    x=df.index,
+    open=df['Open'],
+    high=df['High'],
+    low=df['Low'],
+    close=df['Close']
+)])
 
-        st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
