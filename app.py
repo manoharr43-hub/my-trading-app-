@@ -113,7 +113,7 @@ if st.session_state.signals:
     st.dataframe(df_sig[["Stock","Type","Price","Time"]])
 
     stock = st.selectbox("📊 Chart", stocks)
-    df_chart = load_data(stock, "5m", "5d")   # 👉 LIVE chart కూడా 5m intervalలో ఉండాలి
+    df_chart = load_data(stock, "5m", "5d")
 
     if not df_chart.empty:
         fig = go.Figure(data=[go.Candlestick(
@@ -135,8 +135,11 @@ if st.session_state.signals:
                     name=r["Type"]
                 ))
 
-        fig.update_layout(title=f"{stock} - Live Reversal Chart", 
-                          xaxis_title="Time", yaxis_title="Price")
+        fig.update_layout(
+            title=f"{stock} - Live Reversal Chart",
+            xaxis_title="Time",
+            yaxis_title="Price"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 # =============================
@@ -154,7 +157,6 @@ if st.checkbox("📊 BACKTEST MODE"):
             signals = detect_reversal(df, s)
             bt_all.extend(signals)
 
-            # Save signals to CSV in backtest folder
             if signals:
                 df_save = pd.DataFrame(signals)
                 filename = f"{BACKTEST_DIR}/backtest_{s}_{date}.csv"
@@ -179,4 +181,29 @@ if st.checkbox("📊 BACKTEST MODE"):
                         name=f"{s} {r['Type']}"
                     ))
 
-            fig_bt.update_layout(title=f"{s} - Backtest Reversal Chart ({date})",
+            fig_bt.update_layout(
+                title=f"{s} - Backtest Reversal Chart ({date})",
+                xaxis_title="Time",
+                yaxis_title="Price"
+            )
+            st.plotly_chart(fig_bt, use_container_width=True)
+
+    st.subheader("📊 BACKTEST RESULTS")
+    if bt_all:
+        df_bt = pd.DataFrame(bt_all)
+        df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%I:%M %p")
+        df_bt = df_bt.sort_values(by="Time").reset_index(drop=True)
+        st.dataframe(df_bt[["Stock","Type","Price","Time"]])
+    else:
+        st.warning("No signals found for selected date")
+
+# =============================
+# BACKTEST FOLDER DISPLAY
+# =============================
+st.sidebar.subheader("📂 Backtest Folder Contents")
+files = os.listdir(BACKTEST_DIR)
+if files:
+    for f in files:
+        st.sidebar.write(f)
+else:
+    st.sidebar.write("No backtest files yet")
