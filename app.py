@@ -136,6 +136,11 @@ if st.button("🚀 START HQ LIVE TRADING"):
 # =============================
 if st.session_state.signals:
     df_sig = pd.DataFrame(st.session_state.signals)
+
+    # 👉 Clean Time format (9:00 AM style) + sequential order
+    df_sig["Time"] = pd.to_datetime(df_sig["Time"]).dt.strftime("%I:%M %p")
+    df_sig = df_sig.sort_values(by="Time").reset_index(drop=True)
+
     st.subheader("🐋 HQ AUTO SIGNALS (Big Player + Trend + S/R)")
     st.dataframe(df_sig)
 
@@ -158,7 +163,6 @@ if st.session_state.signals:
                 mode="markers",
                 marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
             ))
-        # 👉 Chart titleలో stock name చూపించడానికి
         fig.update_layout(title=f"{stock} - Live Chart", xaxis_title="Time", yaxis_title="Price")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -190,12 +194,14 @@ if st.checkbox("📊 BACKTEST MODE"):
                     mode="markers",
                     marker=dict(size=10, color="green" if "BUY" in r["Type"] else "red")
                 ))
-            # 👉 Backtest chartలో కూడా stock name చూపించడానికి
             fig_bt.update_layout(title=f"{s} - Backtest Chart ({date})", xaxis_title="Time", yaxis_title="Price")
             st.plotly_chart(fig_bt, use_container_width=True)
 
     st.subheader("📊 BACKTEST RESULTS")
     if bt_all:
-        st.dataframe(pd.DataFrame(bt_all))
+        df_bt = pd.DataFrame(bt_all)
+        df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%I:%M %p")
+        df_bt = df_bt.sort_values(by="Time").reset_index(drop=True)
+        st.dataframe(df_bt)
     else:
         st.warning("No signals found")
