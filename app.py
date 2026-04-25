@@ -4,50 +4,40 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
-from sklearn.linear_model import LinearRegression
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V6", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V7", layout="wide")
 
-st.title("🚀 NSE AI PRO V6 (FIXED TIMING + BACKTEST CHART)")
+st.title("🚀 NSE AI PRO V7 (FINAL FIXED)")
 st.markdown("---")
 
 # =============================
-# STOCK LIST
+# STOCKS
 # =============================
-sector_map = {
-    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
-    "IT": ["TCS","INFY","HCLTECH","WIPRO","TECHM"],
-    "Pharma": ["SUNPHARMA","DRREDDY","CIPLA"],
-    "Auto": ["MARUTI","M&M","TATAMOTORS"],
-    "Metals": ["JSWSTEEL","TATASTEEL","HINDALCO"],
-    "FMCG": ["ITC","RELIANCE","LT","BHARTIARTL"]
-}
-
-all_stocks = list(set(sum(sector_map.values(), [])))
+stocks = ["HDFCBANK","ICICIBANK","SBIN","TCS","INFY","RELIANCE","ITC","LT"]
 
 # =============================
-# TIME FORMAT (ORDER FIX)
+# TIME FORMAT
 # =============================
 def clean_time(ts):
-    return pd.to_datetime(ts).strftime("%I:%M %p")
+    return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
 
 # =============================
 # DATA
 # =============================
-def load_data(stock):
-    return yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
+def load_data(stock, period="1d"):
+    return yf.Ticker(stock + ".NS").history(period=period, interval="5m")
 
 # =============================
-# BIG PLAYER
+# BIG PLAYER DETECTION
 # =============================
 def big_player(df, stock):
     df = df.copy()
 
     df['AvgVol'] = df['Volume'].rolling(20).mean()
-    df['Spike'] = df['Volume'] > (df['AvgVol'] * 2)
+    df['Spike'] = df['Volume'] > df['AvgVol'] * 2
     df['Move'] = df['Close'].diff()
 
     entries = []
@@ -58,7 +48,8 @@ def big_player(df, stock):
                 "Stock": stock,
                 "Type": "BIG BUY",
                 "Price": df['Close'].iloc[i],
-                "Time": df.index[i]
+                "TimeRaw": df.index[i],
+                "Time": clean_time(df.index[i])
             })
 
         elif df['Spike'].iloc[i] and df['Move'].iloc[i] < 0:
@@ -66,73 +57,45 @@ def big_player(df, stock):
                 "Stock": stock,
                 "Type": "BIG SELL",
                 "Price": df['Close'].iloc[i],
-                "Time": df.index[i]
+                "TimeRaw": df.index[i],
+                "Time": clean_time(df.index[i])
             })
 
-    # ✅ TIMING SERIAL FIX
-    return sorted(entries, key=lambda x: x["Time"])
+    # SERIAL ORDER FIX
+    entries = sorted(entries, key=lambda x: x["TimeRaw"])
+
+    return entries
 
 # =============================
-# ANALYSIS
+# LIVE
 # =============================
-def analyze(df):
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
+if st.button("🔍 START LIVE"):
 
-    signal = "BUY" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "SELL"
+    all_big = []
 
-    return signal
-
-# =============================
-# LIVE RUN
-# =============================
-if st.button("🔍 START LIVE V6"):
-
-    results = []
-    big_entries = []
-
-    for s in all_stocks:
+    for s in stocks:
         try:
             df = load_data(s)
             df = df.between_time("09:15","15:30")
 
-            if len(df) < 50:
-                continue
-
-            signal = analyze(df)
             big = big_player(df, s)
-
-            results.append({
-                "Stock": s,
-                "Signal": signal
-            })
-
-            big_entries += big
+            all_big += big
 
         except:
             pass
 
-    st.session_state.live_res = results
-    st.session_state.big_entries = big_entries
+    st.session_state.live_big = all_big
 
 # =============================
-# DISPLAY LIVE
+# LIVE DISPLAY
 # =============================
-if "live_res" in st.session_state:
+if "live_big" in st.session_state:
 
-    st.subheader("📊 LIVE SIGNALS")
-    st.dataframe(pd.DataFrame(st.session_state.live_res))
+    st.subheader("🐋 BIG PLAYER (LIVE SERIAL)")
+    st.dataframe(pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]])
 
-    st.subheader("🐋 BIG PLAYER (TIMING ORDER)")
-    st.dataframe(pd.DataFrame(st.session_state.big_entries))
-
-    # =============================
     # CHART
-    # =============================
-    stock = st.selectbox(
-        "📈 Chart",
-        pd.DataFrame(st.session_state.live_res)["Stock"].unique()
-    )
+    stock = st.selectbox("📈 Chart", stocks)
 
     df_chart = load_data(stock)
     df_chart = df_chart.between_time("09:15","15:30")
@@ -145,37 +108,31 @@ if "live_res" in st.session_state:
         close=df_chart['Close']
     )])
 
-    # BIG PLAYER MARKERS
-    df_big = pd.DataFrame(st.session_state.big_entries)
+    df_big = pd.DataFrame(st.session_state.live_big)
+    df_big = df_big[df_big["Stock"] == stock]
 
-    if not df_big.empty:
-        df_big = df_big[df_big["Stock"] == stock]
-
-        for _, row in df_big.iterrows():
-            fig.add_trace(go.Scatter(
-                x=[row["Time"]],
-                y=[row["Price"]],
-                mode="markers+text",
-                marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red"),
-                text=[row["Type"]],
-                textposition="top center"
-            ))
+    for _, row in df_big.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[row["TimeRaw"]],
+            y=[row["Price"]],
+            mode="markers+text",
+            marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red"),
+            text=[row["Type"]],
+            textposition="top center"
+        ))
 
     st.plotly_chart(fig, use_container_width=True)
 
 # =============================
-# BACKTEST (HIDDEN FIX)
+# BACKTEST
 # =============================
-show_bt = st.checkbox("📊 Show Backtest (Optional)")
+if st.checkbox("📊 Enable Backtest"):
 
-if show_bt:
+    bt_date = st.date_input("Select Date", datetime.now().date()-timedelta(days=1))
 
-    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
-
-    bt_res = []
     bt_big = []
 
-    for s in all_stocks:
+    for s in stocks:
         try:
             df = yf.Ticker(s + ".NS").history(
                 start=bt_date,
@@ -185,30 +142,20 @@ if show_bt:
 
             df = df.between_time("09:15","15:30")
 
-            if len(df) < 50:
-                continue
-
-            signal = analyze(df)
             big = big_player(df, s)
-
-            bt_res.append({"Stock": s, "Signal": signal})
             bt_big += big
 
         except:
             pass
 
-    st.subheader("📊 BACKTEST RESULTS")
-    st.dataframe(pd.DataFrame(bt_res))
+    # SERIAL FIX
+    bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
 
-    st.subheader("🐋 BACKTEST BIG PLAYER (SERIAL)")
+    st.subheader("🐋 BACKTEST BIG PLAYER")
+    st.dataframe(pd.DataFrame(bt_big)[["Stock","Type","Price","Time"]])
 
-    bt_big = sorted(bt_big, key=lambda x: x["Time"])
-    st.dataframe(pd.DataFrame(bt_big))
-
-    # =============================
     # BACKTEST CHART
-    # =============================
-    stock = st.selectbox("📉 Backtest Chart", pd.DataFrame(bt_res)["Stock"].unique())
+    stock = st.selectbox("📉 Backtest Chart", stocks)
 
     df_chart = yf.Ticker(stock + ".NS").history(
         start=bt_date,
@@ -225,5 +172,18 @@ if show_bt:
         low=df_chart['Low'],
         close=df_chart['Close']
     )])
+
+    df_bt = pd.DataFrame(bt_big)
+    df_bt = df_bt[df_bt["Stock"] == stock]
+
+    for _, row in df_bt.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[row["TimeRaw"]],
+            y=[row["Price"]],
+            mode="markers+text",
+            marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
+            text=[row["Type"]],
+            textposition="top center"
+        ))
 
     st.plotly_chart(fig, use_container_width=True)
