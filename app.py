@@ -83,10 +83,20 @@ def detect_reversal(df, stock):
         ema200 = df['EMA200'].iloc[i]
 
         if prev_price < ema20 and price > ema20 and rsi > 35 and ema20 > ema50:
-            signals.append({"Stock":stock,"Type":"Bullish Reversal","Price":price,"Time":df.index[i]})
+            signals.append({
+                "Stock": stock,
+                "Type": "Bullish Reversal",
+                "Price": price,
+                "Time": df.index[i]
+            })
 
         elif prev_price > ema20 and price < ema20 and rsi < 65 and ema20 < ema50:
-            signals.append({"Stock":stock,"Type":"Bearish Reversal","Price":price,"Time":df.index[i]})
+            signals.append({
+                "Stock": stock,
+                "Type": "Bearish Reversal",
+                "Price": price,
+                "Time": df.index[i]
+            })
 
     return signals[-10:]
 
@@ -110,10 +120,13 @@ if st.session_state.signals:
     df_sig = df_sig.sort_values(by="Time").reset_index(drop=True)
 
     st.subheader("🔄 Reversal Detection Signals")
-    st.dataframe(df_sig[["Stock","Type","Price","Time"]])
+
+    # 👉 Safe column selection
+    cols = [c for c in ["Stock","Type","Price","Time"] if c in df_sig.columns]
+    st.dataframe(df_sig[cols])
 
     stock = st.selectbox("📊 Chart", stocks)
-    df_chart = load_data(stock, "15m", "1d")   # 👉 1‑Day Frame Chart
+    df_chart = load_data(stock, "1d", "6mo")   # 👉 Daily Frame Chart
 
     if not df_chart.empty:
         fig = go.Figure(data=[go.Candlestick(
@@ -132,5 +145,5 @@ if st.session_state.signals:
                 marker=dict(size=12, color="blue" if "Bullish" in r["Type"] else "orange"),
                 name=r["Type"]
             ))
-        fig.update_layout(title=f"{stock} - 1 Day Reversal Chart", xaxis_title="Time", yaxis_title="Price")
+        fig.update_layout(title=f"{stock} - Daily Reversal Chart", xaxis_title="Time", yaxis_title="Price")
         st.plotly_chart(fig, use_container_width=True)
