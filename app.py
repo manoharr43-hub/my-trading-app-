@@ -2,18 +2,16 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
+from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V5 LIVE", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
+st.set_page_config(page_title="🔥 NSE AI PRO V6", layout="wide")
 
-st.title("🚀 NSE AI PRO V5 (LIVE ONLY + BIG PLAYER)")
+st.title("🚀 NSE AI PRO V6 (FIXED TIMING + BACKTEST CHART)")
 st.markdown("---")
 
 # =============================
@@ -31,53 +29,19 @@ sector_map = {
 all_stocks = list(set(sum(sector_map.values(), [])))
 
 # =============================
-# TIME FORMAT (ONLY 9:30 AM)
+# TIME FORMAT (ORDER FIX)
 # =============================
 def clean_time(ts):
-    return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
+    return pd.to_datetime(ts).strftime("%I:%M %p")
 
 # =============================
-# DATA LOAD
+# DATA
 # =============================
-@st.cache_data(ttl=300)
 def load_data(stock):
     return yf.Ticker(stock + ".NS").history(period="1d", interval="5m")
 
 # =============================
-# RSI
-# =============================
-def rsi(df, period=14):
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / (loss + 1e-9)
-    return (100 - (100 / (1 + rs))).fillna(50)
-
-# =============================
-# AI MODEL
-# =============================
-def ai_predict(df):
-    df = df.copy().dropna()
-
-    if len(df) < 30:
-        return None
-
-    df['Target'] = df['Close'].shift(-1)
-    df.dropna(inplace=True)
-
-    try:
-        X = df[['Close','Volume']]
-        y = df['Target']
-
-        model = LinearRegression()
-        model.fit(X, y)
-
-        return model.predict(X.iloc[-1].values.reshape(1, -1))[0]
-    except:
-        return None
-
-# =============================
-# BIG PLAYER DETECTION
+# BIG PLAYER
 # =============================
 def big_player(df, stock):
     df = df.copy()
@@ -94,7 +58,7 @@ def big_player(df, stock):
                 "Stock": stock,
                 "Type": "BIG BUY",
                 "Price": df['Close'].iloc[i],
-                "Time": clean_time(df.index[i])
+                "Time": df.index[i]
             })
 
         elif df['Spike'].iloc[i] and df['Move'].iloc[i] < 0:
@@ -102,45 +66,27 @@ def big_player(df, stock):
                 "Stock": stock,
                 "Type": "BIG SELL",
                 "Price": df['Close'].iloc[i],
-                "Time": clean_time(df.index[i])
+                "Time": df.index[i]
             })
 
-    return entries
+    # ✅ TIMING SERIAL FIX
+    return sorted(entries, key=lambda x: x["Time"])
 
 # =============================
-# ANALYSIS ENGINE
+# ANALYSIS
 # =============================
 def analyze(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['AvgVol'] = df['Volume'].rolling(20).mean()
 
-    r = rsi(df)
-    pred = ai_predict(df)
+    signal = "BUY" if df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1] else "SELL"
 
-    signal = "WAIT"
-
-    if pred:
-        signal = "BUY" if pred > df['Close'].iloc[-1] else "SELL"
-
-    vol_ok = df['Volume'].iloc[-1] > df['AvgVol'].iloc[-1]
-    trend_up = df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]
-    trend_down = df['EMA20'].iloc[-1] < df['EMA50'].iloc[-1]
-
-    final = "⚠️ WAIT"
-
-    if signal == "BUY" and r.iloc[-1] < 70 and vol_ok and trend_up:
-        final = "🚀 STRONG BUY"
-
-    elif signal == "SELL" and r.iloc[-1] > 30 and vol_ok and trend_down:
-        final = "💀 STRONG SELL"
-
-    return signal, round(r.iloc[-1],2), final
+    return signal
 
 # =============================
-# LIVE START
+# LIVE RUN
 # =============================
-if st.button("🔍 START LIVE V5"):
+if st.button("🔍 START LIVE V6"):
 
     results = []
     big_entries = []
@@ -153,14 +99,12 @@ if st.button("🔍 START LIVE V5"):
             if len(df) < 50:
                 continue
 
-            signal, rsi_v, final = analyze(df)
+            signal = analyze(df)
             big = big_player(df, s)
 
             results.append({
                 "Stock": s,
-                "Signal": signal,
-                "FINAL": final,
-                "RSI": rsi_v
+                "Signal": signal
             })
 
             big_entries += big
@@ -172,20 +116,15 @@ if st.button("🔍 START LIVE V5"):
     st.session_state.big_entries = big_entries
 
 # =============================
-# DISPLAY
+# DISPLAY LIVE
 # =============================
 if "live_res" in st.session_state:
 
     st.subheader("📊 LIVE SIGNALS")
     st.dataframe(pd.DataFrame(st.session_state.live_res))
 
-    st.subheader("🐋 BIG PLAYER ENTRIES")
-
-    if st.session_state.big_entries:
-        df_big = pd.DataFrame(st.session_state.big_entries)
-        st.dataframe(df_big)
-    else:
-        st.info("No Big Player activity yet")
+    st.subheader("🐋 BIG PLAYER (TIMING ORDER)")
+    st.dataframe(pd.DataFrame(st.session_state.big_entries))
 
     # =============================
     # CHART
@@ -213,15 +152,78 @@ if "live_res" in st.session_state:
         df_big = df_big[df_big["Stock"] == stock]
 
         for _, row in df_big.iterrows():
-            color = "green" if row["Type"] == "BIG BUY" else "red"
-
             fig.add_trace(go.Scatter(
-                x=[df_chart.index[0]],
+                x=[row["Time"]],
                 y=[row["Price"]],
                 mode="markers+text",
-                marker=dict(size=10, color=color),
+                marker=dict(size=10, color="green" if row["Type"]=="BIG BUY" else "red"),
                 text=[row["Type"]],
-                name=row["Type"]
+                textposition="top center"
             ))
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# =============================
+# BACKTEST (HIDDEN FIX)
+# =============================
+show_bt = st.checkbox("📊 Show Backtest (Optional)")
+
+if show_bt:
+
+    bt_date = st.date_input("Select Date", datetime.now().date() - timedelta(days=1))
+
+    bt_res = []
+    bt_big = []
+
+    for s in all_stocks:
+        try:
+            df = yf.Ticker(s + ".NS").history(
+                start=bt_date,
+                end=bt_date + timedelta(days=1),
+                interval="5m"
+            )
+
+            df = df.between_time("09:15","15:30")
+
+            if len(df) < 50:
+                continue
+
+            signal = analyze(df)
+            big = big_player(df, s)
+
+            bt_res.append({"Stock": s, "Signal": signal})
+            bt_big += big
+
+        except:
+            pass
+
+    st.subheader("📊 BACKTEST RESULTS")
+    st.dataframe(pd.DataFrame(bt_res))
+
+    st.subheader("🐋 BACKTEST BIG PLAYER (SERIAL)")
+
+    bt_big = sorted(bt_big, key=lambda x: x["Time"])
+    st.dataframe(pd.DataFrame(bt_big))
+
+    # =============================
+    # BACKTEST CHART
+    # =============================
+    stock = st.selectbox("📉 Backtest Chart", pd.DataFrame(bt_res)["Stock"].unique())
+
+    df_chart = yf.Ticker(stock + ".NS").history(
+        start=bt_date,
+        end=bt_date + timedelta(days=1),
+        interval="5m"
+    )
+
+    df_chart = df_chart.between_time("09:15","15:30")
+
+    fig = go.Figure(data=[go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['Open'],
+        high=df_chart['High'],
+        low=df_chart['Low'],
+        close=df_chart['Close']
+    )])
 
     st.plotly_chart(fig, use_container_width=True)
