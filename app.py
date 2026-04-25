@@ -8,9 +8,18 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9", layout="wide")
-st.title("🚀 NSE AI PRO V9 (SECTOR PRO VERSION)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.1", layout="wide")
+st.title("🚀 NSE AI PRO V9.1 (STABLE VERSION)")
 st.markdown("---")
+
+# =============================
+# SAFE SESSION INIT (FIX)
+# =============================
+if "live_big" not in st.session_state:
+    st.session_state.live_big = []
+
+if "strength" not in st.session_state:
+    st.session_state.strength = pd.DataFrame()
 
 # =============================
 # SECTOR STOCK LIST
@@ -54,7 +63,7 @@ def load_data(stock, period="1d"):
     return df.between_time("09:15","15:30")
 
 # =============================
-# BIG PLAYER LOGIC (SAME CORE)
+# BIG PLAYER LOGIC
 # =============================
 def big_player(df, stock):
     if df.empty or len(df) < 25:
@@ -69,7 +78,6 @@ def big_player(df, stock):
     entries = []
 
     for i in range(20, len(df)):
-
         price = df['Close'].iloc[i]
         ema = df['EMA20'].iloc[i]
 
@@ -133,18 +141,19 @@ if st.button("🔍 START LIVE"):
     st.session_state.strength = strength_df
 
 # =============================
-# LIVE DISPLAY
+# LIVE DISPLAY (SAFE FIX)
 # =============================
-if "live_big" in st.session_state:
+if len(st.session_state.live_big) > 0:
 
     st.subheader("🐋 BIG PLAYER")
     st.dataframe(pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]])
 
-    st.subheader("🔥 STRONG STOCKS")
-    st.dataframe(st.session_state.strength.head(5))
+    if not st.session_state.strength.empty:
+        st.subheader("🔥 STRONG STOCKS")
+        st.dataframe(st.session_state.strength.head(5))
 
-    st.subheader("❄️ WEAK STOCKS")
-    st.dataframe(st.session_state.strength.tail(5))
+        st.subheader("❄️ WEAK STOCKS")
+        st.dataframe(st.session_state.strength.tail(5))
 
     # CHART
     stock = st.selectbox("📈 Chart", stocks)
@@ -203,8 +212,9 @@ if st.checkbox("📊 Enable Backtest"):
 
     bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
 
-    st.subheader("🐋 BACKTEST BIG PLAYER")
-    st.dataframe(pd.DataFrame(bt_big)[["Stock","Type","Price","Time"]])
+    if len(bt_big) > 0:
+        st.subheader("🐋 BACKTEST BIG PLAYER")
+        st.dataframe(pd.DataFrame(bt_big)[["Stock","Type","Price","Time"]])
 
     # CHART
     stock = st.selectbox("📉 Backtest Chart", stocks)
@@ -233,9 +243,4 @@ if st.checkbox("📊 Enable Backtest"):
             x=[row["TimeRaw"]],
             y=[row["Price"]],
             mode="markers+text",
-            marker=dict(size=12, color="green" if row["Type"]=="BIG BUY" else "red"),
-            text=[row["Type"]],
-            textposition="top center"
-        ))
-
-    st.plotly_chart(fig, use_container_width=True)
+            marker=dict(size=12, color="green" if row["Type
