@@ -8,15 +8,34 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V7", layout="wide")
-
-st.title("🚀 NSE AI PRO V7 (FINAL FIXED)")
+st.set_page_config(page_title="🔥 NSE AI PRO V9", layout="wide")
+st.title("🚀 NSE AI PRO V9 (SECTOR PRO VERSION)")
 st.markdown("---")
 
 # =============================
-# STOCKS
+# SECTOR STOCK LIST
 # =============================
-stocks = ["HDFCBANK","ICICIBANK","SBIN","TCS","INFY","RELIANCE","ITC","LT"]
+BANKING = ["HDFCBANK","ICICIBANK","SBIN","KOTAKBANK","AXISBANK","INDUSINDBK","BANKBARODA","PNB"]
+IT = ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","PERSISTENT"]
+OIL = ["RELIANCE","ONGC","IOC","BPCL","HPCL"]
+AUTO = ["MARUTI","TATAMOTORS","M&M","HEROMOTOCO","BAJAJ-AUTO"]
+INFRA = ["LT","ULTRACEMCO","JSWSTEEL","TATASTEEL","HINDALCO"]
+PHARMA = ["SUNPHARMA","DRREDDY","CIPLA","DIVISLAB"]
+FMCG = ["HINDUNILVR","ITC","NESTLEIND","BRITANNIA"]
+
+sector_map = {
+    "ALL": list(set(BANKING + IT + OIL + AUTO + INFRA + PHARMA + FMCG)),
+    "BANKING": BANKING,
+    "IT": IT,
+    "OIL": OIL,
+    "AUTO": AUTO,
+    "INFRA": INFRA,
+    "PHARMA": PHARMA,
+    "FMCG": FMCG
+}
+
+selected_sector = st.selectbox("📊 Select Sector", sector_map.keys())
+stocks = sector_map[selected_sector]
 
 # =============================
 # TIME FORMAT
@@ -25,46 +44,62 @@ def clean_time(ts):
     return pd.to_datetime(ts).strftime("%I:%M %p").lstrip("0")
 
 # =============================
-# DATA
+# LOAD DATA
 # =============================
+@st.cache_data(ttl=60)
 def load_data(stock, period="1d"):
-    return yf.Ticker(stock + ".NS").history(period=period, interval="5m")
+    df = yf.Ticker(stock + ".NS").history(period=period, interval="5m")
+    if df.empty:
+        return pd.DataFrame()
+    return df.between_time("09:15","15:30")
 
 # =============================
-# BIG PLAYER DETECTION
+# BIG PLAYER LOGIC (SAME CORE)
 # =============================
 def big_player(df, stock):
-    df = df.copy()
+    if df.empty or len(df) < 25:
+        return []
 
+    df = df.copy()
     df['AvgVol'] = df['Volume'].rolling(20).mean()
     df['Spike'] = df['Volume'] > df['AvgVol'] * 2
     df['Move'] = df['Close'].diff()
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
 
     entries = []
 
-    for i in range(len(df)):
-        if df['Spike'].iloc[i] and df['Move'].iloc[i] > 0:
+    for i in range(20, len(df)):
+
+        price = df['Close'].iloc[i]
+        ema = df['EMA20'].iloc[i]
+
+        if df['Spike'].iloc[i] and df['Move'].iloc[i] > 0 and price > ema:
             entries.append({
                 "Stock": stock,
                 "Type": "BIG BUY",
-                "Price": df['Close'].iloc[i],
+                "Price": price,
                 "TimeRaw": df.index[i],
                 "Time": clean_time(df.index[i])
             })
 
-        elif df['Spike'].iloc[i] and df['Move'].iloc[i] < 0:
+        elif df['Spike'].iloc[i] and df['Move'].iloc[i] < 0 and price < ema:
             entries.append({
                 "Stock": stock,
                 "Type": "BIG SELL",
-                "Price": df['Close'].iloc[i],
+                "Price": price,
                 "TimeRaw": df.index[i],
                 "Time": clean_time(df.index[i])
             })
 
-    # SERIAL ORDER FIX
-    entries = sorted(entries, key=lambda x: x["TimeRaw"])
-
     return entries
+
+# =============================
+# STRENGTH
+# =============================
+def strength_meter(df):
+    if df.empty:
+        return 0
+    return (df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]
 
 # =============================
 # LIVE
@@ -72,33 +107,49 @@ def big_player(df, stock):
 if st.button("🔍 START LIVE"):
 
     all_big = []
+    strength_data = []
 
     for s in stocks:
         try:
             df = load_data(s)
-            df = df.between_time("09:15","15:30")
 
-            big = big_player(df, s)
-            all_big += big
+            if df.empty:
+                continue
+
+            all_big += big_player(df, s)
+
+            strength_data.append({
+                "Stock": s,
+                "Strength": strength_meter(df)
+            })
 
         except:
             pass
 
+    all_big = sorted(all_big, key=lambda x: x["TimeRaw"])
+    strength_df = pd.DataFrame(strength_data).sort_values(by="Strength", ascending=False)
+
     st.session_state.live_big = all_big
+    st.session_state.strength = strength_df
 
 # =============================
 # LIVE DISPLAY
 # =============================
 if "live_big" in st.session_state:
 
-    st.subheader("🐋 BIG PLAYER (LIVE SERIAL)")
+    st.subheader("🐋 BIG PLAYER")
     st.dataframe(pd.DataFrame(st.session_state.live_big)[["Stock","Type","Price","Time"]])
+
+    st.subheader("🔥 STRONG STOCKS")
+    st.dataframe(st.session_state.strength.head(5))
+
+    st.subheader("❄️ WEAK STOCKS")
+    st.dataframe(st.session_state.strength.tail(5))
 
     # CHART
     stock = st.selectbox("📈 Chart", stocks)
 
     df_chart = load_data(stock)
-    df_chart = df_chart.between_time("09:15","15:30")
 
     fig = go.Figure(data=[go.Candlestick(
         x=df_chart.index,
@@ -142,19 +193,20 @@ if st.checkbox("📊 Enable Backtest"):
 
             df = df.between_time("09:15","15:30")
 
-            big = big_player(df, s)
-            bt_big += big
+            if df.empty:
+                continue
+
+            bt_big += big_player(df, s)
 
         except:
             pass
 
-    # SERIAL FIX
     bt_big = sorted(bt_big, key=lambda x: x["TimeRaw"])
 
     st.subheader("🐋 BACKTEST BIG PLAYER")
     st.dataframe(pd.DataFrame(bt_big)[["Stock","Type","Price","Time"]])
 
-    # BACKTEST CHART
+    # CHART
     stock = st.selectbox("📉 Backtest Chart", stocks)
 
     df_chart = yf.Ticker(stock + ".NS").history(
