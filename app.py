@@ -66,7 +66,7 @@ def indicators(df):
     rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     df['AvgVol'] = df['Volume'].rolling(20).mean()
-    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()  # Simple ATR approx
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     return df
 
 # =============================
@@ -84,28 +84,22 @@ def detect_reversal(df, stock):
         atr = df['ATR'].iloc[i]
 
         if prev_price < ema20 and price > ema20 and rsi > 35 and ema20 > ema50:
-            entry = price
-            sl = round(entry - atr, 2)
-            tp = round(entry + 2*atr, 2)
             signals.append({
                 "Stock": stock,
                 "Type": "Bullish Reversal",
-                "Entry": entry,
-                "StopLoss": sl,
-                "Target": tp,
+                "Entry": price,
+                "StopLoss": round(price - atr, 2),
+                "Target": round(price + 2*atr, 2),
                 "Time": df.index[i]
             })
 
         elif prev_price > ema20 and price < ema20 and rsi < 65 and ema20 < ema50:
-            entry = price
-            sl = round(entry + atr, 2)
-            tp = round(entry - 2*atr, 2)
             signals.append({
                 "Stock": stock,
                 "Type": "Bearish Reversal",
-                "Entry": entry,
-                "StopLoss": sl,
-                "Target": tp,
+                "Entry": price,
+                "StopLoss": round(price + atr, 2),
+                "Target": round(price - 2*atr, 2),
                 "Time": df.index[i]
             })
 
@@ -131,7 +125,10 @@ if st.session_state.signals:
     df_sig = df_sig.sort_values(by="Time").reset_index(drop=True)
 
     st.subheader("🔄 Reversal Detection Signals")
-    st.dataframe(df_sig[["Stock","Type","Entry","StopLoss","Target","Time"]])
+
+    # 👉 Safe column selection
+    cols = [c for c in ["Stock","Type","Entry","StopLoss","Target","Time"] if c in df_sig.columns]
+    st.dataframe(df_sig[cols])
 
     stock = st.selectbox("📊 Chart", stocks)
     df_chart = load_data(stock, "5m", "5d")
@@ -207,24 +204,4 @@ if st.checkbox("📊 BACKTEST MODE"):
                 xaxis_title="Time",
                 yaxis_title="Price"
             )
-            st.plotly_chart(fig_bt, use_container_width=True)
-
-    st.subheader("📊 BACKTEST RESULTS")
-    if bt_all:
-        df_bt = pd.DataFrame(bt_all)
-        df_bt["Time"] = pd.to_datetime(df_bt["Time"]).dt.strftime("%I:%M %p")
-        df_bt = df_bt.sort_values(by="Time").reset_index(drop=True)
-        st.dataframe(df_bt[["Stock","Type","Entry","StopLoss","Target","Time"]])
-    else:
-        st.warning("No signals found for selected date")
-
-# =============================
-# BACKTEST FOLDER DISPLAY
-# =============================
-st.sidebar.subheader("📂 Backtest Folder Contents")
-files = os.listdir(BACKTEST_DIR)
-if files:
-    for f in files:
-        st.sidebar.write(f)
-else:
-    st.sidebar.write("No backtest files yet")
+            st.plotly_chart(fig_bt,
