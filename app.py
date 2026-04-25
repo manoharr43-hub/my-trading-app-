@@ -8,9 +8,9 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V19", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V18", layout="wide")
 
-st.title("🚀 NSE AI PRO V19 - CLEAN INSTITUTIONAL SYSTEM")
+st.title("🚀 NSE AI PRO V18 - BREAKOUT TIME + CHART + BACKTEST TIME")
 
 # =============================
 # SESSION
@@ -19,25 +19,25 @@ if "bt_history" not in st.session_state:
     st.session_state.bt_history = []
 
 # =============================
-# STOCK LIST
+# STOCKS
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","M&M"]
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC"]
 
 # =============================
-# SAFE DATA LOADER
+# DATA
 # =============================
 @st.cache_data(ttl=300)
 def load_data(stock):
     try:
         df = yf.Ticker(stock + ".NS").history(period="5d", interval="5m")
-        if df is None or df.empty or len(df) < 20:
+        if df is None or len(df) < 20:
             return None
         return df
     except:
         return None
 
 # =============================
-# CORE LOGIC (SMART MONEY)
+# ANALYSIS (WITH TIME)
 # =============================
 def analyze(df):
 
@@ -67,7 +67,7 @@ def analyze(df):
     else:
         signal = "SELL"
 
-    # BREAKOUT + TIME
+    # BREAKOUT + TIME CAPTURE
     if price > resistance:
         breakout = "UP BREAKOUT"
         breakout_time = df.index[-1]
@@ -88,7 +88,7 @@ def analyze(df):
     return signal, breakout, big_entry, breakout_time
 
 # =============================
-# CHART ENGINE
+# CHART (TODAY FIX)
 # =============================
 def show_chart(df, stock):
 
@@ -119,7 +119,7 @@ def show_chart(df, stock):
     # BREAKOUT MARKER
     if breakout != "NONE":
         st.info(f"📌 BREAKOUT: {breakout}")
-        st.info(f"⏱ BREAKOUT TIME: {btime}")
+        st.info(f"⏱ TIME: {btime}")
 
         fig.add_scatter(
             x=[df.index[-1]],
@@ -129,7 +129,7 @@ def show_chart(df, stock):
             text=[breakout]
         )
 
-    # BIG ENTRY MARKER
+    # BIG ENTRY
     if big_entry != "NONE":
 
         color = "green" if "BUY" in big_entry else "red"
@@ -146,9 +146,9 @@ def show_chart(df, stock):
     st.plotly_chart(fig, use_container_width=True, key=stock)
 
 # =============================
-# LIVE CHART
+# TODAY CHART VIEW
 # =============================
-st.subheader("📊 TODAY CHART")
+st.subheader("📊 TODAY CHART VIEW")
 
 selected = st.selectbox("Select Stock", stocks)
 
@@ -160,11 +160,11 @@ else:
     st.error("⚠️ NO DATA AVAILABLE")
 
 # =============================
-# SCANNER
+# SECTOR SCANNER
 # =============================
-st.subheader("📡 NSE TODAY SCANNER")
+st.subheader("📡 TODAY SCANNER")
 
-buy, sell, wait = [], [], []
+buy, sell = [], []
 
 for s in stocks:
 
@@ -178,32 +178,25 @@ for s in stocks:
     if big_entry == "BIG BUY ENTRY":
         buy.append(s)
 
-    elif big_entry == "BIG SELL ENTRY":
+    if big_entry == "BIG SELL ENTRY":
         sell.append(s)
 
-    else:
-        wait.append(s)
-
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
-    st.success("🚀 BUY")
+    st.success("🚀 BUY STOCKS")
     st.write(buy)
 
 with col2:
-    st.error("💀 SELL")
+    st.error("💀 SELL STOCKS")
     st.write(sell)
 
-with col3:
-    st.info("⏳ WAIT")
-    st.write(wait)
-
 # =============================
-# BACKTEST SYSTEM (WITH TIME)
+# BACKTEST WITH TIME
 # =============================
 st.subheader("📁 BACKTEST SYSTEM")
 
-bt_date = st.date_input("Select Backtest Date")
+bt_date = st.date_input("Select Date")
 
 if st.button("RUN BACKTEST"):
 
@@ -231,7 +224,7 @@ if st.button("RUN BACKTEST"):
     df_res = pd.DataFrame(results)
 
     st.session_state.bt_history.append({
-        "run_time": run_time,
+        "time": run_time,
         "date": str(bt_date),
         "data": df_res
     })
@@ -248,5 +241,5 @@ if len(st.session_state.bt_history) == 0:
     st.info("No backtest yet")
 else:
     for i, item in enumerate(st.session_state.bt_history[::-1]):
-        with st.expander(f"Run #{i+1} | {item['run_time']} | {item['date']}"):
+        with st.expander(f"Run #{i+1} | {item['time']} | {item['date']}"):
             st.dataframe(item["data"])
