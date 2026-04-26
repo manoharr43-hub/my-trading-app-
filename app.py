@@ -11,8 +11,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V25 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V25 - CLEAN STABLE SYSTEM")
+st.set_page_config(page_title="🔥 NSE AI PRO V26 FIX", layout="wide")
+st.title("🚀 NSE AI PRO V26 - BACKTEST FIXED")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -34,17 +34,17 @@ stocks = sector_map[sector]
 
 timeframe = st.sidebar.selectbox("Timeframe", ["5m","15m","30m","1h"])
 
-sl_pct = st.sidebar.slider("Stop Loss %", 0.5, 5.0, 1.0) / 100
-tgt_pct = st.sidebar.slider("Target %", 1.0, 10.0, 2.0) / 100
+sl_pct = st.sidebar.slider("SL %",0.5,5.0,1.0)/100
+tgt_pct = st.sidebar.slider("Target %",1.0,10.0,2.0)/100
 
 # =============================
 # DATA LOADER
 # =============================
 @st.cache_data(ttl=120)
-def get_data(stock):
+def load_data(stock):
     try:
         period = "7d" if timeframe=="5m" else "60d" if timeframe=="15m" else "2mo"
-        df = yf.download(stock + ".NS", period=period, interval=timeframe, progress=False)
+        df = yf.download(stock+".NS", period=period, interval=timeframe, progress=False)
 
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -56,7 +56,7 @@ def get_data(stock):
 # =============================
 # INDICATORS
 # =============================
-def add_indicators(df):
+def indicators(df):
     df = df.copy()
 
     df["EMA20"] = df["Close"].ewm(span=20).mean()
@@ -67,50 +67,47 @@ def add_indicators(df):
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
 
-    rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
-    df["RSI"] = 100 - (100 / (1 + rs))
+    rs = gain.rolling(14).mean() / (loss.rolling(14).mean()+1e-9)
+    df["RSI"] = 100 - (100/(1+rs))
 
     return df
 
 # =============================
-# SIGNAL ENGINE (CLEAN)
+# SIGNAL ENGINE
 # =============================
 def generate_signals(df, stock):
-    df = add_indicators(df)
+    df = indicators(df)
 
     signals = []
-    last_signal = None
+    last = None
 
     for i in range(30, len(df)):
         row = df.iloc[i]
         price = row["Close"]
 
-        signal = None
+        sig = None
 
-        # Volume Spike
         if row["Volume"] > row["VOL_AVG"] * 2:
-            signal = "🔥 BIG BUY" if row["Close"] > row["Open"] else "💀 BIG SELL"
+            sig = "🔥 BIG BUY" if row["Close"] > row["Open"] else "💀 BIG SELL"
 
-        # Trend BUY
         elif row["EMA20"] > row["EMA50"] and row["RSI"] > 55:
-            signal = "🟢 TREND BUY"
+            sig = "🟢 TREND BUY"
 
-        # Trend SELL
         elif row["EMA20"] < row["EMA50"] and row["RSI"] < 45:
-            signal = "🔴 TREND SELL"
+            sig = "🔴 TREND SELL"
 
-        if signal and signal != last_signal:
-            last_signal = signal
+        if sig and sig != last:
+            last = sig
 
-            sl = price * (1 - sl_pct) if "BUY" in signal else price * (1 + sl_pct)
-            tgt = price * (1 + tgt_pct) if "BUY" in signal else price * (1 - tgt_pct)
+            sl = price * (1-sl_pct) if "BUY" in sig else price * (1+sl_pct)
+            tgt = price * (1+tgt_pct) if "BUY" in sig else price * (1-tgt_pct)
 
             signals.append({
                 "Stock": stock,
-                "Signal": signal,
-                "Price": round(price, 2),
-                "SL": round(sl, 2),
-                "Target": round(tgt, 2),
+                "Signal": sig,
+                "Price": round(price,2),
+                "SL": round(sl,2),
+                "Target": round(tgt,2),
                 "Time": df.index[i]
             })
 
@@ -123,8 +120,8 @@ if st.button("🚀 LIVE SCAN"):
     all_signals = []
 
     for s in stocks:
-        time.sleep(0.8)
-        df = get_data(s)
+        time.sleep(0.5)
+        df = load_data(s)
 
         if not df.empty:
             sigs = generate_signals(df, s)
@@ -144,35 +141,40 @@ if "live" in st.session_state:
         live_df["Time"] = pd.to_datetime(live_df["Time"]).dt.strftime("%I:%M %p")
         st.dataframe(live_df, use_container_width=True)
     else:
-        st.warning("No live signals")
+        st.warning("No signals")
 
 # =============================
-# BACKTEST ENGINE
+# BACKTEST FIX (IMPORTANT)
 # =============================
 st.divider()
-st.subheader("📊 BACKTEST MODULE")
+st.subheader("📊 BACKTEST FIXED")
 
-bt_stock = st.selectbox("Select Stock", stocks)
-bt_date = st.date_input("Select Date", datetime.now() - timedelta(days=1))
+bt_stock = st.selectbox("Stock", stocks)
+bt_date = st.date_input("Select Date", datetime.now()-timedelta(days=1))
 
 BACKTEST_DIR = "backtests"
 os.makedirs(BACKTEST_DIR, exist_ok=True)
 
 if st.button("🔍 RUN BACKTEST"):
 
-    df = get_data(bt_stock)
+    df = load_data(bt_stock)
 
     if df.empty:
         st.error("No Data Found")
         st.stop()
 
-    df.index = pd.to_datetime(df.index).tz_localize(None)
+    df.index = pd.to_datetime(df.index)
 
     selected_date = pd.to_datetime(bt_date).date()
-    day_df = df[df.index.date == selected_date]
+
+    # ✅ FIXED FILTER (MAIN FIX)
+    day_df = df.loc[
+        (df.index >= pd.Timestamp(selected_date)) &
+        (df.index < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+    ]
 
     if day_df.empty:
-        st.error("No Data for Selected Date")
+        st.error("⚠️ No data for selected date (market closed / not available)")
         st.stop()
 
     signals = generate_signals(day_df, bt_stock)
@@ -225,4 +227,4 @@ if st.button("🔍 RUN BACKTEST"):
         for f in files:
             st.sidebar.write(f)
     else:
-        st.sidebar.write("No files yet")
+        st.sidebar.write("No files")
