@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V34", layout="wide")
-st.title("🚀 NSE AI PRO V34 - ZERO ERROR ENGINE")
+st.set_page_config(page_title="🔥 NSE AI PRO V34.1", layout="wide")
+st.title("🚀 NSE AI PRO V34.1 - SIGNAL FIX ENGINE")
 
 # =============================
 # SETTINGS
@@ -30,30 +30,25 @@ sl_pct = st.sidebar.slider("SL %",0.5,5.0,1.0)/100
 tgt_pct = st.sidebar.slider("Target %",1.0,10.0,2.0)/100
 
 # =============================
-# SAFE DATA LOADER
+# DATA LOADER
 # =============================
 def load_data(stock):
+    df = yf.download(stock+".NS", period="7d", interval=timeframe, progress=False)
+
+    if df.empty:
+        return df
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    df.index = pd.to_datetime(df.index)
+
     try:
-        df = yf.download(stock+".NS", period="7d", interval=timeframe, progress=False)
-
-        if df.empty:
-            return df
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df.index = pd.to_datetime(df.index)
-
-        # 🔥 FORCE REMOVE TIMEZONE
-        try:
-            df.index = df.index.tz_convert(None)
-        except:
-            pass
-
-        return df.dropna()
-
+        df.index = df.index.tz_convert(None)
     except:
-        return pd.DataFrame()
+        pass
+
+    return df.dropna()
 
 # =============================
 # SESSION FILTER
@@ -84,25 +79,28 @@ def indicators(df):
     return df.fillna(0)
 
 # =============================
-# SIGNAL ENGINE
+# 🔥 IMPROVED SIGNAL ENGINE
 # =============================
 def generate_signals(df, stock):
     df = indicators(df)
     signals = []
 
-    for i in range(50,len(df)):
+    for i in range(20, len(df)):
         row = df.iloc[i]
         price = row["Close"]
 
         sig = None
 
-        if row["Volume"] > row["VOL_AVG"]*2:
-            sig = "🔥 BIG BUY" if row["Close"]>row["Open"] else "💀 BIG SELL"
+        # 🔥 BIG MOVE (relaxed)
+        if row["Volume"] > row["VOL_AVG"] * 1.5:
+            sig = "🔥 BIG MOVE"
 
-        elif row["EMA20"]>row["EMA50"] and row["RSI"]>55:
+        # 🔥 TREND BUY
+        elif row["EMA20"] > row["EMA50"] and row["RSI"] > 50:
             sig = "🟢 BUY"
 
-        elif row["EMA20"]<row["EMA50"] and row["RSI"]<45:
+        # 🔥 TREND SELL
+        elif row["EMA20"] < row["EMA50"] and row["RSI"] < 50:
             sig = "🔴 SELL"
 
         if sig:
@@ -150,6 +148,8 @@ if "signals" in st.session_state:
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df["Time"], y=df["Price"], mode="lines+markers"))
         st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No signals")
 
 # =============================
 # BACKTEST
@@ -166,7 +166,6 @@ if st.button("RUN BACKTEST"):
         st.error("No Data")
         st.stop()
 
-    # 🔥 FINAL SAFE FILTER
     df.index = pd.to_datetime(df.index)
 
     try:
@@ -177,10 +176,10 @@ if st.button("RUN BACKTEST"):
     start = pd.Timestamp(bt_date)
     end = start + pd.Timedelta(days=1)
 
-    mask = (df.index >= start) & (df.index < end)
-    day_df = df.loc[mask]
-
+    day_df = df[(df.index >= start) & (df.index < end)]
     day_df = session_filter(day_df)
+
+    st.write("Candles:", len(day_df))  # 🔥 DEBUG
 
     if day_df.empty:
         st.error("No session data")
@@ -190,7 +189,7 @@ if st.button("RUN BACKTEST"):
     res = pd.DataFrame(signals)
 
     if res.empty:
-        st.warning("No signals")
+        st.warning("No signals (try different date)")
     else:
         res["Time"] = pd.to_datetime(res["Time"]).dt.strftime("%I:%M %p")
         st.dataframe(res, use_container_width=True)
