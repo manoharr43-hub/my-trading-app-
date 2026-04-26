@@ -11,8 +11,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23.5 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V23.5 - HQ Stable System")
+st.set_page_config(page_title="🔥 NSE AI PRO V23.7 HQ", layout="wide")
+st.title("🚀 NSE AI PRO V23.7 - HQ Stable System")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -109,30 +109,19 @@ if st.button("🚀 LIVE SCAN"):
         df=load_data(s)
         if not df.empty:
             _,sigs=smart_engine(df,s)
-            for x in sigs[-2:]:
-                all_data.append(x)
+            all_data.extend(sigs)   # ✅ Collect ALL signals for the day
     st.session_state.live=all_data
 
 # =============================
-# LIVE DISPLAY + CHART
+# LIVE DISPLAY (FULL DAY ORDERED)
 # =============================
 if "live" in st.session_state:
-    st.subheader("📡 LIVE SIGNALS")
+    st.subheader("📡 LIVE SIGNALS (Full Day Ordered)")
     df_live=pd.DataFrame(st.session_state.live)
-    df_live["Time"]=pd.to_datetime(df_live["Time"]).dt.strftime("%I:%M %p")
+    df_live["Time"]=pd.to_datetime(df_live["Time"])
+    df_live=df_live.sort_values("Time")   # ✅ Serial order
+    df_live["Time"]=df_live["Time"].dt.strftime("%I:%M %p")
     st.dataframe(df_live,use_container_width=True)
-
-    for stock in df_live["Stock"].unique():
-        stock_df=load_data(stock)
-        stock_df=indicators(stock_df)
-        fig=go.Figure(data=[
-            go.Candlestick(x=stock_df.index,open=stock_df["Open"],high=stock_df["High"],
-                           low=stock_df["Low"],close=stock_df["Close"]),
-            go.Scatter(x=stock_df.index,y=stock_df["EMA20"],line=dict(color="yellow"),name="EMA20"),
-            go.Scatter(x=stock_df.index,y=stock_df["EMA50"],line=dict(color="cyan"),name="EMA50")
-        ])
-        fig.update_layout(title=f"{stock} LIVE Chart",template="plotly_dark",xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig,use_container_width=True)
 
 # =============================
 # BACKTEST
