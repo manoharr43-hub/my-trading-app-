@@ -10,13 +10,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="NSE AI PRO V23.1", layout="wide")
-st.title("🚀 NSE AI PRO V23.1 - LIVE TODAY FIXED")
+st.set_page_config(page_title="NSE AI PRO V23.2", layout="wide")
+st.title("🚀 NSE AI PRO V23.2 - TIME FIXED VERSION")
 
 st_autorefresh(interval=180000, key="refresh")
 
 # =============================
-# STOCKS
+# STOCK LIST
 # =============================
 stocks = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK"]
 
@@ -33,12 +33,18 @@ def load_data(stock):
     return df
 
 # =============================
-# MARKET SESSION FILTER (9:15–3:30)
+# CLEAN TIME FUNCTION
 # =============================
-def session_filter(df):
+def clean_session(df):
     df = df.copy()
+
+    # remove timezone
     df.index = pd.to_datetime(df.index).tz_localize(None)
-    return df.between_time("09:15", "15:30")
+
+    # keep only NSE session
+    df = df.between_time("09:15", "15:30")
+
+    return df
 
 # =============================
 # INDICATORS
@@ -67,7 +73,7 @@ def smart_engine(df, stock):
     df = indicators(df)
 
     signals = []
-    last_sig = None
+    last = None
 
     for i in range(30, len(df)):
         row = df.iloc[i]
@@ -84,8 +90,8 @@ def smart_engine(df, stock):
         elif row["EMA20"] < row["EMA50"] and row["RSI"] < 45:
             sig = "🔴 SELL"
 
-        if sig and sig != last_sig:
-            last_sig = sig
+        if sig and sig != last:
+            last = sig
 
             signals.append({
                 "Stock": stock,
@@ -97,12 +103,11 @@ def smart_engine(df, stock):
     return signals
 
 # =============================
-# LIVE SCAN (TODAY ONLY FIX)
+# LIVE SCAN
 # =============================
 if st.button("🚀 LIVE SCAN"):
 
     results = []
-
     today = pd.to_datetime("today").date()
 
     for s in stocks:
@@ -112,30 +117,36 @@ if st.button("🚀 LIVE SCAN"):
 
         if not df.empty:
 
-            # 🔥 SESSION FILTER
-            df = session_filter(df)
+            # 🔥 SESSION FILTER APPLY
+            df = clean_session(df)
 
             sigs = smart_engine(df, s)
 
-            # 🔥 TODAY FILTER ONLY
+            # 🔥 TODAY ONLY FILTER
             for x in sigs:
                 if pd.to_datetime(x["Time"]).date() == today:
                     results.append(x)
 
-    # 🔥 SERIAL ORDER FIX
+    # =============================
+    # FORMAT + SERIAL FIX
+    # =============================
     if results:
         df_live = pd.DataFrame(results)
-        df_live.sort_values("Time", inplace=True)
+
+        # 🔥 CLEAN TIME FORMAT (IMPORTANT FIX)
+        df_live["Time"] = pd.to_datetime(df_live["Time"]).dt.strftime("%I:%M %p")
+
+        df_live = df_live.sort_values("Time")
         df_live.reset_index(drop=True, inplace=True)
         df_live.index = df_live.index + 1
 
         st.session_state.live = df_live
 
 # =============================
-# LIVE DISPLAY
+# DISPLAY LIVE
 # =============================
 if "live" in st.session_state:
 
-    st.subheader("📡 LIVE SIGNALS (TODAY 9:15–3:30 ONLY)")
+    st.subheader("📡 LIVE SIGNALS (09:15 AM – 03:30 PM ONLY)")
 
     st.dataframe(st.session_state.live, use_container_width=True)
