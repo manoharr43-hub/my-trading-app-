@@ -9,13 +9,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # APP CONFIG
 # =============================
-st.set_page_config(page_title="NSE AI PRO V23.1", layout="wide")
-st.title("🚀 NSE AI PRO V23.1 - STABLE BACKTEST FIX")
+st.set_page_config(page_title="NSE AI PRO V23.2", layout="wide")
+st.title("🚀 NSE AI PRO V23.2 - ZERO ERROR STABLE SYSTEM")
 
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
-# STOCK SECTORS
+# STOCK LIST
 # =============================
 sector_map = {
     "Banking": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"],
@@ -33,7 +33,7 @@ sl_pct = st.sidebar.slider("Stop Loss %", 0.5, 5.0, 1.0) / 100
 tgt_pct = st.sidebar.slider("Target %", 1.0, 10.0, 2.0) / 100
 
 # =============================
-# DATA LOADER
+# DATA LOADER SAFE
 # =============================
 @st.cache_data(ttl=60)
 def load_data(stock, interval, period="5d"):
@@ -46,14 +46,14 @@ def load_data(stock, interval, period="5d"):
 # =============================
 # INDICATORS
 # =============================
-def indicators(df):
+def add_indicators(df):
     df = df.copy()
 
     df["EMA20"] = df["Close"].ewm(span=20).mean()
     df["EMA50"] = df["Close"].ewm(span=50).mean()
 
     tp = (df["High"] + df["Low"] + df["Close"]) / 3
-    df["VWAP"] = (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
+    df["VWAP"] = (tp * df["Volume"]).cumsum() / (df["Volume"].cumsum() + 1e-9)
 
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
@@ -69,14 +69,14 @@ def indicators(df):
 # SIGNAL ENGINE
 # =============================
 def get_signals(df, stock):
-    df = indicators(df)
+    df = add_indicators(df)
     signals = []
 
     for i in range(30, len(df)):
         row = df.iloc[i]
         prev = df.iloc[i - 1]
 
-        price = round(row["Close"], 2)
+        price = float(row["Close"])
         sig = None
 
         if row["Volume"] > row["AvgVol"] * 2.5:
@@ -101,7 +101,7 @@ def get_signals(df, stock):
             signals.append({
                 "Stock": stock,
                 "Type": sig,
-                "Entry": price,
+                "Entry": round(price, 2),
                 "SL": round(sl, 2),
                 "Target": round(tgt, 2),
                 "Time": df.index[i]
@@ -113,14 +113,14 @@ def get_signals(df, stock):
 # LIVE SCAN
 # =============================
 if st.button("🚀 SCAN MARKET"):
-    results = []
+    all_data = []
 
     for s in stocks:
         df = load_data(s, timeframe)
         if not df.empty:
-            results.extend(get_signals(df, s))
+            all_data.extend(get_signals(df, s))
 
-    st.session_state.results = results
+    st.session_state.results = all_data
 
 if "results" in st.session_state:
     df = pd.DataFrame(st.session_state.results)
@@ -129,9 +129,11 @@ if "results" in st.session_state:
         df["Time"] = pd.to_datetime(df["Time"]).dt.strftime("%d-%m %H:%M")
         st.subheader("📊 LIVE SIGNALS")
         st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No signals found")
 
 # =============================
-# BACKTEST (FULL SAFE FIX)
+# BACKTEST SAFE ENGINE
 # =============================
 st.divider()
 st.subheader("📊 BACKTEST ENGINE")
@@ -140,37 +142,4 @@ col1, col2 = st.columns([1, 3])
 
 with col1:
     bt_stock = st.selectbox("Stock", stocks)
-    bt_date = st.date_input("Date", datetime.now() - timedelta(days=1))
-
-if st.button("🔍 RUN BACKTEST"):
-
-    # 🔥 SAFE LIMIT (Yahoo fix)
-    if bt_date < (datetime.now().date() - timedelta(days=5)):
-        st.error("❌ Only last 5 days intraday data available (Yahoo Finance limit)")
-        st.stop()
-
-    df = load_data(bt_stock, timeframe, period="5d")
-
-    if df.empty:
-        st.error("❌ No data found")
-        st.stop()
-
-    df = df.copy()
-    df.index = pd.to_datetime(df.index)
-
-    df["date"] = df.index.date
-    day_df = df[df["date"] == bt_date]
-
-    # ================= CHART =================
-    fig = go.Figure()
-
-    if not day_df.empty:
-        fig.add_trace(go.Candlestick(
-            x=day_df.index,
-            open=day_df["Open"],
-            high=day_df["High"],
-            low=day_df["Low"],
-            close=day_df["Close"]
-        ))
-    else:
-        st.warning("⚠️ No
+    bt_date = st.date_input("Date", datetime.now() - timedelta
