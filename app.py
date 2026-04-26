@@ -10,10 +10,10 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="NSE AI PRO V22.3", layout="wide")
-st.title("🚀 NSE AI PRO V22.3 - STABLE + NO RATE LIMIT")
+st.set_page_config(page_title="NSE AI PRO V22.4", layout="wide")
+st.title("🚀 NSE AI PRO V22.4 - FINAL STABLE VERSION")
 
-# ⛔ reduced refresh (IMPORTANT)
+# ⛔ safe refresh
 st_autorefresh(interval=180000, key="refresh")
 
 # =============================
@@ -35,12 +35,12 @@ sl_pct = st.sidebar.slider("Stop Loss (%)", 0.5, 5.0, 1.0) / 100
 tgt_pct = st.sidebar.slider("Target (%)", 1.0, 10.0, 2.0) / 100
 
 # =============================
-# SAFE DATA LOADER (FIXED RATE LIMIT)
+# SAFE DATA LOADER (NO CRASH)
 # =============================
 @st.cache_data(ttl=300)
 def load_data(stock, interval, period="2mo"):
     try:
-        time.sleep(0.8)  # anti-rate-limit delay
+        time.sleep(0.7)  # anti rate limit
 
         df = yf.download(
             stock + ".NS",
@@ -50,9 +50,16 @@ def load_data(stock, interval, period="2mo"):
             threads=False
         )
 
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # fix multi-index issue
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
         return df
 
-    except Exception:
+    except:
         return pd.DataFrame()
 
 # =============================
@@ -70,6 +77,7 @@ def apply_indicators(df):
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
+
     rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
     df["RSI"] = 100 - (100 / (1 + rs))
 
@@ -78,7 +86,7 @@ def apply_indicators(df):
     return df
 
 # =============================
-# SIGNAL ENGINE
+# SIGNAL ENGINE (UNCHANGED LOGIC)
 # =============================
 def get_signals(df, stock):
     df = apply_indicators(df)
@@ -114,23 +122,23 @@ def get_signals(df, stock):
                 "Entry": round(price, 2),
                 "StopLoss": round(sl, 2),
                 "Target": round(tgt, 2),
-                "Time": df.index[i]
+                "Time": pd.to_datetime(df.index[i])
             })
 
     return signals
 
 # =============================
-# SCAN (SAFE SLOW LOOP)
+# SCAN (SAFE LOOP)
 # =============================
 if st.button("🚀 SCAN FOR TRADES"):
     results = []
 
     for s in stocks:
-        time.sleep(1)  # IMPORTANT RATE LIMIT FIX
+        time.sleep(1)  # anti rate limit
 
         df = load_data(s, timeframe)
 
-        if df is not None and not df.empty:
+        if not df.empty:
             results += get_signals(df, s)
 
     st.session_state.data = results
@@ -146,7 +154,7 @@ if "data" in st.session_state and st.session_state.data:
     st.dataframe(df_res.sort_values("Time", ascending=False), use_container_width=True)
 
 # =============================
-# BACKTEST (STABLE FIX)
+# BACKTEST (FINAL SAFE FIX)
 # =============================
 st.divider()
 st.subheader("📊 Backtest")
@@ -159,12 +167,12 @@ with col1:
 
 if st.button("🔍 RUN BACKTEST"):
 
-    time.sleep(1)  # rate limit safety
+    time.sleep(1)
 
     data = load_data(bt_stock, timeframe, "2mo")
 
-    if data is None or data.empty:
-        st.error("No data available")
+    if data.empty:
+        st.error("No data found")
         st.stop()
 
     data.index = pd.to_datetime(data.index)
@@ -177,15 +185,12 @@ if st.button("🔍 RUN BACKTEST"):
 
     signals = get_signals(data, bt_stock)
 
-    day_signals = []
-    for s in signals:
-        try:
-            if pd.to_datetime(s["Time"]).date() == bt_date:
-                day_signals.append(s)
-        except:
-            pass
+    day_signals = [
+        s for s in signals
+        if pd.to_datetime(s["Time"]).date() == bt_date
+    ]
 
-    if day_signals:
+    if len(day_signals) > 0:
         st.success(f"{len(day_signals)} signals found")
 
         df_bt = pd.DataFrame(day_signals)
@@ -212,4 +217,4 @@ if st.button("🔍 RUN BACKTEST"):
         st.plotly_chart(fig, use_container_width=True)
 
     else:
-        st.warning("No signals found")
+        st.warning("No signals found for this date")
