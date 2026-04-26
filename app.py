@@ -111,7 +111,8 @@ with col1:
 with col2:
     bt_df = load_data(bt_stock,timeframe,period="5d")
     if not bt_df.empty:
-        bt_df = bt_df[bt_df.index.date == bt_date.date()]
+        # ✅ FIX: bt_date is already a date object
+        bt_df = bt_df[bt_df.index.date == bt_date]
         bt_signals = get_signals(bt_df, bt_stock)
 
         fig = go.Figure()
