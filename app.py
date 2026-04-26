@@ -105,7 +105,8 @@ with m3:
     st.write("Signal Status")
     st.markdown(f"<h3 style='color:{color}; margin-top:-15px;'>{signal}</h3>", unsafe_allow_html=True)
 with m4:
-    vol_change = ((last['Volume'] - df['Volume'].mean()) / df['Volume'].mean()) * 100
+    vol_avg = df['Volume'].mean()
+    vol_change = ((last['Volume'] - vol_avg) / vol_avg) * 100
     st.metric("Volume Spike", f"{vol_change:.1f}%")
 
 # =============================
@@ -114,34 +115,3 @@ with m4:
 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                     vertical_spacing=0.05, 
                     row_heights=[0.7, 0.3])
-
-# Candlestick Chart
-fig.add_trace(go.Candlestick(
-    x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-    name="Price"
-), row=1, col=1)
-
-# Overlay Indicators
-fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name="EMA 20", line=dict(color='yellow', width=1.5)), row=1, col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name="EMA 50", line=dict(color='orange', width=1.5)), row=1, col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name="VWAP", line=dict(color='cyan', width=2, dash='dash')), row=1, col=1)
-
-# Volume Chart
-colors = ['green' if df['Close'][i] >= df['Open'][i] else 'red' for i in range(len(df))]
-fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Volume", marker_color=colors), row=2, col=1)
-
-# Layout Styling
-fig.update_layout(
-    height=800,
-    template="plotly_dark",
-    xaxis_rangeslider_visible=False,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# =============================
-# DATA TABLE
-# =============================
-with st.expander("📂 View Technical Data Table"):
-    st.dataframe(df.tail(20), use_container_width=True)
