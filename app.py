@@ -2,116 +2,163 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 import plotly.graph_objects as go
-from datetime import datetime
+from streamlit_autorefresh import st_autorefresh
 import os
 
 # =============================
-# CONFIG
+# 1. CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO Intraday HQ", layout="wide")
-st.title("🚀 NSE AI PRO – Intraday Sector HQ")
+st.set_page_config(page_title="NSE AI PRO V22.1", layout="wide")
+st.title("🚀 NSE AI PRO V22.1 - Smart Money (with SL/Target)")
+
+st_autorefresh(interval=60000, key="refresh")
 
 # =============================
-# SECTOR MAP
+# 2. SECTOR & SETTINGS
 # =============================
 sector_map = {
-    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
-    "IT": ["INFY","TCS","HCLTECH","WIPRO","TECHM"],
-    "Auto": ["M&M","TATAMOTORS","HEROMOTOCO","BAJAJ-AUTO","EICHERMOT"],
-    "Pharma": ["SUNPHARMA","CIPLA","DIVISLAB","DRREDDY","AUROPHARMA"],
-    "Metals": ["TATASTEEL","JSWSTEEL","HINDALCO","VEDL","SAIL"],
-    "FMCG": ["HINDUNILVR","ITC","NESTLEIND","BRITANNIA","DABUR"],
-    "Oil & Gas": ["RELIANCE","ONGC","BPCL","IOC","GAIL"],
-    "Infra": ["L&T","ADANIPORTS","POWERGRID","NTPC","ULTRACEMCO"]
+    "Banking": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"],
+    "IT": ["INFY", "TCS", "HCLTECH", "WIPRO", "TECHM"],
+    "Auto": ["MARUTI", "M&M", "TATAMOTORS", "HEROMOTOCO"],
+    "Oil & Metals": ["RELIANCE", "ONGC", "TATASTEEL", "HINDALCO"]
 }
 
+st.sidebar.header("⚙️ Strategy Settings")
+sector = st.sidebar.selectbox("📂 Sector", list(sector_map.keys()))
+stocks = sector_map[sector]
+timeframe = st.sidebar.selectbox("⏱️ Interval", ["5m", "15m", "30m", "1h"])
+
+# SL & Target Percentages (మీరు ఇక్కడ మార్చుకోవచ్చు)
+sl_pct = st.sidebar.slider("Stop Loss (%)", 0.5, 5.0, 1.0) / 100
+tgt_pct = st.sidebar.slider("Target (%)", 1.0, 10.0, 2.0) / 100
+
 # =============================
-# DATA LOADER
+# 3. DATA ENGINE
 # =============================
-@st.cache_data(ttl=120)
-def load_data(stock, interval="5m", period="7d"):
-    df = yf.download(stock+".NS", period=period, interval=interval, progress=False)
-    df.dropna(inplace=True)
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
-    df["VWAP"] = (df["Close"]*df["Volume"]).cumsum()/df["Volume"].cumsum()
-    df["RSI"] = compute_rsi(df["Close"])
+@st.cache_data(ttl=60)
+def load_data(stock, interval, period="5d"):
+    df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
     return df
 
-def compute_rsi(series, period=14):
-    delta = series.diff()
+def apply_indicators(df):
+    df = df.copy()
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['EMA200'] = df['Close'].ewm(span=200).mean()
+    
+    tp = (df['High'] + df['Low'] + df['Close']) / 3
+    df['VWAP'] = (tp * df['Volume']).cumsum() / df['Volume'].cumsum()
+    
+    delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain/avg_loss
-    return 100 - (100/(1+rs))
+    rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    df['AvgVol'] = df['Volume'].rolling(20).mean()
+    return df
 
 # =============================
-# SIGNALS
+# 4. SIGNAL LOGIC WITH SL/TGT
 # =============================
-def generate_signals(df):
+def get_signals(df, stock):
+    df = apply_indicators(df)
     signals = []
-    for i in range(1, len(df)):
-        # Big Player Entry = sudden volume spike + price above EMA20
-        if df["Volume"].iloc[i] > 1.5*df["Volume"].rolling(20).mean().iloc[i] and df["Close"].iloc[i] > df["EMA20"].iloc[i]:
-            signals.append(("BIG PLAYER ENTRY", df.index[i], df["Close"].iloc[i]))
+    
+    for i in range(30, len(df)):
+        row = df.iloc[i]
+        prev_row = df.iloc[i-1]
+        price = round(row['Close'], 2)
+        
+        sig_type = None
+        
+        # A. Big Player Check
+        if row['Volume'] > (row['AvgVol'] * 2.5):
+            sig_type = "🔥 BIG BUY" if row['Close'] > row['Open'] else "💀 BIG SELL"
+        
+        # B. Reversal Check
+        elif prev_row['Close'] < row['EMA20'] and row['Close'] > row['EMA20'] and row['RSI'] > 40:
+            if row['EMA20'] > row['EMA50']: sig_type = "🟢 Bullish"
+            
+        elif prev_row['Close'] > row['EMA20'] and row['Close'] < row['EMA20'] and row['RSI'] < 60:
+            if row['EMA20'] < row['EMA50']: sig_type = "🔴 Bearish"
 
-        # BUY Entry
-        if df["EMA20"].iloc[i] > df["EMA50"].iloc[i] and df["RSI"].iloc[i] > 50:
-            signals.append(("BUY ENTRY", df.index[i], df["Close"].iloc[i]))
-
-        # SELL Entry
-        if df["EMA20"].iloc[i] < df["EMA50"].iloc[i] and df["RSI"].iloc[i] < 50:
-            signals.append(("SELL ENTRY", df.index[i], df["Close"].iloc[i]))
-
-        # Exit Points (Target/Stop)
-        if df["RSI"].iloc[i] > 70:
-            signals.append(("EXIT TARGET", df.index[i], df["Close"].iloc[i]))
-        elif df["RSI"].iloc[i] < 30:
-            signals.append(("EXIT STOP", df.index[i], df["Close"].iloc[i]))
-
-        # Reversal Detection
-        if df["Close"].iloc[i] < df["VWAP"].iloc[i] and df["Close"].iloc[i-1] > df["VWAP"].iloc[i-1]:
-            signals.append(("REVERSAL DOWN", df.index[i], df["Close"].iloc[i]))
-        elif df["Close"].iloc[i] > df["VWAP"].iloc[i] and df["Close"].iloc[i-1] < df["VWAP"].iloc[i-1]:
-            signals.append(("REVERSAL UP", df.index[i], df["Close"].iloc[i]))
+        if sig_type:
+            # Entry, SL, Target Calculations
+            if "BUY" in sig_type or "Bullish" in sig_type:
+                sl = round(price * (1 - sl_pct), 2)
+                tgt = round(price * (1 + tgt_pct), 2)
+            else:
+                sl = round(price * (1 + sl_pct), 2)
+                tgt = round(price * (1 - tgt_pct), 2)
+                
+            signals.append({
+                "Stock": stock,
+                "Type": sig_type,
+                "Entry": price,
+                "StopLoss": sl,
+                "Target": tgt,
+                "Time": df.index[i]
+            })
+                
     return signals
 
 # =============================
-# MAIN APP
+# 5. UI DISPLAY
 # =============================
-sector = st.sidebar.selectbox("Select Sector", list(sector_map.keys()))
-stock = st.sidebar.selectbox("Select Stock", sector_map[sector])
+if st.button("🚀 SCAN FOR TRADES"):
+    results = []
+    for s in stocks:
+        data = load_data(s, timeframe)
+        if not data.empty:
+            sigs = get_signals(data, s)
+            results.extend(sigs)
+    st.session_state.v22_data = results
 
-df = load_data(stock)
-signals = generate_signals(df)
+if "v22_data" in st.session_state and st.session_state.v22_data:
+    df_res = pd.DataFrame(st.session_state.v22_data)
+    # Time Formatting
+    df_res["Time"] = pd.to_datetime(df_res["Time"]).dt.strftime("%d-%m %I:%M %p")
+    
+    st.subheader("🎯 Trade Setup (Entry, SL, Target)")
+    st.dataframe(df_res.sort_values(by="Time", ascending=False), use_container_width=True)
 
-# Show Table
-st.subheader("📊 Intraday Signals")
-sig_df = pd.DataFrame(signals, columns=["Signal","Time","Price"])
-sig_df["Time"] = pd.to_datetime(sig_df["Time"])
-sig_df["Time"] = sig_df["Time"].dt.strftime("%I:%M %p")
-st.dataframe(sig_df)
+# =============================
+# 6. BACKTEST (FIXED)
+# =============================
+st.divider()
+st.subheader("📊 Backtest Section")
+col1, col2 = st.columns([1, 3])
 
-# Show Chart
-st.subheader("📈 Candlestick Chart + Indicators")
-fig = go.Figure(data=[go.Candlestick(
-    x=df.index, open=df["Open"], high=df["High"],
-    low=df["Low"], close=df["Close"]
-)])
-fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], line=dict(color="blue"), name="EMA20"))
-fig.add_trace(go.Scatter(x=df.index, y=df["EMA50"], line=dict(color="red"), name="EMA50"))
-fig.add_trace(go.Scatter(x=df.index, y=df["VWAP"], line=dict(color="green"), name="VWAP"))
-st.plotly_chart(fig, use_container_width=True)
+with col1:
+    bt_stock = st.selectbox("Select Stock for Backtest", stocks)
+    bt_date = st.date_input("Select Backtest Date", datetime.now() - timedelta(1))
 
-# Save CSV Always
-folder = "intraday_sector_csv"
-os.makedirs(folder, exist_ok=True)
-file_name = f"{stock}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-sig_df.to_csv(os.path.join(folder, file_name), index=False)
-
-st.sidebar.subheader("📂 Saved Files")
-for f in os.listdir(folder):
-    st.sidebar.write(f)
+if st.button("🔍 Run Backtest"):
+    # బ్యాక్ టెస్ట్ కోసం కనీసం 30 రోజుల డేటా కావాలి (ఇండికేటర్స్ కాలిక్యులేషన్ కోసం)
+    bt_data_all = load_data(bt_stock, timeframe, period="1mo")
+    
+    # ఎంచుకున్న తేదీ డేటాను ఫిల్టర్ చేయడం
+    bt_data = bt_data_all[bt_data_all.index.date == bt_date]
+    
+    if not bt_data.empty:
+        # సిగ్నల్స్ ని ఎంచుకున్న డేటా నుండి కాకుండా, ఫుల్ డేటా నుండి తీసి ఫిల్టర్ చేయాలి
+        all_sigs = get_signals(bt_data_all, bt_stock)
+        day_sigs = [s for s in all_sigs if s['Time'].date() == bt_date]
+        
+        if day_sigs:
+            st.success(f"Found {len(day_sigs)} signals on {bt_date}")
+            bt_df = pd.DataFrame(day_sigs)
+            bt_df["Time"] = pd.to_datetime(bt_df["Time"]).dt.strftime("%I:%M %p")
+            st.table(bt_df[["Type", "Entry", "StopLoss", "Target", "Time"]])
+            
+            # Chart
+            fig_bt = go.Figure(data=[go.Candlestick(x=bt_data.index, open=bt_data['Open'], high=bt_data['High'], low=bt_data['Low'], close=bt_data['Close'])])
+            fig_bt.update_layout(title=f"{bt_stock} Chart - {bt_date}", template="plotly_dark", xaxis_rangeslider_visible=False)
+            st.plotly_chart(fig_bt, use_container_width=True)
+        else:
+            st.warning("No signals found for this date.")
+    else:
+        st.error("Data not available for this date. Please check if it was a market holiday.")
