@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23.3 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V23.3 - HQ Stable System")
+st.set_page_config(page_title="🔥 NSE AI PRO V23.4 HQ", layout="wide")
+st.title("🚀 NSE AI PRO V23.4 - HQ Stable System")
 
 # Auto Refresh
 st_autorefresh(interval=60000, key="refresh")
@@ -186,5 +186,3 @@ with col2:
         file_path = f"{BACKTEST_DIR}/{bt_stock}_{bt_date}.csv"
         bt_results_df.to_csv(file_path,index=False)
 
-        # Download button
-        csv_data = bt_results_df.to_csv(index=False).encode('utf
