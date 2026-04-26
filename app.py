@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import os
@@ -11,8 +11,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V27 FIX", layout="wide")
-st.title("🚀 NSE AI PRO V27 - ZERO ERROR BACKTEST")
+st.set_page_config(page_title="🔥 NSE AI PRO V28 SESSION FIX", layout="wide")
+st.title("🚀 NSE AI PRO V28 - MARKET SESSION FIXED")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -73,6 +73,21 @@ def indicators(df):
     return df
 
 # =============================
+# MARKET SESSION FILTER (FIX)
+# =============================
+def market_session(df):
+    df = df.copy()
+    df.index = pd.to_datetime(df.index)
+
+    if hasattr(df.index, "tz") and df.index.tz is not None:
+        df.index = df.index.tz_convert(None)
+
+    start = dtime(9, 15)
+    end = dtime(15, 30)
+
+    return df[(df.index.time >= start) & (df.index.time <= end)]
+
+# =============================
 # SIGNAL ENGINE
 # =============================
 def generate_signals(df, stock):
@@ -124,6 +139,7 @@ if st.button("🚀 LIVE SCAN"):
         df = load_data(s)
 
         if not df.empty:
+            df = market_session(df)
             all_signals.extend(generate_signals(df, s))
 
     st.session_state.live = all_signals
@@ -132,21 +148,22 @@ if st.button("🚀 LIVE SCAN"):
 # LIVE DISPLAY
 # =============================
 if "live" in st.session_state:
-    st.subheader("📡 LIVE SIGNALS")
+    st.subheader("📡 LIVE SIGNALS (9:15 - 3:30 ONLY)")
 
     live_df = pd.DataFrame(st.session_state.live)
 
     if not live_df.empty:
         live_df["Time"] = pd.to_datetime(live_df["Time"]).dt.strftime("%I:%M %p")
+
         st.dataframe(live_df, use_container_width=True)
     else:
         st.warning("No signals")
 
 # =============================
-# BACKTEST FIX (FINAL SAFE)
+# BACKTEST
 # =============================
 st.divider()
-st.subheader("📊 BACKTEST - ZERO ERROR FIX")
+st.subheader("📊 BACKTEST - SESSION FIXED")
 
 bt_stock = st.selectbox("Stock", stocks)
 bt_date = st.date_input("Select Date", datetime.now()-timedelta(days=1))
@@ -162,24 +179,19 @@ if st.button("🔍 RUN BACKTEST"):
         st.error("No Data Found")
         st.stop()
 
-    # =============================
-    # 🔥 TIMEZONE + TYPE FIX (MAIN FIX)
-    # =============================
     df.index = pd.to_datetime(df.index)
 
-    if hasattr(df.index, "tz") and df.index.tz is not None:
-        df.index = df.index.tz_convert(None)
-
-    # =============================
-    # DATE FILTER SAFE
-    # =============================
+    # DATE FILTER
     start = pd.Timestamp(bt_date)
     end = start + pd.Timedelta(days=1)
 
     day_df = df.loc[(df.index >= start) & (df.index < end)]
 
+    # 🔥 SESSION FILTER (IMPORTANT FIX)
+    day_df = market_session(day_df)
+
     if day_df.empty:
-        st.error("⚠️ No data for selected date (market closed / not available)")
+        st.error("⚠️ No session data (market closed or unavailable)")
         st.stop()
 
     signals = generate_signals(day_df, bt_stock)
@@ -226,8 +238,8 @@ if st.button("🔍 RUN BACKTEST"):
 
     # FILE LIST
     st.sidebar.subheader("📂 BACKTEST FILES")
-    files = os.listdir(BACKTEST_DIR)
 
+    files = os.listdir(BACKTEST_DIR)
     if files:
         for f in files:
             st.sidebar.write(f)
