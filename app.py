@@ -111,7 +111,6 @@ with col1:
 with col2:
     bt_df = load_data(bt_stock,timeframe,period="5d")
     if not bt_df.empty:
-        # ✅ FIX: bt_date is already a date object
         bt_df = bt_df[bt_df.index.date == bt_date]
         bt_signals = get_signals(bt_df, bt_stock)
 
@@ -137,21 +136,22 @@ with col2:
             st.write(f"### 📂 Backtest Results for {bt_stock} ({bt_date})")
             bt_results_df = pd.DataFrame(bt_signals)
             st.dataframe(bt_results_df,use_container_width=True)
-
-            # Save CSV into backtests folder
-            file_path = f"{BACKTEST_DIR}/{bt_stock}_{bt_date}.csv"
-            bt_results_df.to_csv(file_path,index=False)
-
-            # Download button
-            csv_data = bt_results_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Results as CSV",
-                data=csv_data,
-                file_name=f"{bt_stock}_{bt_date}.csv",
-                mime="text/csv"
-            )
         else:
             st.warning("No signals recorded for this date.")
+            bt_results_df = pd.DataFrame(columns=["Stock","Type","Entry","SL","Target","Time"])
+
+        # ✅ Always Save CSV into backtests folder
+        file_path = f"{BACKTEST_DIR}/{bt_stock}_{bt_date}.csv"
+        bt_results_df.to_csv(file_path,index=False)
+
+        # Download button
+        csv_data = bt_results_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Results as CSV",
+            data=csv_data,
+            file_name=f"{bt_stock}_{bt_date}.csv",
+            mime="text/csv"
+        )
     else:
         st.error("Could not fetch data for backtesting.")
 
