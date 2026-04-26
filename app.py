@@ -11,8 +11,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V26 FIX", layout="wide")
-st.title("🚀 NSE AI PRO V26 - BACKTEST FIXED")
+st.set_page_config(page_title="🔥 NSE AI PRO V27 FIX", layout="wide")
+st.title("🚀 NSE AI PRO V27 - ZERO ERROR BACKTEST")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -124,8 +124,7 @@ if st.button("🚀 LIVE SCAN"):
         df = load_data(s)
 
         if not df.empty:
-            sigs = generate_signals(df, s)
-            all_signals.extend(sigs)
+            all_signals.extend(generate_signals(df, s))
 
     st.session_state.live = all_signals
 
@@ -144,10 +143,10 @@ if "live" in st.session_state:
         st.warning("No signals")
 
 # =============================
-# BACKTEST FIX (IMPORTANT)
+# BACKTEST FIX (FINAL SAFE)
 # =============================
 st.divider()
-st.subheader("📊 BACKTEST FIXED")
+st.subheader("📊 BACKTEST - ZERO ERROR FIX")
 
 bt_stock = st.selectbox("Stock", stocks)
 bt_date = st.date_input("Select Date", datetime.now()-timedelta(days=1))
@@ -163,15 +162,21 @@ if st.button("🔍 RUN BACKTEST"):
         st.error("No Data Found")
         st.stop()
 
+    # =============================
+    # 🔥 TIMEZONE + TYPE FIX (MAIN FIX)
+    # =============================
     df.index = pd.to_datetime(df.index)
 
-    selected_date = pd.to_datetime(bt_date).date()
+    if hasattr(df.index, "tz") and df.index.tz is not None:
+        df.index = df.index.tz_convert(None)
 
-    # ✅ FIXED FILTER (MAIN FIX)
-    day_df = df.loc[
-        (df.index >= pd.Timestamp(selected_date)) &
-        (df.index < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
-    ]
+    # =============================
+    # DATE FILTER SAFE
+    # =============================
+    start = pd.Timestamp(bt_date)
+    end = start + pd.Timedelta(days=1)
+
+    day_df = df.loc[(df.index >= start) & (df.index < end)]
 
     if day_df.empty:
         st.error("⚠️ No data for selected date (market closed / not available)")
@@ -227,4 +232,4 @@ if st.button("🔍 RUN BACKTEST"):
         for f in files:
             st.sidebar.write(f)
     else:
-        st.sidebar.write("No files")
+        st.sidebar.write("No files yet")
