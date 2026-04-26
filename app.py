@@ -2,134 +2,103 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 
-st.set_page_config(page_title="🔥 NSE AI PRO V44", layout="wide")
-st.title("🚀 NSE AI PRO V44 – PRECISION MODE")
+st.set_page_config(page_title="🔥 NSE LIVE SCANNER", layout="wide")
+st.title("🚀 NSE AI PRO V45 – LIVE SCANNER")
 
 # =============================
-# STOCKS
+# STOCK DATABASE (ALL SECTORS)
 # =============================
-stocks = ["HDFCBANK.NS","ICICIBANK.NS","SBIN.NS","RELIANCE.NS","INFY.NS","TCS.NS"]
-stock = st.selectbox("📈 Select Stock", stocks)
+stocks = [
+    "HDFCBANK.NS","ICICIBANK.NS","SBIN.NS","AXISBANK.NS",
+    "RELIANCE.NS","ONGC.NS",
+    "INFY.NS","TCS.NS","WIPRO.NS",
+    "ITC.NS","HINDUNILVR.NS",
+    "TATAMOTORS.NS","MARUTI.NS"
+]
+
 interval = st.selectbox("🕒 Timeframe", ["5m","15m"])
 
 # =============================
-# DATA
+# FUNCTION
 # =============================
-df = yf.download(stock, period="3d", interval=interval, progress=False)
+def analyze_stock(symbol):
+    try:
+        df = yf.download(symbol, period="1d", interval=interval, progress=False)
 
-if isinstance(df.columns, pd.MultiIndex):
-    df.columns = df.columns.get_level_values(0)
+        if df.empty:
+            return None
 
-df = df.dropna().reset_index()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-# =============================
-# INDICATORS
-# =============================
+        df = df.dropna().reset_index()
 
-# EMA
-df["EMA9"] = df["Close"].ewm(span=9).mean()
-df["EMA21"] = df["Close"].ewm(span=21).mean()
+        # EMA
+        df["EMA9"] = df["Close"].ewm(span=9).mean()
+        df["EMA21"] = df["Close"].ewm(span=21).mean()
 
-# RSI
-delta = df["Close"].diff()
-gain = delta.clip(lower=0)
-loss = -delta.clip(upper=0)
-rs = gain.rolling(14).mean() / loss.rolling(14).mean()
-df["RSI"] = 100 - (100/(1+rs))
-df["RSI"] = df["RSI"].fillna(50)
+        # RSI
+        delta = df["Close"].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        rs = gain.rolling(14).mean() / loss.rolling(14).mean()
+        df["RSI"] = 100 - (100/(1+rs))
+        df["RSI"] = df["RSI"].fillna(50)
 
-# VWAP
-df["VWAP"] = (df["Volume"]*(df["High"]+df["Low"]+df["Close"])/3).cumsum()/df["Volume"].cumsum()
+        # VWAP
+        df["VWAP"] = (df["Volume"]*(df["High"]+df["Low"]+df["Close"])/3).cumsum()/df["Volume"].cumsum()
 
-# Volume Spike
-df["Vol_Avg"] = df["Volume"].rolling(20).mean().fillna(0)
-df["Big"] = df["Volume"] > df["Vol_Avg"]*2
+        # Volume spike
+        df["Vol_Avg"] = df["Volume"].rolling(20).mean().fillna(0)
+        df["Big"] = df["Volume"] > df["Vol_Avg"]*2
 
-# Trend
-df["Trend"] = np.where(df["Close"] > df["EMA21"], "UP", "DOWN")
+        latest = df.iloc[-1]
 
-# =============================
-# SIGNAL (STRICT FILTER)
-# =============================
-signals = [""]
+        # SIGNAL LOGIC
+        buy = (
+            latest["EMA9"] > latest["EMA21"] and
+            latest["Close"] > latest["VWAP"] and
+            latest["RSI"] > 60 and
+            latest["Big"]
+        )
 
-for i in range(1, len(df)):
+        sell = (
+            latest["EMA9"] < latest["EMA21"] and
+            latest["Close"] < latest["VWAP"] and
+            latest["RSI"] < 40 and
+            latest["Big"]
+        )
 
-    strong_buy = (
-        df["EMA9"][i] > df["EMA21"][i] and
-        df["Close"][i] > df["VWAP"][i] and
-        df["RSI"][i] > 60 and
-        df["Trend"][i] == "UP" and
-        df["Big"][i]
-    )
+        reversal = (
+            df["EMA9"].iloc[-2] < df["EMA21"].iloc[-2] and latest["EMA9"] > latest["EMA21"]
+        ) or (
+            df["EMA9"].iloc[-2] > df["EMA21"].iloc[-2] and latest["EMA9"] < latest["EMA21"]
+        )
 
-    strong_sell = (
-        df["EMA9"][i] < df["EMA21"][i] and
-        df["Close"][i] < df["VWAP"][i] and
-        df["RSI"][i] < 40 and
-        df["Trend"][i] == "DOWN" and
-        df["Big"][i]
-    )
+        signal = ""
+        if buy:
+            signal = "🔥 STRONG BUY"
+        elif sell:
+            signal = "❌ STRONG SELL"
+        elif reversal:
+            signal = "🔄 REVERSAL"
 
-    if strong_buy:
-        signals.append("🔥 STRONG BUY")
-    elif strong_sell:
-        signals.append("❌ STRONG SELL")
-    else:
-        signals.append("")
+        if signal == "":
+            return None
 
-df["Signal"] = signals
+        entry = latest["Close"]
 
-# =============================
-# ENTRY SYSTEM
-# =============================
-df["Entry"] = df["Close"]
-df["SL"] = np.where(df["Signal"].str.contains("BUY"), df["Close"]*0.995,
-           np.where(df["Signal"].str.contains("SELL"), df["Close"]*1.005, 0))
+        if "BUY" in signal:
+            sl = entry * 0.995
+            target = entry * 1.015
+        elif "SELL" in signal:
+            sl = entry * 1.005
+            target = entry * 0.985
+        else:
+            sl = entry * 0.997
+            target = entry * 1.01
 
-df["Target"] = np.where(df["Signal"].str.contains("BUY"), df["Close"]*1.015,
-               np.where(df["Signal"].str.contains("SELL"), df["Close"]*0.985, 0))
-
-# =============================
-# LIVE
-# =============================
-st.subheader("📊 LIVE")
-
-latest = df.iloc[-1]
-
-st.metric("Price", round(latest["Close"],2))
-st.metric("RSI", round(latest["RSI"],2))
-st.metric("Signal", latest["Signal"])
-
-# =============================
-# BACKTEST
-# =============================
-st.subheader("📅 BACKTEST")
-
-st.dataframe(df[df["Signal"]!=""][["Datetime","Close","Signal","Entry","SL","Target"]].tail(15))
-
-# =============================
-# CHART
-# =============================
-fig = go.Figure()
-
-fig.add_trace(go.Candlestick(
-    x=df["Datetime"],
-    open=df["Open"],
-    high=df["High"],
-    low=df["Low"],
-    close=df["Close"]
-))
-
-sig_df = df[df["Signal"]!=""]
-
-fig.add_trace(go.Scatter(
-    x=sig_df["Datetime"],
-    y=sig_df["Close"],
-    mode="markers",
-    name="Signals"
-))
-
-st.plotly_chart(fig, use_container_width=True)
+        return {
+            "Stock": symbol,
+            "Signal
