@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V33 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V33 - FIXED SESSION ENGINE")
+st.set_page_config(page_title="🔥 NSE AI PRO V33.1 FIX", layout="wide")
+st.title("🚀 NSE AI PRO V33.1 - STABLE FIX VERSION")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -33,34 +33,44 @@ stocks = sector_map[sector]
 
 timeframe = st.sidebar.selectbox("Timeframe", ["5m","15m","30m","1h"])
 
-sl_pct = st.sidebar.slider("SL %",0.5,5.0,1.0)/100
-tgt_pct = st.sidebar.slider("Target %",1.0,10.0,2.0)/100
+sl_pct = st.sidebar.slider("SL %", 0.5, 5.0, 1.0) / 100
+tgt_pct = st.sidebar.slider("Target %", 1.0, 10.0, 2.0) / 100
 
 # =============================
-# DATA LOADER
+# DATA LOADER (FIXED TIMEZONE)
 # =============================
 @st.cache_data(ttl=120)
 def load_data(stock):
-    period = "7d" if timeframe=="5m" else "60d" if timeframe=="15m" else "2mo"
-    df = yf.download(stock+".NS", period=period, interval=timeframe, progress=False)
+    try:
+        period = "7d" if timeframe == "5m" else "60d" if timeframe == "15m" else "2mo"
+        df = yf.download(stock + ".NS", period=period, interval=timeframe, progress=False)
 
-    if df.empty:
+        if df.empty:
+            return df
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df.index = pd.to_datetime(df.index)
+
+        # 🔥 FIX: remove timezone completely
+        if getattr(df.index, "tz", None) is not None:
+            df.index = df.index.tz_convert(None)
+
+        df = df.dropna()
         return df
 
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    df.index = pd.to_datetime(df.index)
-    df = df.dropna()
-
-    return df
+    except Exception as e:
+        st.error(f"Data error: {e}")
+        return pd.DataFrame()
 
 # =============================
-# SESSION FILTER (FIXED)
+# SESSION FILTER (9:15 - 15:30)
 # =============================
 def session_filter(df):
     if df.empty:
         return df
+
     df = df.copy()
     df.index = pd.to_datetime(df.index)
 
@@ -83,17 +93,17 @@ def indicators(df):
     loss = -delta.clip(upper=0)
 
     rs = gain.rolling(14).mean() / (loss.rolling(14).mean() + 1e-9)
-    df["RSI"] = 100 - (100/(1+rs))
+    df["RSI"] = 100 - (100 / (1 + rs))
 
     return df.fillna(0)
 
 # =============================
-# SIGNAL ENGINE (FIXED NO DUPLICATES)
+# SIGNAL ENGINE (CLEAN)
 # =============================
 def generate_signals(df, stock):
     df = indicators(df)
     signals = []
-    last_signal_time = None
+    last_time = None
 
     for i in range(50, len(df)):
         row = df.iloc[i]
@@ -110,18 +120,18 @@ def generate_signals(df, stock):
         elif row["EMA20"] < row["EMA50"] and row["RSI"] < 45:
             sig = "🔴 TREND SELL"
 
-        if sig and last_signal_time != df.index[i]:
-            last_signal_time = df.index[i]
+        if sig and last_time != df.index[i]:
+            last_time = df.index[i]
 
-            sl = price * (1-sl_pct) if "BUY" in sig else price * (1+sl_pct)
-            tgt = price * (1+tgt_pct) if "BUY" in sig else price * (1-tgt_pct)
+            sl = price * (1 - sl_pct) if "BUY" in sig else price * (1 + sl_pct)
+            tgt = price * (1 + tgt_pct) if "BUY" in sig else price * (1 - tgt_pct)
 
             signals.append({
                 "Stock": stock,
                 "Signal": sig,
-                "Price": round(price,2),
-                "SL": round(sl,2),
-                "Target": round(tgt,2),
+                "Price": round(price, 2),
+                "SL": round(sl, 2),
+                "Target": round(tgt, 2),
                 "Time": df.index[i]
             })
 
@@ -169,20 +179,27 @@ if "live" in st.session_state:
         st.warning("No signals")
 
 # =============================
-# BACKTEST (FIXED)
+# BACKTEST (FULL FIXED)
 # =============================
 st.divider()
-st.subheader("📊 BACKTEST ENGINE V33")
+st.subheader("📊 BACKTEST ENGINE V33.1")
 
 bt_stock = st.selectbox("Stock", stocks)
-bt_date = st.date_input("Select Date", datetime.now()-timedelta(days=1))
+bt_date = st.date_input("Select Date", datetime.now() - timedelta(days=1))
 
 if st.button("🔍 RUN BACKTEST"):
     df = load_data(bt_stock)
 
     if df.empty:
-        st.error("No Data")
+        st.error("No Data Found")
         st.stop()
+
+    # 🔥 FIX TIMEZONE ISSUE COMPLETELY
+    df = df.copy()
+    df.index = pd.to_datetime(df.index)
+
+    if getattr(df.index, "tz", None) is not None:
+        df.index = df.index.tz_convert(None)
 
     start = pd.Timestamp(bt_date)
     end = start + pd.Timedelta(days=1)
@@ -200,7 +217,7 @@ if st.button("🔍 RUN BACKTEST"):
     if result_df.empty:
         st.warning("No signals found")
     else:
-        st.success(f"{len(result_df)} signals")
+        st.success(f"{len(result_df)} signals found")
 
         result_df["Time"] = pd.to_datetime(result_df["Time"]).dt.strftime("%I:%M %p")
         st.dataframe(result_df, use_container_width=True)
