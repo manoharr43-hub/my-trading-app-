@@ -10,8 +10,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23.4 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V23.4 - HQ Stable System")
+st.set_page_config(page_title="🔥 NSE AI PRO V23.5 HQ", layout="wide")
+st.title("🚀 NSE AI PRO V23.5 - HQ Stable System")
 
 # Auto Refresh
 st_autorefresh(interval=60000, key="refresh")
