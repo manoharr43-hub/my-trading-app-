@@ -11,8 +11,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23.9 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V23.9 - HQ Stable System")
+st.set_page_config(page_title="🔥 NSE AI PRO V24 HQ", layout="wide")
+st.title("🚀 NSE AI PRO V24 - HQ Stable System")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -94,8 +94,12 @@ def smart_engine(df, stock):
             sl = price*(1-sl_pct) if "BUY" in sig else price*(1+sl_pct)
             tgt = price*(1+tgt_pct) if "BUY" in sig else price*(1-tgt_pct)
             signals.append({
-                "Stock":stock,"Signal":sig,"Price":round(price,2),
-                "SL":round(sl,2),"Target":round(tgt,2),"Time":df.index[i]
+                "Stock":stock,
+                "Signal":f"{sig} @ {df.index[i].strftime('%I:%M %p')}",  # ✅ Marker + Time
+                "Price":round(price,2),
+                "SL":round(sl,2),
+                "Target":round(tgt,2),
+                "Time":df.index[i]
             })
     return df,signals
 
@@ -113,14 +117,23 @@ if st.button("🚀 LIVE SCAN"):
     st.session_state.live=all_data
 
 # =============================
-# LIVE DISPLAY (FULL DAY ORDERED)
+# LIVE DISPLAY (MARKET HOURS FILTER)
 # =============================
 if "live" in st.session_state:
-    st.subheader("📡 LIVE SIGNALS (Full Day Ordered)")
+    st.subheader("📡 LIVE SIGNALS (Market Hours Only)")
     df_live=pd.DataFrame(st.session_state.live)
-    df_live["Time"]=pd.to_datetime(df_live["Time"])
-    df_live=df_live.sort_values("Time")   # ✅ Serial order
+    df_live["Time"]=pd.to_datetime(df_live["Time"]).dt.tz_localize(None)
+
+    # ✅ Filter only between 9:15 AM and 3:30 PM
+    df_live=df_live[
+        (df_live["Time"].dt.time >= datetime.strptime("09:15","%H:%M").time()) &
+        (df_live["Time"].dt.time <= datetime.strptime("15:30","%H:%M").time())
+    ]
+
+    # ✅ Sort by Time (serial order)
+    df_live=df_live.sort_values("Time")
     df_live["Time"]=df_live["Time"].dt.strftime("%I:%M %p")
+
     st.dataframe(df_live,use_container_width=True)
 
 # =============================
