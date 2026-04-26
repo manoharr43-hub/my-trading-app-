@@ -11,8 +11,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V30.5 HQ", layout="wide")
-st.title("🚀 NSE AI PRO V30.5 HQ - SESSION UPGRADE")
+st.set_page_config(page_title="🔥 NSE AI PRO V31 HQ", layout="wide")
+st.title("🚀 NSE AI PRO V31 HQ - SESSION UPGRADE")
 
 st_autorefresh(interval=180000, key="refresh")
 
@@ -47,33 +47,4 @@ def load_data(stock):
         df = yf.download(stock+".NS", period=period, interval=timeframe, progress=False)
 
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df.index = pd.to_datetime(df.index)
-
-        if df.index.tz is not None:
-            df.index = df.index.tz_convert(None)
-
-        return df.dropna()
-    except:
-        return pd.DataFrame()
-
-# =============================
-# MARKET SESSION FILTER (9:15 - 3:30)
-# =============================
-def session_filter(df):
-    df = df.copy()
-    df.index = pd.to_datetime(df.index)
-    if df.index.tz is not None:
-        df.index = df.index.tz_convert(None)
-    start = dtime(9, 15)
-    end = dtime(15, 30)
-    return df[(df.index.time >= start) & (df.index.time <= end)]
-
-# =============================
-# INDICATORS
-# =============================
-def indicators(df):
-    df = df.copy()
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].
+            df.columns = df
