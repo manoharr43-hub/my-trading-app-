@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V34.1", layout="wide")
-st.title("🚀 NSE AI PRO V34.1 - SIGNAL FIX ENGINE")
+st.set_page_config(page_title="🔥 NSE AI PRO V36", layout="wide")
+st.title("🚀 NSE AI PRO V36 - FINAL STABLE BUILD")
 
 # =============================
 # SETTINGS
@@ -56,11 +56,7 @@ def load_data(stock):
 def session_filter(df):
     if df.empty:
         return df
-
-    start = dtime(9,15)
-    end = dtime(15,30)
-
-    return df[(df.index.time >= start) & (df.index.time <= end)]
+    return df[(df.index.time >= dtime(9,15)) & (df.index.time <= dtime(15,30))]
 
 # =============================
 # INDICATORS
@@ -79,42 +75,43 @@ def indicators(df):
     return df.fillna(0)
 
 # =============================
-# 🔥 IMPROVED SIGNAL ENGINE
+# SIGNAL ENGINE (ALWAYS SIGNAL)
 # =============================
 def generate_signals(df, stock):
     df = indicators(df)
     signals = []
 
-    for i in range(20, len(df)):
+    for i in range(10, len(df)):
         row = df.iloc[i]
         price = row["Close"]
 
-        sig = None
+        # 🔥 Strong logic
+        if row["EMA20"] > row["EMA50"] and row["RSI"] > 55:
+            sig = "🟢 STRONG BUY"
+        elif row["EMA20"] < row["EMA50"] and row["RSI"] < 45:
+            sig = "🔴 STRONG SELL"
 
-        # 🔥 BIG MOVE (relaxed)
-        if row["Volume"] > row["VOL_AVG"] * 1.5:
-            sig = "🔥 BIG MOVE"
-
-        # 🔥 TREND BUY
-        elif row["EMA20"] > row["EMA50"] and row["RSI"] > 50:
+        # 🔥 Medium
+        elif row["EMA20"] > row["EMA50"]:
             sig = "🟢 BUY"
-
-        # 🔥 TREND SELL
-        elif row["EMA20"] < row["EMA50"] and row["RSI"] < 50:
+        elif row["EMA20"] < row["EMA50"]:
             sig = "🔴 SELL"
 
-        if sig:
-            sl = price*(1-sl_pct) if "BUY" in sig else price*(1+sl_pct)
-            tgt = price*(1+tgt_pct) if "BUY" in sig else price*(1-tgt_pct)
+        # 🔥 Fallback (never empty)
+        else:
+            sig = "🟢 WEAK BUY" if row["Close"] >= row["Open"] else "🔴 WEAK SELL"
 
-            signals.append({
-                "Stock": stock,
-                "Signal": sig,
-                "Price": round(price,2),
-                "SL": round(sl,2),
-                "Target": round(tgt,2),
-                "Time": df.index[i]
-            })
+        sl = price*(1-sl_pct) if "BUY" in sig else price*(1+sl_pct)
+        tgt = price*(1+tgt_pct) if "BUY" in sig else price*(1-tgt_pct)
+
+        signals.append({
+            "Stock": stock,
+            "Signal": sig,
+            "Price": round(price,2),
+            "SL": round(sl,2),
+            "Target": round(tgt,2),
+            "Time": df.index[i]
+        })
 
     return signals
 
@@ -134,7 +131,7 @@ if st.button("🚀 LIVE SCAN"):
     st.session_state.signals = all_signals
 
 # =============================
-# LIVE DISPLAY
+# DISPLAY
 # =============================
 if "signals" in st.session_state:
     df = pd.DataFrame(st.session_state.signals)
@@ -167,7 +164,6 @@ if st.button("RUN BACKTEST"):
         st.stop()
 
     df.index = pd.to_datetime(df.index)
-
     try:
         df.index = df.index.tz_convert(None)
     except:
@@ -179,7 +175,7 @@ if st.button("RUN BACKTEST"):
     day_df = df[(df.index >= start) & (df.index < end)]
     day_df = session_filter(day_df)
 
-    st.write("Candles:", len(day_df))  # 🔥 DEBUG
+    st.write("📊 Candles:", len(day_df))
 
     if day_df.empty:
         st.error("No session data")
@@ -188,19 +184,16 @@ if st.button("RUN BACKTEST"):
     signals = generate_signals(day_df, bt_stock)
     res = pd.DataFrame(signals)
 
-    if res.empty:
-        st.warning("No signals (try different date)")
-    else:
-        res["Time"] = pd.to_datetime(res["Time"]).dt.strftime("%I:%M %p")
-        st.dataframe(res, use_container_width=True)
+    res["Time"] = pd.to_datetime(res["Time"]).dt.strftime("%I:%M %p")
+    st.dataframe(res, use_container_width=True)
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=day_df.index,
-            open=day_df["Open"],
-            high=day_df["High"],
-            low=day_df["Low"],
-            close=day_df["Close"]
-        )])
+    fig = go.Figure(data=[go.Candlestick(
+        x=day_df.index,
+        open=day_df["Open"],
+        high=day_df["High"],
+        low=day_df["Low"],
+        close=day_df["Close"]
+    )])
 
-        fig.update_layout(xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(xaxis_rangeslider_visible=False)
+    st.plotly_chart(fig, use_container_width=True)
