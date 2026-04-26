@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import time
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
@@ -9,13 +10,14 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="NSE AI PRO V22.2", layout="wide")
-st.title("🚀 NSE AI PRO V22.2 - Smart Money (Stable Version)")
+st.set_page_config(page_title="NSE AI PRO V22.3", layout="wide")
+st.title("🚀 NSE AI PRO V22.3 - STABLE + NO RATE LIMIT")
 
-st_autorefresh(interval=60000, key="refresh")
+# ⛔ reduced refresh (IMPORTANT)
+st_autorefresh(interval=180000, key="refresh")
 
 # =============================
-# SECTOR
+# SECTORS
 # =============================
 sector_map = {
     "Banking": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"],
@@ -33,13 +35,29 @@ sl_pct = st.sidebar.slider("Stop Loss (%)", 0.5, 5.0, 1.0) / 100
 tgt_pct = st.sidebar.slider("Target (%)", 1.0, 10.0, 2.0) / 100
 
 # =============================
-# DATA
+# SAFE DATA LOADER (FIXED RATE LIMIT)
 # =============================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_data(stock, interval, period="2mo"):
-    df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
-    return df
+    try:
+        time.sleep(0.8)  # anti-rate-limit delay
 
+        df = yf.download(
+            stock + ".NS",
+            period=period,
+            interval=interval,
+            progress=False,
+            threads=False
+        )
+
+        return df
+
+    except Exception:
+        return pd.DataFrame()
+
+# =============================
+# INDICATORS
+# =============================
 def apply_indicators(df):
     df = df.copy()
 
@@ -102,17 +120,20 @@ def get_signals(df, stock):
     return signals
 
 # =============================
-# SCAN
+# SCAN (SAFE SLOW LOOP)
 # =============================
 if st.button("🚀 SCAN FOR TRADES"):
-    all_results = []
+    results = []
 
     for s in stocks:
-        df = load_data(s, timeframe)
-        if not df.empty:
-            all_results += get_signals(df, s)
+        time.sleep(1)  # IMPORTANT RATE LIMIT FIX
 
-    st.session_state.data = all_results
+        df = load_data(s, timeframe)
+
+        if df is not None and not df.empty:
+            results += get_signals(df, s)
+
+    st.session_state.data = results
 
 # =============================
 # DISPLAY
@@ -125,7 +146,7 @@ if "data" in st.session_state and st.session_state.data:
     st.dataframe(df_res.sort_values("Time", ascending=False), use_container_width=True)
 
 # =============================
-# BACKTEST FIXED
+# BACKTEST (STABLE FIX)
 # =============================
 st.divider()
 st.subheader("📊 Backtest")
@@ -138,19 +159,20 @@ with col1:
 
 if st.button("🔍 RUN BACKTEST"):
 
+    time.sleep(1)  # rate limit safety
+
     data = load_data(bt_stock, timeframe, "2mo")
 
-    if data.empty:
-        st.error("No data found")
+    if data is None or data.empty:
+        st.error("No data available")
         st.stop()
 
     data.index = pd.to_datetime(data.index)
 
-    # filter day safely
     day_data = data[data.index.date == bt_date]
 
     if day_data.empty:
-        st.error("No data for selected date (holiday or unavailable)")
+        st.error("No data for selected date")
         st.stop()
 
     signals = get_signals(data, bt_stock)
@@ -190,4 +212,4 @@ if st.button("🔍 RUN BACKTEST"):
         st.plotly_chart(fig, use_container_width=True)
 
     else:
-        st.warning("No signals for this date")
+        st.warning("No signals found")
