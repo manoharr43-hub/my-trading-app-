@@ -12,7 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="NSE AI PRO V23.2", layout="wide")
 st.title("🚀 NSE AI PRO V23.2 - ZERO ERROR STABLE SYSTEM")
 
-# ప్రతి 60 సెకన్లకు యాప్ ఆటోమేటిక్‌గా రిఫ్రెష్ అవుతుంది
+# ఆటోమేటిక్ రిఫ్రెష్ (ప్రతి 1 నిమిషానికి)
 st_autorefresh(interval=60000, key="refresh")
 
 # =============================
@@ -42,15 +42,14 @@ def load_data(stock, interval, period="5d"):
         df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
         return df
     except Exception as e:
-        st.error(f"Error loading {stock}: {e}")
         return pd.DataFrame()
 
 # =============================
 # INDICATORS
 # =============================
 def add_indicators(df):
+    if df.empty: return df
     df = df.copy()
-    if len(df) < 50: return df
 
     df["EMA20"] = df["Close"].ewm(span=20).mean()
     df["EMA50"] = df["Close"].ewm(span=50).mean()
@@ -73,7 +72,7 @@ def add_indicators(df):
 def get_signals(df, stock):
     df = add_indicators(df)
     signals = []
-    if df.empty or "EMA20" not in df.columns: return signals
+    if len(df) < 30: return signals
 
     for i in range(30, len(df)):
         row = df.iloc[i]
@@ -81,27 +80,23 @@ def get_signals(df, stock):
         price = float(row["Close"])
         sig = None
 
-        # Logic 1: Volume Blast
+        # Logic 1: Volume Spike
         if row["Volume"] > row["AvgVol"] * 2.5:
             sig = "🔥 BIG BUY" if row["Close"] > row["Open"] else "💀 BIG SELL"
 
-        # Logic 2: EMA Crossover Bullish
+        # Logic 2: Trend Following
         elif prev["Close"] < row["EMA20"] and row["Close"] > row["EMA20"] and row["RSI"] > 40:
             if row["EMA20"] > row["EMA50"]:
                 sig = "🟢 BULLISH"
 
-        # Logic 3: EMA Crossover Bearish
         elif prev["Close"] > row["EMA20"] and row["Close"] < row["EMA20"] and row["RSI"] < 60:
             if row["EMA20"] < row["EMA50"]:
                 sig = "🔴 BEARISH"
 
         if sig:
-            if "BUY" in sig or "BULLISH" in sig:
-                sl = price * (1 - sl_pct)
-                tgt = price * (1 + tgt_pct)
-            else:
-                sl = price * (1 + sl_pct)
-                tgt = price * (1 - tgt_pct)
+            is_buy = "BUY" in sig or "BULLISH" in sig
+            sl = price * (1 - sl_pct) if is_buy else price * (1 + sl_pct)
+            tgt = price * (1 + tgt_pct) if is_buy else price * (1 - tgt_pct)
 
             signals.append({
                 "Stock": stock,
@@ -109,32 +104,33 @@ def get_signals(df, stock):
                 "Entry": round(price, 2),
                 "SL": round(sl, 2),
                 "Target": round(tgt, 2),
-                "Time": df.index[i]
+                "Time": df.index[i].strftime("%Y-%m-%d %H:%M")
             })
+
     return signals
 
 # =============================
-# LIVE SCAN SECTION
+# LIVE SCANNER
 # =============================
 if st.button("🚀 SCAN MARKET"):
     all_data = []
-    for s in stocks:
-        df = load_data(s, timeframe)
-        if not df.empty:
-            all_data.extend(get_signals(df, s))
+    with st.spinner("Scanning Stocks..."):
+        for s in stocks:
+            df = load_data(s, timeframe)
+            if not df.empty:
+                all_data.extend(get_signals(df, s))
     st.session_state.results = all_data
 
 if "results" in st.session_state:
     res_df = pd.DataFrame(st.session_state.results)
     if not res_df.empty:
-        res_df["Time"] = pd.to_datetime(res_df["Time"]).dt.strftime("%d-%m %H:%M")
         st.subheader("📊 LIVE SIGNALS")
         st.dataframe(res_df, use_container_width=True)
     else:
-        st.info("ప్రస్తుతానికి ఎటువంటి సిగ్నల్స్ లేవు.")
+        st.info("No signals found at this moment.")
 
 # =============================
-# BACKTEST ENGINE (FIXED)
+# BACKTEST ENGINE (FIXED & IMPROVED)
 # =============================
 st.divider()
 st.subheader("📊 BACKTEST ENGINE")
@@ -142,26 +138,46 @@ st.subheader("📊 BACKTEST ENGINE")
 col1, col2 = st.columns([1, 3])
 
 with col1:
-    bt_stock = st.selectbox("Select Stock", stocks, key="bt_stock_select")
-    # మునుపటి ఎర్రర్ ఇక్కడ సరిచేయబడింది
+    bt_stock = st.selectbox("Stock", stocks, key="bt_stock")
+    # మునుపటి Error ఇక్కడ Fix చేయబడింది (Closed bracket)
     bt_date = st.date_input("Analysis Date", datetime.now() - timedelta(days=1))
-
+    
 with col2:
     bt_df = load_data(bt_stock, timeframe, period="5d")
+    
     if not bt_df.empty:
-        bt_df_ind = add_indicators(bt_df)
+        # సిగ్నల్స్ ని టేబుల్ రూపంలో చూపించడం
+        bt_signals = get_signals(bt_df, bt_stock)
         
+        # Chart Drawing
         fig = go.Figure()
         fig.add_trace(go.Candlestick(
             x=bt_df.index, open=bt_df['Open'], high=bt_df['High'],
-            low=bt_df['Low'], close=bt_df['Close'], name="Market Data"
+            low=bt_df['Low'], close=bt_df['Close'], name="Price"
         ))
         
+        bt_df_ind = add_indicators(bt_df)
         if "EMA20" in bt_df_ind.columns:
             fig.add_trace(go.Scatter(x=bt_df_ind.index, y=bt_df_ind['EMA20'], name="EMA20", line=dict(color='orange')))
             fig.add_trace(go.Scatter(x=bt_df_ind.index, y=bt_df_ind['EMA50'], name="EMA50", line=dict(color='blue')))
         
-        fig.update_layout(height=500, xaxis_rangeslider_visible=False, template="plotly_dark")
+        fig.update_layout(height=450, xaxis_rangeslider_visible=False, template="plotly_dark")
         st.plotly_chart(fig, use_container_width=True)
+
+        if bt_signals:
+            st.write(f"### 📂 Backtest Results for {bt_stock}")
+            bt_results_df = pd.DataFrame(bt_signals)
+            st.dataframe(bt_results_df, use_container_width=True)
+            
+            # డౌన్‌లోడ్ బటన్ (CSV)
+            csv_data = bt_results_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Results as CSV",
+                data=csv_data,
+                file_name=f"{bt_stock}_backtest.csv",
+                mime='text/csv'
+            )
+        else:
+            st.warning("No signals recorded in historical data for this period.")
     else:
-        st.warning("బ్యాక్‌టెస్ట్ చేయడానికి డేటా అందుబాటులో లేదు.")
+        st.error("Could not fetch data for backtesting.")
