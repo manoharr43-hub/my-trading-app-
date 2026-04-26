@@ -8,8 +8,8 @@ import os
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23.6 HQ", layout="wide")
-st.title("📊 NSE AI PRO V23.6 - Backtest Engine")
+st.set_page_config(page_title="🔥 NSE AI PRO V23.7 HQ", layout="wide")
+st.title("🚀 NSE AI PRO V23.7 - HQ Stable System")
 
 # =============================
 # BACKTEST FOLDER CONFIG
@@ -48,8 +48,6 @@ def add_indicators(df):
     df = df.copy()
     df["EMA20"] = df["Close"].ewm(span=20).mean()
     df["EMA50"] = df["Close"].ewm(span=50).mean()
-    tp = (df["High"]+df["Low"]+df["Close"])/3
-    df["VWAP"] = (tp*df["Volume"]).cumsum()/(df["Volume"].cumsum()+1e-9)
     return df
 
 # =============================
@@ -80,67 +78,101 @@ def get_signals(df, stock):
     return signals
 
 # =============================
-# BACKTEST ENGINE
+# LIVE SCAN SECTION
 # =============================
-st.divider()
-st.subheader("📊 BACKTEST ENGINE")
+if st.button("🚀 SCAN MARKET"):
+    all_data=[]
+    with st.spinner("Scanning Stocks..."):
+        for s in stocks:
+            df=load_data(s,timeframe)
+            if not df.empty: all_data.extend(get_signals(df,s))
+    st.session_state.results=all_data
 
-bt_stock = st.selectbox("Stock", stocks, key="bt_stock")
-bt_date = st.date_input("Analysis Date", datetime.now()-timedelta(days=1))
+if "results" in st.session_state:
+    res_df=pd.DataFrame(st.session_state.results)
+    if not res_df.empty:
+        st.subheader("📊 LIVE SIGNALS")
+        st.dataframe(res_df,use_container_width=True)
 
-bt_df = load_data(bt_stock,timeframe,period="5d")
-if not bt_df.empty:
-    bt_df = bt_df[bt_df.index.date == bt_date]
-    bt_signals = get_signals(bt_df, bt_stock)
-
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=bt_df.index,open=bt_df['Open'],high=bt_df['High'],
-        low=bt_df['Low'],close=bt_df['Close'],name="Price"
-    ))
-    bt_df_ind = add_indicators(bt_df)
-    if "EMA20" in bt_df_ind.columns:
-        fig.add_trace(go.Scatter(x=bt_df_ind.index,y=bt_df_ind['EMA20'],name="EMA20",line=dict(color='orange')))
-        fig.add_trace(go.Scatter(x=bt_df_ind.index,y=bt_df_ind['EMA50'],name="EMA50",line=dict(color='blue')))
-    for sig in bt_signals:
-        fig.add_trace(go.Scatter(
-            x=[sig["Time"]],y=[sig["Entry"]],text=sig["Type"],
-            mode="markers+text",textposition="top center",
-            marker=dict(color="green" if "BUY" in sig["Type"] or "BULLISH" in sig["Type"] else "red",size=12)
-        ))
-    fig.update_layout(height=450,xaxis_rangeslider_visible=False,template="plotly_dark")
-    st.plotly_chart(fig,use_container_width=True)
-
-    if bt_signals:
-        st.write(f"### 📂 Backtest Results for {bt_stock} ({bt_date})")
-        bt_results_df = pd.DataFrame(bt_signals)
-        st.dataframe(bt_results_df,use_container_width=True)
+        # ✅ Chart below signals
+        for stock in res_df["Stock"].unique():
+            df_live=load_data(stock,timeframe)
+            if not df_live.empty:
+                fig=go.Figure()
+                fig.add_trace(go.Candlestick(
+                    x=df_live.index,open=df_live['Open'],high=df_live['High'],
+                    low=df_live['Low'],close=df_live['Close'],name="Price"
+                ))
+                df_ind=add_indicators(df_live)
+                if "EMA20" in df_ind.columns:
+                    fig.add_trace(go.Scatter(x=df_ind.index,y=df_ind['EMA20'],name="EMA20",line=dict(color='orange')))
+                    fig.add_trace(go.Scatter(x=df_ind.index,y=df_ind['EMA50'],name="EMA50",line=dict(color='blue')))
+                sigs=res_df[res_df["Stock"]==stock]
+                for _,r in sigs.iterrows():
+                    fig.add_trace(go.Scatter(
+                        x=[r["Time"]],y=[r["Entry"]],text=r["Type"],
+                        mode="markers+text",textposition="top center",
+                        marker=dict(color="green" if "BUY" in r["Type"] or "BULLISH" in r["Type"] else "red",size=12)
+                    ))
+                fig.update_layout(height=450,xaxis_rangeslider_visible=False,template="plotly_dark")
+                st.plotly_chart(fig,use_container_width=True)
     else:
-        st.warning("No signals recorded for this date.")
-        bt_results_df = pd.DataFrame(columns=["Stock","Type","Entry","SL","Target","Time"])
-
-    # ✅ Always Save CSV into backtests folder
-    file_path = f"{BACKTEST_DIR}/{bt_stock}_{bt_date}.csv"
-    bt_results_df.to_csv(file_path,index=False)
-
-    # Download button
-    csv_data = bt_results_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Results as CSV",
-        data=csv_data,
-        file_name=f"{bt_stock}_{bt_date}.csv",
-        mime="text/csv"
-    )
-else:
-    st.error("Could not fetch data for backtesting.")
+        st.info("No signals found at this moment.")
 
 # =============================
-# BACKTEST FOLDER DISPLAY
+# BACKTEST ENGINE BUTTON
 # =============================
-st.sidebar.subheader("📂 Backtest Folder Contents")
-files = os.listdir(BACKTEST_DIR)
-if files:
-    for f in files:
-        st.sidebar.write(f)
-else:
-    st.sidebar.write("No backtest files yet")
+if st.button("📂 RUN BACKTEST"):
+    bt_stock = st.selectbox("Stock", stocks, key="bt_stock")
+    bt_date = st.date_input("Analysis Date", datetime.now()-timedelta(days=1))
+    bt_df = load_data(bt_stock,timeframe,period="5d")
+    if not bt_df.empty:
+        bt_df = bt_df[bt_df.index.date == bt_date]
+        bt_signals = get_signals(bt_df, bt_stock)
+
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=bt_df.index,open=bt_df['Open'],high=bt_df['High'],
+            low=bt_df['Low'],close=bt_df['Close'],name="Price"
+        ))
+        bt_df_ind = add_indicators(bt_df)
+        if "EMA20" in bt_df_ind.columns:
+            fig.add_trace(go.Scatter(x=bt_df_ind.index,y=bt_df_ind['EMA20'],name="EMA20",line=dict(color='orange')))
+            fig.add_trace(go.Scatter(x=bt_df_ind.index,y=bt_df_ind['EMA50'],name="EMA50",line=dict(color='blue')))
+        for sig in bt_signals:
+            fig.add_trace(go.Scatter(
+                x=[sig["Time"]],y=[sig["Entry"]],text=sig["Type"],
+                mode="markers+text",textposition="top center",
+                marker=dict(color="green" if "BUY" in sig["Type"] or "BULLISH" in sig["Type"] else "red",size=12)
+            ))
+        fig.update_layout(height=450,xaxis_rangeslider_visible=False,template="plotly_dark")
+        st.plotly_chart(fig,use_container_width=True)
+
+        if bt_signals:
+            st.write(f"### 📂 Backtest Results for {bt_stock} ({bt_date})")
+            bt_results_df = pd.DataFrame(bt_signals)
+            st.dataframe(bt_results_df,use_container_width=True)
+        else:
+            st.warning("No signals recorded for this date.")
+            bt_results_df = pd.DataFrame(columns=["Stock","Type","Entry","SL","Target","Time"])
+
+        # ✅ Always Save CSV
+        file_path = f"{BACKTEST_DIR}/{bt_stock}_{bt_date}.csv"
+        bt_results_df.to_csv(file_path,index=False)
+
+        # Download button
+        csv_data = bt_results_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Results as CSV",
+            data=csv_data,
+            file_name=f"{bt_stock}_{bt_date}.csv",
+            mime="text/csv"
+        )
+
+    st.sidebar.subheader("📂 Backtest Folder Contents")
+    files = os.listdir(BACKTEST_DIR)
+    if files:
+        for f in files:
+            st.sidebar.write(f)
+    else:
+        st.sidebar.write("No backtest files yet")
