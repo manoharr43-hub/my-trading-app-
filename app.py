@@ -5,18 +5,19 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import pytz
+import os
 import time
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V18 - BUY+SELL SAFE", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V19 - BACKTEST FOLDER", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V18 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V19 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -32,7 +33,7 @@ sector_map = {
 all_stocks = [s for sub in sector_map.values() for s in sub]
 
 # =============================
-# SAFE HISTORY LOADER (Rate Limit Fix)
+# SAFE HISTORY LOADER
 # =============================
 def safe_history(ticker, period="2d", interval="15m", retries=3, delay=2):
     for i in range(retries):
@@ -52,7 +53,6 @@ def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
     
-    # ✅ RSI Fix
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -61,7 +61,6 @@ def add_indicators(df):
     rs = avg_gain / (avg_loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # ✅ VWAP Daily Reset
     df['CumVol'] = df['Volume'].groupby(df.index.date).cumsum()
     df['CumPV'] = (df['Close'] * df['Volume']).groupby(df.index.date).cumsum()
     df['VWAP'] = df['CumPV'] / df['CumVol']
@@ -72,42 +71,54 @@ def add_indicators(df):
     return df
 
 # =============================
-# UI - LIVE SCANNER
+# BACKTEST SAVE + SIDEBAR LIST
 # =============================
-if st.button("🚀 SCAN ALL NSE STOCKS"):
-    live_results = []
-    with st.spinner("Analyzing Live Entry Points..."):
+def save_backtest_report(report_df, folder="backtests"):
+    os.makedirs(folder, exist_ok=True)
+    file_name = f"{folder}/backtest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    report_df.to_csv(file_name, index=False)
+    return file_name
+
+def show_backtest_folder(folder="backtests"):
+    st.sidebar.header("📂 Backtest Folder")
+    if os.path.exists(folder):
+        files = os.listdir(folder)
+        if files:
+            for f in files:
+                st.sidebar.write(f"📄 {f}")
+        else:
+            st.sidebar.warning("No backtest files yet.")
+    else:
+        st.sidebar.warning("Backtest folder not created.")
+
+# =============================
+# UI - BACKTEST TAB
+# =============================
+if st.button("📈 GENERATE BACKTEST REPORT"):
+    back_logs = []
+    with st.spinner("Fetching Historical Back Data..."):
         for s in all_stocks:
-            df_l = safe_history(s, period="2d", interval="15m")
-            if df_l is not None:
-                df_l.index = df_l.index.tz_convert(IST)
-                df_l = add_indicators(df_l)
-                last = df_l.iloc[-1]
-                
-                price = round(last['Close'], 2)
-                sig = "WAIT"
-                sl, tgt = 0, 0
-                
-                # ✅ BUY + SELL Logic
-                if last['Close'] > last['VWAP'] and last['EMA20'] > last['EMA50']:
-                    sig = "🚀 STRONG BUY"
-                    sl = round(price * 0.99, 2)
-                    tgt = round(price * 1.02, 2)
-                
-                elif last['Close'] < last['VWAP'] and last['EMA20'] < last['EMA50']:
-                    sig = "🔻 STRONG SELL"
-                    sl = round(price * 1.01, 2)
-                    tgt = round(price * 0.98, 2)
-                
-                live_results.append({
-                    "STOCK": s,
-                    "DATE": df_l.index[-1].strftime('%Y-%m-%d'),
-                    "TIME": df_l.index[-1].strftime('%H:%M'),
-                    "ENTRY": price,
-                    "SIGNAL": sig,
-                    "STOPLOSS": sl,
-                    "TARGET": tgt,
-                    "ALERT": "🐋 BIG FISH" if last['Big_Player'] else "Normal"
-                })
-    if live_results:
-        st.dataframe(pd.DataFrame(live_results), use_container_width=True)
+            df_b = safe_history(s, period="2mo", interval="1d")
+            if df_b is not None:
+                df_b = add_indicators(df_b)
+                hits = df_b[(df_b['Big_Player']) | (df_b['Bull_Rev'])]
+                for idx, row in hits.iterrows():
+                    back_logs.append({
+                        "DATE": idx.strftime('%Y-%m-%d'),
+                        "STOCK": s,
+                        "ENTRY PRICE": round(row['Close'], 2),
+                        "STOPLOSS": round(row['Close'] * 0.99, 2),
+                        "TARGET": round(row['Close'] * 1.02, 2),
+                        "SIGNAL TYPE": "🐋 BIG PLAYER" if row['Big_Player'] else "🔄 REVERSAL"
+                    })
+    
+    if back_logs:
+        report_df = pd.DataFrame(back_logs)
+        st.success(f"మొత్తం {len(report_df)} ఎంట్రీలు దొరికాయి.")
+        st.dataframe(report_df, use_container_width=True)
+        
+        # ✅ Save CSV + Show Folder
+        save_backtest_report(report_df)
+        show_backtest_folder()
+    else:
+        st.warning("గత 30 రోజుల్లో సిగ్నల్స్ ఏవీ దొరకలేదు.")
