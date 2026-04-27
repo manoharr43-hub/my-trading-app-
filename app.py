@@ -9,172 +9,150 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V23 - LIVE+BACKTEST", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.5 - BACKTEST FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
+# IST Time Setup
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V23 - ULTIMATE DASHBOARD")
-st.write(f"🕒 **System Sync (IST):** {current_time}")
+st.title("🚀 NSE AI PRO V9.5 - ULTIMATE TRACKER")
+st.write(f"🕒 **Current Market Sync (IST):** {current_time}")
+st.markdown("---")
 
 # =============================
-# STOCK SECTORS
+# STOCK LIST
 # =============================
-sector_map = {
-    "BANKING": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"],
-    "IT": ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM"],
-    "AUTO": ["TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "EICHERMOT"],
-    "ENERGY": ["RELIANCE", "NTPC", "POWERGRID", "ONGC", "BPCL"],
-    "OTHERS": ["ITC", "LT", "BAJFINANCE", "TATASTEEL", "BHARTIARTL"]
-}
-all_stocks = [s for sub in sector_map.values() for s in sub]
+stocks = [
+    "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "BAJFINANCE", "BAJAJFINSV", "INDUSINDBK",
+    "TCS", "INFY", "HCLTECH", "WIPRO", "TECHM", "LTIM",
+    "TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO",
+    "RELIANCE", "NTPC", "POWERGRID", "ONGC", "BPCL", "ADANIGREEN",
+    "ITC", "HINDUNILVR", "BRITANNIA", "NESTLEIND", "VBL", "ASIANPAINT",
+    "TATASTEEL", "JSWSTEEL", "HINDALCO", "COALINDIA",
+    "SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "APOLLOHOSP",
+    "LT", "ULTRACEMCO", "GRASIM", "ADANIPORTS", "BHARTIARTL"
+]
 
 # =============================
-# FUNCTIONS
+# CORE FUNCTIONS
 # =============================
-@st.cache_data(ttl=60)
-def get_data(stock, period="2mo", interval="15m"):
+def get_data(stock, period="2d", interval="15m"):
     try:
         df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
-        if df.empty:
-            return None
-        df.index = df.index.tz_localize(IST)
-        return df.dropna()
-    except:
-        return None
+        return df.dropna() if df is not None and not df.empty else None
+    except: return None
 
 def add_indicators(df):
-    df = df.copy()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-
     delta = df['Close'].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1/14, min_periods=14).mean()
-    avg_loss = loss.ewm(alpha=1/14, min_periods=14).mean()
-    rs = avg_gain / (avg_loss + 1e-9)
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
-
-    df['CumVol'] = df['Volume'].groupby(df.index.date).cumsum()
-    df['CumPV'] = (df['Close'] * df['Volume']).groupby(df.index.date).cumsum()
-    df['VWAP'] = df['CumPV'] / df['CumVol']
-
-    df['Vol_Avg'] = df['Volume'].rolling(20).mean()
-    df['Big_Player'] = df['Volume'] > (df['Vol_Avg'] * 2.0)   # relaxed threshold
-
-    df['Bull_Rev'] = (df['RSI'].shift(1) < 35) & (df['RSI'] > 35)   # relaxed
-    df['Bear_Rev'] = (df['RSI'].shift(1) > 65) & (df['RSI'] < 65)   # relaxed
-
+    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    exp1 = df['Close'].ewm(span=12, adjust=False).mean()
+    exp2 = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = exp1 - exp2
+    df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
     return df
 
-# =============================
-# TABS
-# =============================
-tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST", "📈 CHART"])
+def get_smart_alerts(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+    alerts = []
+    if last['Volume'] > avg_vol * 2.5: alerts.append("🐋 BIG FISH")
+    if prev['RSI'] < 30 and last['RSI'] > 30: alerts.append("🔄 BULLISH REV")
+    elif prev['RSI'] > 70 and last['RSI'] < 70: alerts.append("🔄 BEARISH REV")
+    return " | ".join(alerts) if alerts else "Normal"
+
+def calculate_ai_score(df_slice):
+    score = 0
+    last = df_slice.iloc[-1]
+    if last['EMA20'] > last['EMA50']: score += 20
+    if 40 < last['RSI'] < 70: score += 20
+    if last['Volume'] > df_slice['Volume'].rolling(20).mean().iloc[-1]: score += 20
+    if last['Close'] > last['VWAP']: score += 20
+    if last['MACD'] > last['Signal_Line']: score += 20
+    return score
+
+def get_signal(score, last_close, last_vwap):
+    if score >= 80 and last_close > last_vwap: return "🚀 STRONG BUY"
+    elif score <= 30 and last_close < last_vwap: return "💀 STRONG SELL"
+    elif score >= 60: return "BUY"
+    elif score <= 40: return "SELL"
+    else: return "WAIT"
 
 # =============================
-# TAB 1 - LIVE SCANNER
+# UI - LIVE SCAN & BACKTEST TABS
 # =============================
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 30-DAY BACKTEST REPORT"])
+
 with tab1:
-    if st.button("🚀 SCAN MARKET", key="scan_btn"):
-        results = []
-        with st.spinner("Scanning Stocks..."):
-            for s in all_stocks:
-                df = get_data(s, period="2d", interval="15m")
-                if df is None or df.empty:
-                    continue
-                df = add_indicators(df)
-                last = df.iloc[-1]
-                price = round(last['Close'], 2)
-                signal = "WAIT"
-                sl, tgt = 0, 0
+    if st.button("🔍 SCAN ALL SECTORS LIVE"):
+        data_results = []
+        with st.spinner("Analyzing Market..."):
+            for s in stocks:
+                df = get_data(s)
+                if df is not None:
+                    df = add_indicators(df)
+                    score = calculate_ai_score(df)
+                    sig = get_signal(score, df['Close'].iloc[-1], df['VWAP'].iloc[-1])
+                    smart_alert = get_smart_alerts(df)
+                    curr_price = round(df['Close'].iloc[-1], 2)
+                    last_time = df.index[-1].astimezone(IST).strftime('%H:%M')
+                    
+                    if "BUY" in sig:
+                        sl, target = round(curr_price * 0.99, 2), round(curr_price * 1.02, 2)
+                    elif "SELL" in sig:
+                        sl, target = round(curr_price * 1.01, 2), round(curr_price * 0.98, 2)
+                    else: sl = target = 0
+                    
+                    data_results.append({
+                        "STOCK": s, "TIME": last_time, "PRICE": curr_price, 
+                        "SIGNAL": sig, "SMART ALERT": smart_alert, 
+                        "STOPLOSS": sl, "TARGET": target
+                    })
+        if data_results:
+            res_df = pd.DataFrame(data_results)
+            st.table(res_df)
 
-                if last['Close'] > last['VWAP'] and last['EMA20'] > last['EMA50']:
-                    signal = "🚀 STRONG BUY"
-                    sl = round(price * 0.99, 2)
-                    tgt = round(price * 1.02, 2)
-                elif last['Close'] < last['VWAP'] and last['EMA20'] < last['EMA50']:
-                    signal = "🔻 STRONG SELL"
-                    sl = round(price * 1.01, 2)
-                    tgt = round(price * 0.98, 2)
-                elif last['Bull_Rev']:
-                    signal = "🔄 BUY REVERSAL"
-                elif last['Bear_Rev']:
-                    signal = "🔄 SELL REVERSAL"
-
-                results.append({
-                    "Stock": s,
-                    "Time": df.index[-1].strftime('%H:%M'),
-                    "Price": price,
-                    "Signal": signal,
-                    "SL": sl,
-                    "Target": tgt,
-                    "Volume": "🐋" if last['Big_Player'] else "-"
-                })
-        if results:
-            st.dataframe(pd.DataFrame(results), use_container_width=True)
-        else:
-            st.warning("No Live Signals Found")
-
-# =============================
-# TAB 2 - BACKTEST
-# =============================
 with tab2:
-    if st.button("📊 RUN BACKTEST", key="backtest_btn"):
-        logs = []
-        with st.spinner("Running Backtest..."):
-            for s in all_stocks:
-                df = get_data(s, period="2mo", interval="15m")
-                if df is None:
-                    continue
-                df = add_indicators(df)
-                for i in range(1, len(df)):
-                    row = df.iloc[i]
-                    if row['Close'] > row['VWAP'] and row['EMA20'] > row['EMA50']:
-                        logs.append({"Date": df.index[i].strftime('%Y-%m-%d %H:%M'),
-                                     "Stock": s, "Price": round(row['Close'], 2),
-                                     "Signal": "BUY"})
-                    elif row['Close'] < row['VWAP'] and row['EMA20'] < row['EMA50']:
-                        logs.append({"Date": df.index[i].strftime('%Y-%m-%d %H:%M'),
-                                     "Stock": s, "Price": round(row['Close'], 2),
-                                     "Signal": "SELL"})
-                    elif row['Big_Player']:
-                        logs.append({"Date": df.index[i].strftime('%Y-%m-%d %H:%M'),
-                                     "Stock": s, "Price": round(row['Close'], 2),
-                                     "Signal": "BIG PLAYER"})
-                    elif row['Bull_Rev']:
-                        logs.append({"Date": df.index[i].strftime('%Y-%m-%d %H:%M'),
-                                     "Stock": s, "Price": round(row['Close'], 2),
-                                     "Signal": "BUY REVERSAL"})
-                    elif row['Bear_Rev']:
-                        logs.append({"Date": df.index[i].strftime('%Y-%m-%d %H:%M'),
-                                     "Stock": s, "Price": round(row['Close'], 2),
-                                     "Signal": "SELL REVERSAL"})
-        if logs:
-            st.dataframe(pd.DataFrame(logs), use_container_width=True)
+    st.info("గత 30 రోజుల్లో మీ స్ట్రాటజీ ప్రకారం వచ్చిన పక్కా ఎంట్రీ పాయింట్స్ ఇక్కడ చూడవచ్చు.")
+    if st.button("📈 RUN 30-DAY HISTORICAL BACKTEST"):
+        bt_logs = []
+        with st.spinner("Backtesting last 30 days data..."):
+            for s in stocks:
+                df_bt = get_data(s, period="1mo", interval="15m")
+                if df_bt is not None and len(df_bt) > 50:
+                    df_bt = add_indicators(df_bt)
+                    for i in range(50, len(df_bt)):
+                        score = calculate_ai_score(df_bt.iloc[:i+1])
+                        if score >= 80: # Strong Buy Alert
+                            sig_dt = df_bt.index[i].astimezone(IST).strftime('%Y-%m-%d %H:%M')
+                            bt_logs.append({
+                                "DATE & TIME": sig_dt, 
+                                "STOCK": s, 
+                                "ENTRY PRICE": round(df_bt.iloc[i]['Close'], 2), 
+                                "SIGNAL": "🚀 STRONG BUY"
+                            })
+        if bt_logs:
+            st.dataframe(pd.DataFrame(bt_logs), use_container_width=True)
         else:
-            st.warning("No Backtest Signals Found")
+            st.warning("గత 30 రోజుల్లో ఈ స్ట్రాటజీ ప్రకారం ఎంట్రీలు ఏవీ దొరకలేదు.")
 
 # =============================
-# TAB 3 - CHART
+# CHART SECTION
 # =============================
-with tab3:
-    stock = st.selectbox("Select Stock", all_stocks)
-    df = get_data(stock)
-    if df is not None:
-        df = add_indicators(df)
-        last_price = df.iloc[-1]['Close']
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(
-            x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close']
-        ))
-        fig.add_hline(y=last_price * 1.02, line_dash="dash", line_color="green")
-        fig.add_hline(y=last_price * 0.99, line_dash="dash", line_color="red")
-        bp = df[df['Big_Player']]
-        fig.add_trace(go.Scatter(
-            x=bp.index, y=bp['Low'] * 0.98, mode='markers',
-            marker=dict(size=10, color='yellow'), name="Big Player"
-        ))
-        fig.update_layout(height=600
+st.markdown("---")
+selected = st.selectbox("Select stock to view Chart:", stocks)
+chart_df = get_data(selected, period="5d", interval="15m")
+if chart_df is not None:
+    chart_df = add_indicators(chart_df)
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=chart_df.index, open=chart_df['Open'], high=chart_df['High'], low=chart_df['Low'], close=chart_df['Close'], name="Price"))
+    fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
+    fig.update_layout(title=f"{selected} Analysis", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
+    st.plotly_chart(fig, use_container_width=True)
