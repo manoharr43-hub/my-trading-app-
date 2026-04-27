@@ -9,13 +9,13 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V18 - LIVE+BACKTEST", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V19 - LIVE+BACKTEST", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V18 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V19 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -70,28 +70,3 @@ def add_indicators(df):
 # =============================
 tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER (ALL)", "📊 30-DAY BACKTEST REPORT", "📈 CHART ANALYSIS"])
 
-with tab1:
-    if st.button("🚀 SCAN ALL NSE STOCKS"):
-        live_results = []
-        with st.spinner("Analyzing Live Entry Points..."):
-            for s in all_stocks:
-                df_l = yf.Ticker(s + ".NS").history(period="2d", interval="15m")
-                if not df_l.empty:
-                    df_l.index = df_l.index.tz_convert(IST)
-                    df_l = add_indicators(df_l)
-                    last = df_l.iloc[-1]
-                    
-                    price = round(last['Close'], 2)
-                    sig = "WAIT"
-                    sl, tgt = 0, 0
-                    
-                    # ✅ BUY + SELL Logic
-                    if last['Close'] > last['VWAP'] and last['EMA20'] > last['EMA50']:
-                        sig = "🚀 STRONG BUY"
-                        sl = round(price * 0.99, 2)
-                        tgt = round(price * 1.02, 2)
-                    
-                    elif last['Close'] < last['VWAP'] and last['EMA20'] < last['EMA50']:
-                        sig = "🔻 STRONG SELL"
-                        sl = round(price * 1.01, 2)
-                        tgt = round(price
