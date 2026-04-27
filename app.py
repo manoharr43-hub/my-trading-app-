@@ -9,13 +9,13 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V17 - LIVE+BACKTEST", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V18 - LIVE+BACKTEST", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V17 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V18 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -94,17 +94,4 @@ with tab1:
                     elif last['Close'] < last['VWAP'] and last['EMA20'] < last['EMA50']:
                         sig = "🔻 STRONG SELL"
                         sl = round(price * 1.01, 2)
-                        tgt = round(price * 0.98, 2)
-                    
-                    live_results.append({
-                        "STOCK": s, "DATE": df_l.index[-1].strftime('%Y-%m-%d'),
-                        "TIME": df_l.index[-1].strftime('%H:%M'),
-                        "ENTRY": price, "SIGNAL": sig, "STOPLOSS": sl, "TARGET": tgt,
-                        "ALERT": "🐋 BIG FISH" if last['Big_Player'] else "Normal"
-                    })
-        if live_results:
-            st.dataframe(pd.DataFrame(live_results), use_container_width=True)
-
-with tab2:
-    st.header("📊 Historical Backtest Report")
-    st.info("గత 30 రోజ
+                        tgt = round(price
