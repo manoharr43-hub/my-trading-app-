@@ -10,18 +10,18 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V12", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V13", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V12 - PULLBACK ENTRY SYSTEM")
+st.title("🚀 NSE AI PRO V13 - PRO SYSTEM + PULLBACK AI")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 st.markdown("---")
 
 # =============================
-# STOCKS
+# STOCK LIST
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
@@ -30,7 +30,7 @@ stocks = [
 ]
 
 # =============================
-# DATA
+# DATA FETCH
 # =============================
 @st.cache_data(ttl=300)
 def get_data(symbol, interval="5m", period="5d"):
@@ -122,15 +122,12 @@ def pullback_entry(df):
         last = df.iloc[-1]
 
         breakout = last['Close'] > df['High'].rolling(20).max().iloc[-2]
-
         pullback = abs(last['Close'] - last['EMA20']) / last['EMA20'] < 0.004
-
         bullish = last['Close'] > last['Open']
-
         volume_ok = last['Volume'] > df['Volume'].rolling(20).mean().iloc[-1]
 
         if breakout and pullback and bullish and volume_ok:
-            return "✅ PULLBACK ENTRY"
+            return "YES"
         else:
             return ""
     except:
@@ -206,7 +203,7 @@ with tab1:
             st.warning("No signals")
 
 # =============================
-# BACKTEST
+# BACKTEST (PULLBACK FILTER)
 # =============================
 with tab2:
 
@@ -238,16 +235,18 @@ with tab2:
 
                 sc = ai_score(temp)
                 sig = signal(sc)
+                pb = pullback_entry(temp)
+
+                if "STRONG" not in sig or pb == "":
+                    continue
 
                 entry = temp.iloc[-1]['Close']
                 next_p = df.iloc[i+1]['Close']
 
                 if sig in ["BUY", "🚀 STRONG BUY"]:
                     res = "WIN" if next_p > entry else "LOSS"
-
                 elif sig in ["SELL", "💀 STRONG SELL"]:
                     res = "WIN" if next_p < entry else "LOSS"
-
                 else:
                     continue
 
@@ -260,6 +259,7 @@ with tab2:
                     "TIME": df.index[i].strftime('%H:%M'),
                     "STOCK": s,
                     "SIGNAL": sig,
+                    "PULLBACK": "YES",
                     "ENTRY": round(entry,2),
                     "NEXT": round(next_p,2),
                     "RESULT": res
@@ -271,13 +271,13 @@ with tab2:
 
             st.dataframe(df_logs, use_container_width=True)
             st.metric("🎯 Accuracy", f"{acc:.2f}%")
-            st.success(f"Total Trades: {total}")
+            st.success(f"🔥 Total Trades: {total}")
 
             excel = convert_excel(df_logs)
-            st.download_button("📥 Download Excel", excel, "backtest.xlsx")
+            st.download_button("📥 Download Excel", excel, "backtest_pullback.xlsx")
 
         else:
-            st.warning("No trades found")
+            st.warning("❌ No pullback trades found")
 
 # =============================
 # CHART
