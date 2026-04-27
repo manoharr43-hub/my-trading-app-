@@ -5,18 +5,19 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from streamlit_autorefresh import st_autorefresh
+import io
 
 # =============================
 # CONFIG & UI SETUP
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V23", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V24", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V23 - ADVANCED MULTI-FILTER SYSTEM")
-st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')} | **Status:** Active 🟢")
+st.title("🚀 NSE AI PRO V24 - TIME & EXCEL UPDATED")
+st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
 # STOCK LIST
@@ -29,33 +30,27 @@ stocks = [
 ]
 
 # =============================
-# CORE INDICATORS (ENHANCED)
+# INDICATORS
 # =============================
 def add_indicators(df):
     df = df.copy()
     if len(df) < 20: return df
-    
-    # EMAs
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    
-    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
     
-    # RSI (New)
+    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # TRUE ATR
+    # ATR
     high_low = df['High'] - df['Low']
     high_close = abs(df['High'] - df['Close'].shift())
     low_close = abs(df['Low'] - df['Close'].shift())
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
-    
     return df
 
 # =============================
@@ -64,137 +59,113 @@ def add_indicators(df):
 @st.cache_data(ttl=60)
 def fetch_data(symbols, interval, period):
     tickers = [s + ".NS" for s in symbols]
-    try:
-        data = yf.download(tickers, period=period, interval=interval, group_by='ticker', progress=False)
-        return data
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        return pd.DataFrame()
+    return yf.download(tickers, period=period, interval=interval, group_by='ticker', progress=False)
 
-# Load All Data
 data_5m = fetch_data(stocks, "5m", "5d")
-data_15m = fetch_data(stocks, "15m", "5d") # Multi-Timeframe support
 data_1d = fetch_data(stocks, "1d", "6mo")
 
 # =============================
-# SIDEBAR CONTROLS
+# EXCEL DOWNLOAD FUNCTION
 # =============================
-st.sidebar.header("⚙️ Trading Settings")
-rsi_limit = st.sidebar.slider("Minimum RSI Filter", 40, 70, 55)
-rr_ratio = st.sidebar.slider("Risk-Reward Ratio (Target)", 1.5, 5.0, 3.0)
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+    return output.getvalue()
 
 # =============================
-# TABS SETUP
+# TABS
 # =============================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🔍 POWER SCANNER (1D+5M)", 
-    "🎯 PULLBACK DETECTOR", 
-    "📊 LIVE WATCHLIST",
-    "🔥 PERFORMANCE BACKTEST"
-])
+tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER", "🎯 PULLBACK SCAN", "🔥 BACKTEST SYSTEM"])
 
 # -----------------------------
-# TAB 1: POWER SCANNER
+# 1. LIVE SCANNER (With Time)
 # -----------------------------
 with tab1:
-    if st.button("🚀 EXECUTE FULL SCAN", key="pwr_scan"):
+    if st.button("RUN SCANNER"):
         res = []
         for s in stocks:
             try:
                 df1 = add_indicators(data_1d[s + ".NS"].dropna())
                 df5 = add_indicators(data_5m[s + ".NS"].dropna())
+                l1, l5 = df1.iloc[-1], df5.iloc[-1]
                 
-                last_1d = df1.iloc[-1]
-                last_5m = df5.iloc[-1]
-                
-                # Trend Logic: 1D Bullish + 5M Above VWAP + RSI Check
-                trend_1d = last_1d['Close'] > last_1d['EMA20']
-                momentum_5m = last_5m['Close'] > last_5m['VWAP']
-                rsi_check = last_5m['RSI'] > rsi_limit
-                
-                if trend_1d and momentum_5m and rsi_check:
-                    entry = round(last_5m['Close'], 2)
-                    atr = last_5m['ATR']
+                if l1['Close'] > l1['EMA20'] and l5['Close'] > l5['VWAP']:
                     res.append({
-                        "STOCK": s,
-                        "SIGNAL": "STRONG BUY 🔥",
-                        "ENTRY": entry,
-                        "SL": round(entry - (atr * 1.5), 2),
-                        "TARGET": round(entry + (atr * rr_ratio), 2),
-                        "RSI": round(last_5m['RSI'], 1),
-                        "VOL": "HIGH" if last_5m['Volume'] > df5['Volume'].rolling(20).mean().iloc[-1]*2 else "NORMAL"
+                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M:%S'), # 1. Time Add
+                        "STOCK": s, "ENTRY": round(l5['Close'], 2),
+                        "SL": round(l5['Close'] - l5['ATR']*1.5, 2),
+                        "TARGET": round(l5['Close'] + l5['ATR']*3, 2),
+                        "RSI": round(l5['RSI'], 1)
                     })
             except: continue
-        
-        if res: st.table(pd.DataFrame(res))
-        else: st.info("No strong trend stocks found with current filters.")
+        if res:
+            final_df = pd.DataFrame(res)
+            st.dataframe(final_df, use_container_width=True)
+            st.download_button("📥 Download Excel", data=to_excel(final_df), file_name="Scanner_Report.xlsx") # 5. Excel
+        else: st.info("No stocks found.")
 
 # -----------------------------
-# TAB 2: PULLBACK DETECTOR
+# 2. PULLBACK SCAN (With Time)
 # -----------------------------
 with tab2:
-    if st.button("🎯 FIND PULLBACKS"):
+    if st.button("RUN PULLBACK"):
         pb_res = []
         for s in stocks:
             try:
                 df5 = add_indicators(data_5m[s + ".NS"].dropna())
-                last = df5.iloc[-1]
-                
-                dist = abs(last['Close'] - last['EMA20']) / last['EMA20']
-                
-                # Pullback Condition: Near EMA20 + Green Candle
-                if dist < 0.004 and last['Close'] > last['Open']:
+                l = df5.iloc[-1]
+                dist = abs(l['Close'] - l['EMA20']) / l['EMA20']
+                if dist < 0.005 and l['Close'] > l['Open']:
                     pb_res.append({
-                        "STOCK": s,
-                        "PRICE": round(last['Close'], 2),
-                        "PB ZONE": "EMA20 ✅",
-                        "ATR SL": round(last['Close'] - last['ATR'], 2),
-                        "RSI": round(last['RSI'], 1)
+                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M:%S'), # 2. Time Add
+                        "STOCK": s, "PRICE": round(l['Close'], 2),
+                        "ATR": round(l['ATR'], 2), "RSI": round(l['RSI'], 1)
                     })
             except: continue
-        
-        if pb_res: st.dataframe(pd.DataFrame(pb_res), use_container_width=True)
-        else: st.warning("No pullbacks detected near EMA20.")
+        if pb_res:
+            pb_df = pd.DataFrame(pb_res)
+            st.dataframe(pb_df, use_container_width=True)
+            st.download_button("📥 Download Excel", data=to_excel(pb_df), file_name="Pullback_Report.xlsx")
+        else: st.info("No pullbacks.")
 
 # -----------------------------
-# TAB 4: BACKTEST (IMPROVED)
+# 3 & 4. BACKTEST (Folder/Pullback fix)
 # -----------------------------
-with tab4:
-    col1, col2 = st.columns(2)
-    with col1:
-        bt_date = st.date_input("Analysis Date", value=now.date() - timedelta(days=1))
-    
-    if st.button("🔥 RUN ACCURATE BACKTEST"):
-        logs = []
+with tab3:
+    bt_date = st.date_input("Backtest Date", value=now.date() - timedelta(days=1))
+    if st.button("START BACKTEST"):
+        bt_logs = []
         for s in stocks:
             try:
                 df = add_indicators(data_5m[s + ".NS"].dropna())
+                # Timezone conversion for matching date
+                df.index = df.index.tz_convert(IST)
                 df_day = df[df.index.date == bt_date]
-                if df_day.empty: continue
                 
-                for i in range(20, len(df_day)-10):
+                if df_day.empty: continue # 3. Folder/Data showing fix
+
+                for i in range(15, len(df_day)-6):
                     snap = df_day.iloc[:i+1]
                     last = snap.iloc[-1]
                     
-                    # Backtest Pullback logic
-                    if (abs(last['Close'] - last['EMA20']) / last['EMA20']) < 0.005:
+                    # 4. Pullback backtest logic
+                    dist = abs(last['Close'] - last['EMA20']) / last['EMA20']
+                    if dist < 0.005:
                         entry = last['Close']
-                        atr = last['ATR']
-                        future = df_day.iloc[i+1 : i+11] # Look 10 candles ahead
+                        future = df_day.iloc[i+1 : i+6]
+                        win = any(future['High'] > entry + last['ATR']*2)
+                        loss = any(future['Low'] < entry - last['ATR'])
                         
-                        target_p = entry + (atr * 2)
-                        sl_p = entry - atr
-                        
-                        win = any(future['High'] >= target_p)
-                        loss = any(future['Low'] <= sl_p)
-                        
-                        if win: status = "PROFIT ✅"
-                        elif loss: status = "STOPLOSS ❌"
-                        else: status = "EXPIRED ⚪"
-                        
-                        logs.append({"STOCK": s, "TIME": df_day.index[i].strftime('%H:%M'), "RESULT": status})
-                        break # Only one test per stock per day to avoid clutter
+                        res_str = "WIN ✅" if win else ("LOSS ❌" if loss else "HOLD ⚪")
+                        bt_logs.append({
+                            "TIME": df_day.index[i].strftime('%H:%M'),
+                            "STOCK": s, "ENTRY": round(entry, 2), "RESULT": res_str
+                        })
+                        break
             except: continue
-        
-        if logs: st.table(pd.DataFrame(logs))
-        else: st.info("No signals to test for the selected date.")
+        if bt_logs:
+            bt_df = pd.DataFrame(bt_logs)
+            st.table(bt_df) # 4. Showing fix
+            st.download_button("📥 Download Backtest Excel", data=to_excel(bt_df), file_name="Backtest_Report.xlsx")
+        else: st.warning("No signals found for this date.")
