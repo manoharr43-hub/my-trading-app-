@@ -9,13 +9,13 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V19 - LIVE+BACKTEST", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V20 - LIVE+BACKTEST", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V19 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V20 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -39,7 +39,8 @@ def get_data(stock, period="1y", interval="1d"):
         df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
         if df.empty:
             return None
-        df.index = df.index.tz_localize(None)
+        # Directly localize to IST
+        df.index = df.index.tz_localize(IST)
         return df.dropna()
     except:
         return None
@@ -94,7 +95,6 @@ with tab1:
                 if df is None or df.empty:
                     continue
 
-                df.index = df.index.tz_convert(IST)
                 df = add_indicators(df)
 
                 last = df.iloc[-1]
@@ -121,85 +121,3 @@ with tab1:
                 elif last['Bear_Rev']:
                     signal = "🔄 SELL REVERSAL"
 
-                results.append({
-                    "Stock": s,
-                    "Time": df.index[-1].strftime('%H:%M'),
-                    "Price": price,
-                    "Signal": signal,
-                    "SL": sl,
-                    "Target": tgt,
-                    "Volume": "🐋" if last['Big_Player'] else "-"
-                })
-
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
-
-# =============================
-# TAB 2 - BACKTEST
-# =============================
-with tab2:
-    if st.button("📊 RUN BACKTEST"):
-        logs = []
-
-        with st.spinner("Running Backtest..."):
-            for s in all_stocks:
-                df = get_data(s, period="2mo", interval="1d")
-
-                if df is None:
-                    continue
-
-                df = add_indicators(df)
-
-                for i in range(1, len(df)):
-                    row = df.iloc[i]
-
-                    if row['Big_Player'] or row['Bull_Rev'] or row['Bear_Rev']:
-                        logs.append({
-                            "Date": df.index[i].strftime('%Y-%m-%d'),
-                            "Stock": s,
-                            "Price": round(row['Close'], 2),
-                            "Signal": "BIG PLAYER" if row['Big_Player'] else "REVERSAL"
-                        })
-
-        if logs:
-            st.dataframe(pd.DataFrame(logs), use_container_width=True)
-        else:
-            st.warning("No Signals Found")
-
-# =============================
-# TAB 3 - CHART
-# =============================
-with tab3:
-    stock = st.selectbox("Select Stock", all_stocks)
-    df = get_data(stock)
-
-    if df is not None:
-        df = add_indicators(df)
-
-        last_price = df.iloc[-1]['Close']
-
-        fig = go.Figure()
-
-        fig.add_trace(go.Candlestick(
-            x=df.index,
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close']
-        ))
-
-        # SL / TARGET
-        fig.add_hline(y=last_price * 1.02, line_dash="dash", line_color="green")
-        fig.add_hline(y=last_price * 0.99, line_dash="dash", line_color="red")
-
-        # BIG PLAYER MARK
-        bp = df[df['Big_Player']]
-        fig.add_trace(go.Scatter(
-            x=bp.index,
-            y=bp['Low'] * 0.98,
-            mode='markers',
-            marker=dict(size=10, color='yellow'),
-            name="Big Player"
-        ))
-
-        fig.update_layout(height=600, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
