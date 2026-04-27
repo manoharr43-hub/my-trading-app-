@@ -9,17 +9,17 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V15 - BACKTEST FIXED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V16 - LIVE+BACKTEST", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V15 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V16 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
-# STOCK SECTORS
+# STOCK SECTORS + ALL OPTIONS
 # =============================
 sector_map = {
     "BANKING": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"],
@@ -46,7 +46,7 @@ def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
     
-    # ✅ RSI Fix (EMA method)
+    # ✅ RSI Fix
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -68,14 +68,13 @@ def add_indicators(df):
 # =============================
 # UI - TABS
 # =============================
-tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER", "📊 30-DAY BACKTEST REPORT", "📈 CHART ANALYSIS"])
+tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER (ALL)", "📊 30-DAY BACKTEST REPORT", "📈 CHART ANALYSIS"])
 
 with tab1:
-    s_sec = st.selectbox("Select Sector", list(sector_map.keys()))
-    if st.button(f"🚀 SCAN {s_sec}"):
+    if st.button("🚀 SCAN ALL NSE STOCKS"):
         live_results = []
         with st.spinner("Analyzing Live Entry Points..."):
-            for s in sector_map[s_sec]:
+            for s in all_stocks:
                 df_l = yf.Ticker(s + ".NS").history(period="2d", interval="15m")
                 if not df_l.empty:
                     df_l.index = df_l.index.tz_convert(IST)
@@ -92,7 +91,8 @@ with tab1:
                         tgt = round(price * 1.02, 2)
                     
                     live_results.append({
-                        "STOCK": s, "TIME": df_l.index[-1].strftime('%H:%M'),
+                        "STOCK": s, "DATE": df_l.index[-1].strftime('%Y-%m-%d'),
+                        "TIME": df_l.index[-1].strftime('%H:%M'),
                         "ENTRY": price, "SIGNAL": sig, "STOPLOSS": sl, "TARGET": tgt,
                         "ALERT": "🐋 BIG FISH" if last['Big_Player'] else "Normal"
                     })
@@ -111,7 +111,7 @@ with tab2:
                 if df_b is not None:
                     df_b = add_indicators(df_b)
                     hits = df_b[(df_b['Big_Player']) | (df_b['Bull_Rev'])]
-                    for idx, row in hits.iterrows():   # ✅ full logs
+                    for idx, row in hits.iterrows():
                         back_logs.append({
                             "DATE": idx.strftime('%Y-%m-%d'),
                             "STOCK": s,
