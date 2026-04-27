@@ -7,7 +7,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V7 - ADVANCED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V7 - FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 st.title("🚀 NSE AI PRO DASHBOARD V7")
@@ -24,7 +24,7 @@ stocks = [
 ]
 
 # =============================
-# FUNCTIONS (DATA & INDICATORS)
+# FUNCTIONS
 # =============================
 def get_data(stock):
     try:
@@ -67,7 +67,7 @@ def get_signal(df, score):
     else: return "WAIT"
 
 # =============================
-# UI & SCANNER LOGIC
+# SCANNER LOGIC
 # =============================
 if st.button("🔍 RUN AI SCANNER"):
     data_results = []
@@ -90,20 +90,25 @@ if st.button("🔍 RUN AI SCANNER"):
         res_df = pd.DataFrame(data_results)
         st.subheader("📊 REAL-TIME SIGNALS")
         
+        # టేబుల్ కలర్ స్టైలింగ్ ఫంక్షన్ (Fixed)
         def style_signal(val):
             bg = '#008000' if "BUY" in val else '#FF0000' if "SELL" in val else '#333333'
             return f'background-color: {bg}; color: white; font-weight: bold'
 
-        st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.applymap(style_signal, subset=['SIGNAL']))
+        # ఇక్కడ .map() లేదా .applymap() బదులు పాత పద్ధతిలో కేవలం డేటా చూపిస్తున్నాను లేదా లేటెస్ట్ .map() వాడుతున్నాను
+        try:
+            st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.map(style_signal, subset=['SIGNAL']))
+        except AttributeError:
+            st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.applymap(style_signal, subset=['SIGNAL']))
         
         with st.expander("🔍 Click to see AI Analysis & Indicator Details"):
             st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "VWAP"]], use_container_width=True)
 
 # =============================
-# CHART SECTION (Moved outside to fix Error)
+# CHART SECTION
 # =============================
 st.markdown("---")
-selected = st.selectbox("Select stock to view Chart:", stocks) # ఇక్కడ stocks లిస్ట్ ఎప్పుడూ అందుబాటులో ఉంటుంది
+selected = st.selectbox("Select stock to view Chart:", stocks)
 chart_df = get_data(selected)
 
 if chart_df is not None:
