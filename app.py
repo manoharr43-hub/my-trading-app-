@@ -3,20 +3,19 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
-from concurrent.futures import ThreadPoolExecutor
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V14 - BACKTEST FIXED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V15 - BACKTEST FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V14 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V15 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -38,7 +37,7 @@ def get_clean_data(stock, period="1y", interval="1d"):
     try:
         df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
         if df.empty: return None
-        df.index = df.index.tz_localize(None) # Timezone error fix
+        df.index = df.index.tz_localize(None)
         return df.dropna()
     except: return None
 
@@ -47,14 +46,22 @@ def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
     
+    # ✅ RSI Fix (EMA method)
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1/14, min_periods=14).mean()
+    avg_loss = loss.ewm(alpha=1/14, min_periods=14).mean()
+    rs = avg_gain / (avg_loss + 1e-9)
+    df['RSI'] = 100 - (100 / (1 + rs))
     
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    # ✅ VWAP Daily Reset
+    df['CumVol'] = df['Volume'].groupby(df.index.date).cumsum()
+    df['CumPV'] = (df['Close'] * df['Volume']).groupby(df.index.date).cumsum()
+    df['VWAP'] = df['CumPV'] / df['CumVol']
+    
     df['Vol_Avg'] = df['Volume'].rolling(20).mean()
-    df['Big_Player'] = df['Volume'] > (df['Vol_Avg'] * 3.5)
+    df['Big_Player'] = df['Volume'] > (df['Vol_Avg'] * 2.5)
     df['Bull_Rev'] = (df['RSI'].shift(1) < 30) & (df['RSI'] > 30)
     return df
 
@@ -64,10 +71,7 @@ def add_indicators(df):
 tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER", "📊 30-DAY BACKTEST REPORT", "📈 CHART ANALYSIS"])
 
 with tab1:
-    col_sel, col_btn = st.columns([1, 4])
-    with col_sel:
-        s_sec = st.selectbox("Select Sector", list(sector_map.keys()))
-    
+    s_sec = st.selectbox("Select Sector", list(sector_map.keys()))
     if st.button(f"🚀 SCAN {s_sec}"):
         live_results = []
         with st.spinner("Analyzing Live Entry Points..."):
@@ -106,9 +110,8 @@ with tab2:
                 df_b = get_clean_data(s, period="2mo", interval="1d")
                 if df_b is not None:
                     df_b = add_indicators(df_b)
-                    # కండిషన్: Big Player Entry లేదా Strong Bullish ట్రెండ్
                     hits = df_b[(df_b['Big_Player']) | (df_b['Bull_Rev'])]
-                    for idx, row in hits.tail(5).iterrows():
+                    for idx, row in hits.iterrows():   # ✅ full logs
                         back_logs.append({
                             "DATE": idx.strftime('%Y-%m-%d'),
                             "STOCK": s,
@@ -136,11 +139,9 @@ with tab3:
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=c_df.index, open=c_df['Open'], high=c_df['High'], low=c_df['Low'], close=c_df['Close'], name="Daily"))
         
-        # SL & Target Visuals
         fig.add_hline(y=last_val * 1.02, line_dash="dash", line_color="green", annotation_text="Target (2%)")
         fig.add_hline(y=last_val * 0.99, line_dash="dash", line_color="red", annotation_text="SL (1%)")
         
-        # Markers
         big_entry = c_df[c_df['Big_Player']]
         fig.add_trace(go.Scatter(x=big_entry.index, y=big_entry['Low']*0.98, mode='markers', marker=dict(symbol='diamond', size=10, color='yellow'), name="Big Player"))
         
