@@ -5,17 +5,18 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import pytz
+import time
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V17 - BUY+SELL", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V18 - BUY+SELL SAFE", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V17 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V18 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -31,16 +32,21 @@ sector_map = {
 all_stocks = [s for sub in sector_map.values() for s in sub]
 
 # =============================
-# CORE FUNCTIONS
+# SAFE HISTORY LOADER (Rate Limit Fix)
 # =============================
-def get_clean_data(stock, period="1y", interval="1d"):
-    try:
-        df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
-        if df.empty: return None
-        df.index = df.index.tz_localize(None)
-        return df.dropna()
-    except: return None
+def safe_history(ticker, period="2d", interval="15m", retries=3, delay=2):
+    for i in range(retries):
+        try:
+            df = yf.Ticker(ticker + ".NS").history(period=period, interval=interval)
+            if not df.empty:
+                return df
+        except Exception:
+            time.sleep(delay)
+    return None
 
+# =============================
+# INDICATORS
+# =============================
 def add_indicators(df):
     df = df.copy()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
@@ -72,8 +78,8 @@ if st.button("🚀 SCAN ALL NSE STOCKS"):
     live_results = []
     with st.spinner("Analyzing Live Entry Points..."):
         for s in all_stocks:
-            df_l = yf.Ticker(s + ".NS").history(period="2d", interval="15m")
-            if not df_l.empty:
+            df_l = safe_history(s, period="2d", interval="15m")
+            if df_l is not None:
                 df_l.index = df_l.index.tz_convert(IST)
                 df_l = add_indicators(df_l)
                 last = df_l.iloc[-1]
@@ -94,9 +100,13 @@ if st.button("🚀 SCAN ALL NSE STOCKS"):
                     tgt = round(price * 0.98, 2)
                 
                 live_results.append({
-                    "STOCK": s, "DATE": df_l.index[-1].strftime('%Y-%m-%d'),
+                    "STOCK": s,
+                    "DATE": df_l.index[-1].strftime('%Y-%m-%d'),
                     "TIME": df_l.index[-1].strftime('%H:%M'),
-                    "ENTRY": price, "SIGNAL": sig, "STOPLOSS": sl, "TARGET": tgt,
+                    "ENTRY": price,
+                    "SIGNAL": sig,
+                    "STOPLOSS": sl,
+                    "TARGET": tgt,
                     "ALERT": "🐋 BIG FISH" if last['Big_Player'] else "Normal"
                 })
     if live_results:
