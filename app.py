@@ -7,15 +7,12 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V7 - FINAL", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V8 - SMART MONEY", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-st.title("🚀 NSE AI PRO DASHBOARD V7")
+st.title("🚀 NSE AI PRO V8 - SMART MONEY TRACKER")
 st.markdown("---")
 
-# =============================
-# STOCK LIST
-# =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
     "AXISBANK","BHARTIARTL","KOTAKBANK","MARUTI","M&M","TATAMOTORS",
@@ -23,15 +20,11 @@ stocks = [
     "JSWSTEEL","TATASTEEL","HINDALCO"
 ]
 
-# =============================
-# DATA & INDICATOR FUNCTIONS
-# =============================
 def get_data(stock):
     try:
         df = yf.Ticker(stock + ".NS").history(period="5d", interval="15m")
         return df.dropna() if df is not None and not df.empty else None
-    except:
-        return None
+    except: return None
 
 def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
@@ -42,11 +35,34 @@ def add_indicators(df):
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    # MACD
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
     df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
     return df
+
+# =============================
+# SMART ALERTS (BIG PLAYER & REVERSAL)
+# =============================
+def get_smart_alerts(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
+    
+    alerts = []
+    
+    # Big Player Entry (Volume 2x avg)
+    if last['Volume'] > avg_vol * 2:
+        alerts.append("🐋 BIG FISH")
+    
+    # Reversal Alerts
+    if prev['RSI'] < 30 and last['RSI'] > 30:
+        alerts.append("🔄 BULLISH REV")
+    elif prev['RSI'] > 70 and last['RSI'] < 70:
+        alerts.append("🔄 BEARISH REV")
+        
+    return " | ".join(alerts) if alerts else "Normal"
 
 def calculate_ai_score(df):
     score = 0
@@ -67,67 +83,57 @@ def get_signal(df, score):
     else: return "WAIT"
 
 # =============================
-# MAIN SCANNER LOGIC
+# UI SCANNER
 # =============================
-if st.button("🔍 RUN AI SCANNER"):
+if st.button("🔍 RUN SMART SCANNER"):
     data_results = []
-    with st.spinner("Analyzing Markets..."):
+    with st.spinner("Tracking Smart Money..."):
         for s in stocks:
             df = get_data(s)
             if df is not None:
                 df = add_indicators(df)
                 score = calculate_ai_score(df)
                 sig = get_signal(df, score)
+                smart_alert = get_smart_alerts(df)
                 curr_price = round(df['Close'].iloc[-1], 2)
                 
-                # సరిచేసిన Entry, SL, Target Logic
                 if "BUY" in sig:
-                    sl = round(curr_price * 0.99, 2)     # 1% SL below
-                    target = round(curr_price * 1.02, 2) # 2% Target above
+                    sl, target = round(curr_price * 0.99, 2), round(curr_price * 1.02, 2)
                 elif "SELL" in sig:
-                    sl = round(curr_price * 1.01, 2)     # 1% SL above
-                    target = round(curr_price * 0.98, 2) # 2% Target below
-                else:
-                    sl = entry = target = 0
+                    sl, target = round(curr_price * 1.01, 2), round(curr_price * 0.98, 2)
+                else: sl = target = 0
                 
                 data_results.append({
-                    "STOCK": s, "PRICE": curr_price, "AI SCORE": f"{score}%",
-                    "SIGNAL": sig, "VWAP": round(df['VWAP'].iloc[-1], 2),
-                    "RSI": round(df['RSI'].iloc[-1], 1), "ENTRY": curr_price,
-                    "STOPLOSS": sl, "TARGET": target
+                    "STOCK": s, "PRICE": curr_price, "SIGNAL": sig,
+                    "SMART ALERT": smart_alert, "AI SCORE": f"{score}%",
+                    "ENTRY": curr_price, "STOPLOSS": sl, "TARGET": target,
+                    "RSI": round(df['RSI'].iloc[-1], 1)
                 })
 
     if data_results:
         res_df = pd.DataFrame(data_results)
-        st.subheader("📊 REAL-TIME SIGNALS")
         
-        def style_signal(val):
-            bg = '#008000' if "BUY" in val else '#FF0000' if "SELL" in val else '#333333'
-            return f'background-color: {bg}; color: white; font-weight: bold'
+        def style_alerts(val):
+            if "BIG FISH" in val: return 'background-color: #4B0082; color: white; font-weight: bold'
+            if "REV" in val: return 'background-color: #FFD700; color: black; font-weight: bold'
+            return ''
 
-        # Main Table
-        try:
-            st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.map(style_signal, subset=['SIGNAL']))
-        except AttributeError:
-            st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.applymap(style_signal, subset=['SIGNAL']))
+        st.subheader("📊 SMART MONEY SIGNALS")
+        st.table(res_df[["STOCK", "PRICE", "SIGNAL", "SMART ALERT", "STOPLOSS", "TARGET"]].style.applymap(style_alerts, subset=['SMART ALERT']))
         
-        # New Accordion/Expander Feature
-        with st.expander("🔍 Click to see Technical Deep-Dive (RSI, VWAP, AI Score)"):
-            st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "VWAP"]], use_container_width=True)
+        with st.expander("🔍 Deep Dive Analysis"):
+            st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "SMART ALERT"]], use_container_width=True)
 
 # =============================
-# CHART SECTION
+# CHART
 # =============================
 st.markdown("---")
 selected = st.selectbox("Select stock to view Chart:", stocks)
 chart_df = get_data(selected)
-
 if chart_df is not None:
     chart_df = add_indicators(chart_df)
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=chart_df.index, open=chart_df['Open'], high=chart_df['High'], low=chart_df['Low'], close=chart_df['Close'], name="Price"))
     fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
-    fig.update_layout(title=f"{selected} Advanced Chart", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
+    fig.update_layout(title=f"{selected} Analysis", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
     st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("చార్ట్ చూడటానికి పైన ఉన్న బటన్ నొక్కండి లేదా వేరే స్టాక్ సెలెక్ట్ చేయండి.")
