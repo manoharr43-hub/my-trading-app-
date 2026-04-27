@@ -10,11 +10,11 @@ import pytz
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V10", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V10.1", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
-st.title("🚀 NSE AI PRO V10 - SMART MONEY SYSTEM")
+st.title("🚀 NSE AI PRO V10.1 - SMART MONEY SYSTEM")
 
 # =============================
 # STOCK LIST
@@ -22,7 +22,7 @@ st.title("🚀 NSE AI PRO V10 - SMART MONEY SYSTEM")
 stocks = ["HDFCBANK","ICICIBANK","SBIN","RELIANCE","TCS","INFY","ITC","LT","BHARTIARTL"]
 
 # =============================
-# DATA FETCH (FASTER)
+# DATA FETCH
 # =============================
 @st.cache_data(ttl=60)
 def get_data(stock, period="5d", interval="15m"):
@@ -55,7 +55,7 @@ def add_indicators(df):
     df['MACD'] = exp1 - exp2
     df['Signal'] = df['MACD'].ewm(span=9).mean()
 
-    # ATR (for SL/Target)
+    # ATR
     df['TR'] = np.maximum(df['High']-df['Low'], 
                 np.maximum(abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())))
     df['ATR'] = df['TR'].rolling(14).mean()
@@ -63,18 +63,16 @@ def add_indicators(df):
     return df
 
 # =============================
-# AI SCORE (IMPROVED)
+# AI SCORE
 # =============================
 def ai_score(df):
     last = df.iloc[-1]
     score = 0
-
     if last['EMA20'] > last['EMA50']: score += 25
     if 45 < last['RSI'] < 65: score += 15
     if last['Close'] > last['VWAP']: score += 20
     if last['MACD'] > last['Signal']: score += 20
     if last['Volume'] > df['Volume'].rolling(20).mean().iloc[-1]: score += 20
-
     return score
 
 # =============================
@@ -98,8 +96,10 @@ def get_signal(score):
 def big_player(df):
     last = df.iloc[-1]
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
-    if last['Volume'] > avg_vol * 3:
-        return "🐋 BIG ENTRY"
+    if last['Volume'] > avg_vol * 3 and last['Close'] > last['EMA20']:
+        return "🐋 BIG BUY ENTRY"
+    elif last['Volume'] > avg_vol * 3 and last['Close'] < last['EMA20']:
+        return "🐋 BIG SELL EXIT"
     return "-"
 
 # =============================
@@ -107,23 +107,17 @@ def big_player(df):
 # =============================
 if st.button("🔍 LIVE SCAN"):
     data = []
-
     for s in stocks:
         df = get_data(s)
         if df is None or len(df) < 50:
             continue
-
         df = add_indicators(df)
         last = df.iloc[-1]
-
         score = ai_score(df)
         signal = get_signal(score)
         alert = big_player(df)
-
         price = round(last['Close'], 2)
         atr = last['ATR']
-
-        # SL/Target
         if "BUY" in signal:
             sl = round(price - atr, 2)
             tgt = round(price + atr*2, 2)
@@ -132,47 +126,35 @@ if st.button("🔍 LIVE SCAN"):
             tgt = round(price - atr*2, 2)
         else:
             sl = tgt = 0
-
-        time = df.index[-1].tz_localize(None)
-
+        time = df.index[-1].strftime("%Y-%m-%d %H:%M")
         data.append({
-            "Stock": s,
-            "Price": price,
-            "Signal": signal,
-            "Score": score,
-            "Big Player": alert,
-            "SL": sl,
-            "Target": tgt,
-            "Time": time
+            "Stock": s, "Price": price, "Signal": signal,
+            "Score": score, "Big Player": alert,
+            "SL": sl, "Target": tgt, "Time": time
         })
-
     st.dataframe(pd.DataFrame(data), use_container_width=True)
 
 # =============================
-# BACKTEST (IMPROVED)
+# BACKTEST
 # =============================
 if st.button("📊 BACKTEST"):
     logs = []
-
     for s in stocks:
         df = get_data(s, period="1mo")
         if df is None or len(df) < 100:
             continue
-
         df = add_indicators(df)
-
         for i in range(50, len(df)):
             temp = df.iloc[:i+1]
             score = ai_score(temp)
-
-            if score >= 80:
+            signal = get_signal(score)
+            if signal in ["🚀 STRONG BUY","BUY","SELL","💀 STRONG SELL"]:
                 logs.append({
                     "Stock": s,
-                    "Time": df.index[i],
+                    "Time": df.index[i].strftime("%Y-%m-%d %H:%M"),
                     "Price": round(df.iloc[i]['Close'],2),
-                    "Signal": "BUY"
+                    "Signal": signal
                 })
-
     st.dataframe(pd.DataFrame(logs), use_container_width=True)
 
 # =============================
@@ -181,19 +163,15 @@ if st.button("📊 BACKTEST"):
 st.markdown("---")
 stock = st.selectbox("Select Stock", stocks)
 df = get_data(stock)
-
 if df is not None:
     df = add_indicators(df)
-
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close']
+        x=df.index, open=df['Open'], high=df['High'],
+        low=df['Low'], close=df['Close']
     ))
-
     fig.add_trace(go.Scatter(x=df.index, y=df['VWAP'], name="VWAP"))
-
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name="EMA20"))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], name="EMA50"))
+    fig.update_layout(template="plotly_dark", height=600)
     st.plotly_chart(fig, use_container_width=True)
