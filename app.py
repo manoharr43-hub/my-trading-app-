@@ -3,14 +3,21 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
+from datetime import datetime
+import pytz
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V8.1 - SMART MONEY", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
+st.set_page_config(page_title="🔥 NSE AI PRO V8.2 - ULTIMATE", layout="wide")
+st_autorefresh(interval=60000, key="refresh") # ప్రతి నిమిషానికి ఆటో రిఫ్రెష్
 
-st.title("🚀 NSE AI PRO V8.1 - SMART MONEY TRACKER")
+# భారతీయ సమయం (IST) సెట్ చేయడం
+IST = pytz.timezone('Asia/Kolkata')
+current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+
+st.title("🚀 NSE AI PRO V8.2 - SMART MONEY TRACKER")
+st.write(f"🕒 **Last Market Sync (IST):** {current_time}")
 st.markdown("---")
 
 # =============================
@@ -24,11 +31,12 @@ stocks = [
 ]
 
 # =============================
-# DATA & INDICATORS
+# DATA & INDICATOR FUNCTIONS
 # =============================
 def get_data(stock):
     try:
-        df = yf.Ticker(stock + ".NS").history(period="5d", interval="15m")
+        # 2 days data for comparison, 15m intervals
+        df = yf.Ticker(stock + ".NS").history(period="2d", interval="15m")
         return df.dropna() if df is not None and not df.empty else None
     except: return None
 
@@ -52,7 +60,7 @@ def add_indicators(df):
     return df
 
 # =============================
-# SMART ALERTS LOGIC
+# SMART ALERTS (BIG PLAYER & REVERSAL)
 # =============================
 def get_smart_alerts(df):
     last = df.iloc[-1]
@@ -60,10 +68,10 @@ def get_smart_alerts(df):
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
     
     alerts = []
-    # Big Player Entry (2x Avg Volume)
+    # Big Player Entry (Volume 2x avg)
     if last['Volume'] > avg_vol * 2:
         alerts.append("🐋 BIG FISH")
-    # Reversal Detection
+    # Reversal Alerts
     if prev['RSI'] < 30 and last['RSI'] > 30:
         alerts.append("🔄 BULLISH REV")
     elif prev['RSI'] > 70 and last['RSI'] < 70:
@@ -90,11 +98,11 @@ def get_signal(df, score):
     else: return "WAIT"
 
 # =============================
-# UI SCANNER SECTION
+# MAIN UI SCANNER
 # =============================
 if st.button("🔍 RUN SMART SCANNER"):
     data_results = []
-    with st.spinner("Analyzing Smart Money Flow..."):
+    with st.spinner("Analyzing Market Flow & Smart Money..."):
         for s in stocks:
             df = get_data(s)
             if df is not None:
@@ -104,6 +112,9 @@ if st.button("🔍 RUN SMART SCANNER"):
                 smart_alert = get_smart_alerts(df)
                 curr_price = round(df['Close'].iloc[-1], 2)
                 
+                # లేటెస్ట్ డేటా సమయం (IST)
+                last_candle_time = df.index[-1].astimezone(IST).strftime('%H:%M')
+                
                 # Correct SL/Target for Buy and Sell
                 if "BUY" in sig:
                     sl, target = round(curr_price * 0.99, 2), round(curr_price * 1.02, 2)
@@ -112,30 +123,29 @@ if st.button("🔍 RUN SMART SCANNER"):
                 else: sl = target = 0
                 
                 data_results.append({
-                    "STOCK": s, "PRICE": curr_price, "SIGNAL": sig,
-                    "SMART ALERT": smart_alert, "AI SCORE": f"{score}%",
-                    "ENTRY": curr_price, "STOPLOSS": sl, "TARGET": target,
-                    "RSI": round(df['RSI'].iloc[-1], 1)
+                    "STOCK": s, "TIME": last_candle_time, "PRICE": curr_price, 
+                    "SIGNAL": sig, "SMART ALERT": smart_alert, 
+                    "AI SCORE": f"{score}%", "STOPLOSS": sl, "TARGET": target
                 })
 
     if data_results:
         res_df = pd.DataFrame(data_results)
         st.subheader("📊 SMART MONEY SIGNALS")
         
-        # Style function with Error Protection
+        # Style function with Error Protection for older Streamlit versions
         def style_alerts(val):
             if "BIG FISH" in val: return 'background-color: #4B0082; color: white; font-weight: bold'
             if "REV" in val: return 'background-color: #FFD700; color: black; font-weight: bold'
             return ''
 
-        # Display table with fixed styling function
         try:
-            st.table(res_df[["STOCK", "PRICE", "SIGNAL", "SMART ALERT", "STOPLOSS", "TARGET"]].style.map(style_alerts, subset=['SMART ALERT']))
+            st.table(res_df[["STOCK", "TIME", "PRICE", "SIGNAL", "SMART ALERT", "STOPLOSS", "TARGET"]].style.map(style_alerts, subset=['SMART ALERT']))
         except AttributeError:
-            st.table(res_df[["STOCK", "PRICE", "SIGNAL", "SMART ALERT", "STOPLOSS", "TARGET"]].style.applymap(style_alerts, subset=['SMART ALERT']))
+            st.table(res_df[["STOCK", "TIME", "PRICE", "SIGNAL", "SMART ALERT", "STOPLOSS", "TARGET"]].style.applymap(style_alerts, subset=['SMART ALERT']))
         
-        with st.expander("🔍 Detailed Technical Breakdown"):
-            st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "SMART ALERT"]], use_container_width=True)
+        # Accordion/Expander for Detailed Data
+        with st.expander("🔍 Click to see AI Score & Technical Analysis"):
+            st.dataframe(res_df[["STOCK", "TIME", "AI SCORE", "SMART ALERT"]], use_container_width=True)
 
 # =============================
 # CHART SECTION
@@ -148,5 +158,7 @@ if chart_df is not None:
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=chart_df.index, open=chart_df['Open'], high=chart_df['High'], low=chart_df['Low'], close=chart_df['Close'], name="Price"))
     fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
-    fig.update_layout(title=f"{selected} Analysis", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
+    fig.update_layout(title=f"{selected} Advanced Analysis", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
     st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("పైన ఉన్న బటన్ నొక్కి మార్కెట్ డేటాను రిఫ్రెష్ చేయండి.")
