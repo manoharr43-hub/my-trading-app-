@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG & UI SETUP
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V27", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V28", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V27 - SUPPORT PULLBACK BUY/SELL")
+st.title("🚀 NSE AI PRO V28 - BUY/SELL PULLBACK MASTER")
 st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -30,7 +30,7 @@ stocks = [
 ]
 
 # =============================
-# CORE INDICATORS
+# CORE INDICATORS (V28)
 # =============================
 def add_indicators(df, interval='5m'):
     df = df.copy()
@@ -53,10 +53,10 @@ def add_indicators(df, interval='5m'):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
     
-    # Big Player Volume
+    # Big Player Analysis
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     
-    # Pivot Points (Daily)
+    # Pivot Points (Resistance & Support)
     if interval == '1d':
         df['PP'] = (df['High'] + df['Low'] + df['Close']) / 3
         df['R1'] = (2 * df['PP']) - df['Low']
@@ -78,19 +78,19 @@ data_1d = fetch_data(stocks, "1d", "6mo")
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Trading_Data')
+        df.to_excel(writer, index=False, sheet_name='Pullback_Data')
     return output.getvalue()
 
 # =============================
 # TABS
 # =============================
-tab1, tab2, tab3 = st.tabs(["🔍 TREND SCANNER", "🎯 SUPPORT PULLBACK (BUY/SELL)", "📊 HISTORY BACKTEST"])
+tab1, tab2, tab3 = st.tabs(["🚀 LIVE TRENDS", "🎯 PULLBACK (BUY/SELL)", "📊 HISTORY LOGS"])
 
 # -----------------------------
-# 1. TREND SCANNER
+# 1. LIVE TRENDS
 # -----------------------------
 with tab1:
-    if st.button("START TREND SCAN"):
+    if st.button("RUN TREND SCAN"):
         res = []
         for s in stocks:
             try:
@@ -98,73 +98,71 @@ with tab1:
                 df5 = add_indicators(data_5m[s + ".NS"].dropna(), '5m')
                 l1, l5 = df1.iloc[-1], df5.iloc[-1]
                 
-                sig = "None"
-                if l1['Close'] > l1['EMA20'] and l5['Close'] > l5['VWAP']: sig = "BUY 🟢"
-                elif l1['Close'] < l1['EMA20'] and l5['Close'] < l5['VWAP']: sig = "SELL 🔴"
+                sig = "Neutral"
+                if l5['Close'] > l5['VWAP'] and l5['RSI'] > 55: sig = "BULLISH 📈"
+                elif l5['Close'] < l5['VWAP'] and l5['RSI'] < 45: sig = "BEARISH 📉"
                 
-                if sig != "None":
-                    res.append({
-                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M'),
-                        "STOCK": s, "ACTION": sig,
-                        "PRICE": round(l5['Close'], 2),
-                        "BIG_PLAYER": "🔥 YES" if l5['Volume'] > (l5['VolAvg'] * 2) else "No",
-                        "RSI": round(l5['RSI'], 1)
-                    })
+                res.append({
+                    "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M'),
+                    "STOCK": s, "TREND": sig, "PRICE": round(l5['Close'], 2),
+                    "VOL_SPIKE": "🔥" if l5['Volume'] > l5['VolAvg']*2 else "-"
+                })
             except: continue
-        if res:
-            st.dataframe(pd.DataFrame(res), use_container_width=True)
-        else: st.info("No strong trends right now.")
+        st.dataframe(pd.DataFrame(res), use_container_width=True)
 
 # -----------------------------
-# 2. SUPPORT PULLBACK (BUY/SELL MENTIONED)
+# 2. PULLBACK BUY & SELL (MENTIONED CLEARLY)
 # -----------------------------
 with tab2:
-    if st.button("SCAN PULLBACK SIGNALS"):
-        pb_res = []
+    st.subheader("🎯 Buy at Support & Sell at Resistance")
+    if st.button("SCAN FOR PULLBACK ENTRIES"):
+        pb_list = []
         for s in stocks:
             try:
                 df1 = add_indicators(data_1d[s + ".NS"].dropna(), '1d')
                 df5 = add_indicators(data_5m[s + ".NS"].dropna(), '5m')
-                l1, l5 = df1.iloc[-2], df5.iloc[-1] # Previous day pivots
+                l1, l5 = df1.iloc[-2], df5.iloc[-1] # Prev Day Pivot Data
                 
-                curr_p = l5['Close']
-                ema20 = l5['EMA20']
+                price = l5['Close']
+                ema = l5['EMA20']
                 s1, r1 = l1['S1'], l1['R1']
+                atr = l5['ATR']
                 
-                # Logic for BUY Pullback (Near Support)
-                if abs(curr_p - s1)/s1 < 0.003 or abs(curr_p - ema20)/ema20 < 0.003:
-                    if curr_p > l5['Open']: # Green Candle
-                        pb_res.append({
-                            "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M'),
-                            "STOCK": s, "ACTION": "BUY AT SUPPORT 🟢",
-                            "PRICE": round(curr_p, 2), "ZONE": "S1/EMA20",
-                            "SL": round(curr_p - l5['ATR'], 2),
-                            "TARGET": round(curr_p + (l5['ATR']*2), 2)
-                        })
+                # --- BUY PULLBACK (Support) ---
+                dist_s1 = abs(price - s1) / s1
+                dist_ema = abs(price - ema) / ema
                 
-                # Logic for SELL Pullback (Near Resistance)
-                elif abs(curr_p - r1)/r1 < 0.003 or abs(curr_p - ema20)/ema20 < 0.003:
-                    if curr_p < l5['Open']: # Red Candle
-                        pb_res.append({
-                            "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M'),
-                            "STOCK": s, "ACTION": "SELL AT RESISTANCE 🔴",
-                            "PRICE": round(curr_p, 2), "ZONE": "R1/EMA20",
-                            "SL": round(curr_p + l5['ATR'], 2),
-                            "TARGET": round(curr_p - (l5['ATR']*2), 2)
-                        })
+                if (dist_s1 < 0.003 or dist_ema < 0.003) and price > l5['Open']:
+                    pb_list.append({
+                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M'),
+                        "STOCK": s, "ACTION": "BUY 🟢 (Support)",
+                        "PRICE": round(price, 2), "LEVEL": "S1/EMA20",
+                        "SL": round(price - atr, 2), "TARGET": round(price + (atr*2.5), 2)
+                    })
+                
+                # --- SELL PULLBACK (Resistance) ---
+                dist_r1 = abs(price - r1) / r1
+                if (dist_r1 < 0.003 or dist_ema < 0.003) and price < l5['Open']:
+                    pb_list.append({
+                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M'),
+                        "STOCK": s, "ACTION": "SELL 🔴 (Resistance)",
+                        "PRICE": round(price, 2), "LEVEL": "R1/EMA20",
+                        "SL": round(price + atr, 2), "TARGET": round(price - (atr*2.5), 2)
+                    })
             except: continue
-        if pb_res:
-            pb_df = pd.DataFrame(pb_res)
+            
+        if pb_list:
+            pb_df = pd.DataFrame(pb_list)
             st.table(pb_df)
-            st.download_button("📥 Download Pullback Excel", data=to_excel(pb_df), file_name="Pullback_Signals.xlsx")
-        else: st.warning("No Pullback entries found at the moment.")
+            st.download_button("📥 Download Excel", data=to_excel(pb_df), file_name="Pullback_Signals.xlsx")
+        else: st.info("No Pullback signals found in the last 5 minutes.")
 
 # -----------------------------
-# 3. BACKTEST
+# 3. HISTORY LOGS
 # -----------------------------
 with tab3:
-    bt_date = st.date_input("Backtest Date", value=now.date() - timedelta(days=1))
-    if st.button("RUN BACKTEST"):
+    bt_date = st.date_input("Select Date", value=now.date() - timedelta(days=1))
+    if st.button("SHOW FULL DAY LOG"):
         logs = []
         for s in stocks:
             try:
@@ -172,18 +170,15 @@ with tab3:
                 df.index = df.index.tz_convert(IST)
                 df_day = df[df.index.date == bt_date]
                 if df_day.empty: continue
-
-                for i in range(15, len(df_day)):
+                
+                for i in range(10, len(df_day)):
                     row = df_day.iloc[i]
-                    is_pb = abs(row['Close'] - row['EMA20']) / row['EMA20'] < 0.004
-                    if is_pb:
+                    if abs(row['Close'] - row['EMA20']) / row['EMA20'] < 0.004:
                         logs.append({
                             "TIME": df_day.index[i].strftime('%H:%M'),
-                            "STOCK": s, "TYPE": "PULLBACK",
-                            "PRICE": round(row['Close'], 2),
-                            "RSI": round(row['RSI'], 1)
+                            "STOCK": s, "PRICE": round(row['Close'], 2),
+                            "TYPE": "PULLBACK", "RSI": round(row['RSI'], 1)
                         })
             except: continue
-        if logs:
-            st.dataframe(pd.DataFrame(logs), use_container_width=True)
-        else: st.error("No data found.")
+        if logs: st.dataframe(pd.DataFrame(logs), use_container_width=True)
+        else: st.warning("No data found.")
