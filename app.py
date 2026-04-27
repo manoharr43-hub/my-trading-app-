@@ -9,13 +9,13 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.8 - FIXED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.9 - FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V9.8 - ULTIMATE TRACKER")
+st.title("🚀 NSE AI PRO V9.9 - ULTIMATE TRACKER")
 st.write(f"🕒 **Current Market Sync (IST):** {current_time}")
 st.markdown("---")
 
@@ -199,24 +199,4 @@ with tab2:
         if logs:
             st.dataframe(pd.DataFrame(logs), use_container_width=True)
         else:
-            st.warning("⚠️ No signals found for selected date")
-
-# =============================
-# CHART
-# =============================
-st.markdown("---")
-selected = st.selectbox("Select Stock:", stocks)
-df = get_data(selected, period="5d", interval="15m")
-if df is not None:
-    df = add_indicators(df)
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close']
-    ))
-    fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df['VW
+            st.warning("⚠️ No signals found for selected
