@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG & UI SETUP
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V24", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V25", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V24 - TIME & EXCEL UPDATED")
+st.title("🚀 NSE AI PRO V25 - BIG PLAYERS & FULL BACKTEST")
 st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -51,6 +51,9 @@ def add_indicators(df):
     low_close = abs(df['Low'] - df['Close'].shift())
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
+    
+    # Volume Avg for Big Players
+    df['VolAvg'] = df['Volume'].rolling(20).mean()
     return df
 
 # =============================
@@ -64,9 +67,6 @@ def fetch_data(symbols, interval, period):
 data_5m = fetch_data(stocks, "5m", "5d")
 data_1d = fetch_data(stocks, "1d", "6mo")
 
-# =============================
-# EXCEL DOWNLOAD FUNCTION
-# =============================
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -76,13 +76,13 @@ def to_excel(df):
 # =============================
 # TABS
 # =============================
-tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER", "🎯 PULLBACK SCAN", "🔥 BACKTEST SYSTEM"])
+tab1, tab2, tab3 = st.tabs(["🔍 LIVE SIGNALS (BIG PLAYERS)", "🎯 PULLBACK SCANNER", "📊 FULL DAY BACKTEST"])
 
 # -----------------------------
-# 1. LIVE SCANNER (With Time)
+# 1. LIVE SIGNALS + BIG PLAYERS
 # -----------------------------
 with tab1:
-    if st.button("RUN SCANNER"):
+    if st.button("RUN LIVE SCANNER"):
         res = []
         for s in stocks:
             try:
@@ -90,82 +90,92 @@ with tab1:
                 df5 = add_indicators(data_5m[s + ".NS"].dropna())
                 l1, l5 = df1.iloc[-1], df5.iloc[-1]
                 
-                if l1['Close'] > l1['EMA20'] and l5['Close'] > l5['VWAP']:
+                # Big Players Check (Volume > 2x Avg)
+                big_player = "🔥 YES" if l5['Volume'] > (l5['VolAvg'] * 2) else "No"
+                
+                # Signal Logic
+                signal = "None"
+                if l1['Close'] > l1['EMA20'] and l5['Close'] > l5['VWAP'] and l5['RSI'] > 55:
+                    signal = "BUY 🟢"
+                elif l1['Close'] < l1['EMA20'] and l5['Close'] < l5['VWAP'] and l5['RSI'] < 45:
+                    signal = "SELL 🔴"
+                
+                if signal != "None":
                     res.append({
-                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M:%S'), # 1. Time Add
-                        "STOCK": s, "ENTRY": round(l5['Close'], 2),
-                        "SL": round(l5['Close'] - l5['ATR']*1.5, 2),
-                        "TARGET": round(l5['Close'] + l5['ATR']*3, 2),
-                        "RSI": round(l5['RSI'], 1)
+                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M:%S'),
+                        "STOCK": s, "SIGNAL": signal,
+                        "BIG PLAYER": big_player,
+                        "ENTRY": round(l5['Close'], 2),
+                        "SL": round(l5['Close'] - l5['ATR'] if signal == "BUY 🟢" else l5['Close'] + l5['ATR'], 2),
+                        "TARGET": round(l5['Close'] + l5['ATR']*2 if signal == "BUY 🟢" else l5['Close'] - l5['ATR']*2, 2)
                     })
             except: continue
         if res:
-            final_df = pd.DataFrame(res)
-            st.dataframe(final_df, use_container_width=True)
-            st.download_button("📥 Download Excel", data=to_excel(final_df), file_name="Scanner_Report.xlsx") # 5. Excel
-        else: st.info("No stocks found.")
+            df_res = pd.DataFrame(res)
+            st.dataframe(df_res, use_container_width=True)
+            st.download_button("📥 Download Excel", data=to_excel(df_res), file_name="Live_Signals.xlsx")
+        else: st.info("No active signals found.")
 
 # -----------------------------
-# 2. PULLBACK SCAN (With Time)
+# 2. PULLBACK SCANNER (Fix Time)
 # -----------------------------
 with tab2:
-    if st.button("RUN PULLBACK"):
+    if st.button("SCAN PULLBACKS"):
         pb_res = []
         for s in stocks:
             try:
                 df5 = add_indicators(data_5m[s + ".NS"].dropna())
                 l = df5.iloc[-1]
                 dist = abs(l['Close'] - l['EMA20']) / l['EMA20']
-                if dist < 0.005 and l['Close'] > l['Open']:
+                
+                if dist < 0.005:
                     pb_res.append({
-                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M:%S'), # 2. Time Add
+                        "TIME": df5.index[-1].astimezone(IST).strftime('%H:%M:%S'),
                         "STOCK": s, "PRICE": round(l['Close'], 2),
-                        "ATR": round(l['ATR'], 2), "RSI": round(l['RSI'], 1)
+                        "EMA20": round(l['EMA20'], 2),
+                        "STATUS": "TOUCHING 🎯" if dist < 0.001 else "NEAR 🔔"
                     })
             except: continue
         if pb_res:
-            pb_df = pd.DataFrame(pb_res)
-            st.dataframe(pb_df, use_container_width=True)
-            st.download_button("📥 Download Excel", data=to_excel(pb_df), file_name="Pullback_Report.xlsx")
-        else: st.info("No pullbacks.")
+            st.dataframe(pd.DataFrame(pb_res), use_container_width=True)
+        else: st.info("No pullbacks at this moment.")
 
 # -----------------------------
-# 3 & 4. BACKTEST (Folder/Pullback fix)
+# 3. FULL DAY BACKTEST (Buy/Sell + Pullback)
 # -----------------------------
 with tab3:
-    bt_date = st.date_input("Backtest Date", value=now.date() - timedelta(days=1))
-    if st.button("START BACKTEST"):
-        bt_logs = []
+    bt_date = st.date_input("Select Backtest Date", value=now.date() - timedelta(days=1))
+    if st.button("RUN FULL DAY ANALYSIS"):
+        all_day_logs = []
         for s in stocks:
             try:
                 df = add_indicators(data_5m[s + ".NS"].dropna())
-                # Timezone conversion for matching date
                 df.index = df.index.tz_convert(IST)
                 df_day = df[df.index.date == bt_date]
                 
-                if df_day.empty: continue # 3. Folder/Data showing fix
+                if df_day.empty: continue
 
-                for i in range(15, len(df_day)-6):
-                    snap = df_day.iloc[:i+1]
-                    last = snap.iloc[-1]
+                for i in range(10, len(df_day)):
+                    row = df_day.iloc[i]
+                    # Pullback Logic
+                    is_pb = abs(row['Close'] - row['EMA20']) / row['EMA20'] < 0.004
+                    # Buy/Sell Logic
+                    sig = "None"
+                    if row['Close'] > row['VWAP'] and row['RSI'] > 60: sig = "BUY 🟢"
+                    elif row['Close'] < row['VWAP'] and row['RSI'] < 40: sig = "SELL 🔴"
                     
-                    # 4. Pullback backtest logic
-                    dist = abs(last['Close'] - last['EMA20']) / last['EMA20']
-                    if dist < 0.005:
-                        entry = last['Close']
-                        future = df_day.iloc[i+1 : i+6]
-                        win = any(future['High'] > entry + last['ATR']*2)
-                        loss = any(future['Low'] < entry - last['ATR'])
-                        
-                        res_str = "WIN ✅" if win else ("LOSS ❌" if loss else "HOLD ⚪")
-                        bt_logs.append({
+                    if sig != "None" or is_pb:
+                        all_day_logs.append({
                             "TIME": df_day.index[i].strftime('%H:%M'),
-                            "STOCK": s, "ENTRY": round(entry, 2), "RESULT": res_str
+                            "STOCK": s,
+                            "PRICE": round(row['Close'], 2),
+                            "TYPE": sig if sig != "None" else "PULLBACK 🎯",
+                            "BIG PLAYER": "🔥" if row['Volume'] > row['VolAvg']*2 else "-"
                         })
-                        break
             except: continue
-        if bt_logs:
-            bt_df = pd.DataFrame(bt_logs)
-            st.table(bt_df) # 4. Showing fix
-            st.download_button("📥 Download Backtest Excel", data=to_excel(bt_df), file_name="Backtest_Report.xlsx")
-        else: st.warning("No signals found for this date.")
+            
+        if all_day_logs:
+            bt_df = pd.DataFrame(all_day_logs)
+            st.dataframe(bt_df, use_container_width=True) # Full day data show
+            st.download_button("📥 Download Full Backtest", data=to_excel(bt_df), file_name="Full_Day_Backtest.xlsx")
+        else: st.warning("No data found for this date.")
