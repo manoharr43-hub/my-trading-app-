@@ -8,7 +8,7 @@ from streamlit_autorefresh import st_autorefresh
 # CONFIG & REFRESH
 # =============================
 st.set_page_config(page_title="🔥 NSE AI PRO V7 - ADVANCED", layout="wide")
-st_autorefresh(interval=60000, key="refresh") # ప్రతి నిమిషానికి అప్‌డేట్ అవుతుంది
+st_autorefresh(interval=60000, key="refresh")
 
 st.title("🚀 NSE AI PRO DASHBOARD V7")
 st.markdown("---")
@@ -24,46 +24,30 @@ stocks = [
 ]
 
 # =============================
-# DATA LOADER
+# FUNCTIONS (DATA & INDICATORS)
 # =============================
 def get_data(stock):
     try:
         df = yf.Ticker(stock + ".NS").history(period="5d", interval="15m")
-        if df is None or df.empty:
-            return None
-        return df.dropna()
+        return df.dropna() if df is not None and not df.empty else None
     except:
         return None
 
-# =============================
-# ADVANCED INDICATORS
-# =============================
 def add_indicators(df):
-    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    
-    # RSI
     delta = df['Close'].diff()
     gain = delta.where(delta > 0, 0).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    
-    # MACD
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
     df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    
     return df
 
-# =============================
-# AI SCORE & SIGNAL ENGINE
-# =============================
 def calculate_ai_score(df):
     score = 0
     last = df.iloc[-1]
@@ -76,23 +60,17 @@ def calculate_ai_score(df):
 
 def get_signal(df, score):
     last = df.iloc[-1]
-    if score >= 80 and last['Close'] > last['VWAP']:
-        return "🚀 STRONG BUY"
-    elif score <= 30 and last['Close'] < last['VWAP']:
-        return "💀 STRONG SELL"
-    elif score >= 60:
-        return "BUY"
-    elif score <= 40:
-        return "SELL"
-    else:
-        return "WAIT"
+    if score >= 80 and last['Close'] > last['VWAP']: return "🚀 STRONG BUY"
+    elif score <= 30 and last['Close'] < last['VWAP']: return "💀 STRONG SELL"
+    elif score >= 60: return "BUY"
+    elif score <= 40: return "SELL"
+    else: return "WAIT"
 
 # =============================
-# MAIN LOGIC
+# UI & SCANNER LOGIC
 # =============================
-data_results = []
-
 if st.button("🔍 RUN AI SCANNER"):
+    data_results = []
     with st.spinner("Analyzing Markets..."):
         for s in stocks:
             df = get_data(s)
@@ -101,54 +79,37 @@ if st.button("🔍 RUN AI SCANNER"):
                 score = calculate_ai_score(df)
                 sig = get_signal(df, score)
                 curr_price = round(df['Close'].iloc[-1], 2)
-                
                 data_results.append({
-                    "STOCK": s,
-                    "PRICE": curr_price,
-                    "AI SCORE": f"{score}%",
-                    "SIGNAL": sig,
-                    "VWAP": round(df['VWAP'].iloc[-1], 2),
-                    "RSI": round(df['RSI'].iloc[-1], 1),
-                    "ENTRY": curr_price,
-                    "STOPLOSS": round(curr_price * 0.985, 2),
-                    "TARGET": round(curr_price * 1.03, 2)
+                    "STOCK": s, "PRICE": curr_price, "AI SCORE": f"{score}%",
+                    "SIGNAL": sig, "VWAP": round(df['VWAP'].iloc[-1], 2),
+                    "RSI": round(df['RSI'].iloc[-1], 1), "ENTRY": curr_price,
+                    "STOPLOSS": round(curr_price * 0.985, 2), "TARGET": round(curr_price * 1.03, 2)
                 })
 
     if data_results:
         res_df = pd.DataFrame(data_results)
-        
-        # UI Styling
-        def style_signal(val):
-            color = 'white'
-            if "BUY" in val: bg = '#008000'
-            elif "SELL" in val: bg = '#FF0000'
-            else: bg = '#333333'; color = '#aaaaaa'
-            return f'background-color: {bg}; color: {color}; font-weight: bold'
-
-        # --- ఇక్కడి నుండి కొత్త మార్పులు ---
-        
         st.subheader("📊 REAL-TIME SIGNALS")
-        # మెయిన్ టేబుల్ - కేవలం ముఖ్యమైన వివరాలు మాత్రమే
-        main_display = res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]]
-        st.table(main_display.style.applymap(style_signal, subset=['SIGNAL']))
         
-        # క్లిక్ చేస్తే ఓపెన్ అయ్యే డీటెయిల్ సెక్షన్ (Accordion / Expander)
-        with st.expander("🔍 Click to see AI Analysis & Indicator Details (RSI, VWAP, Score)"):
-            st.info("ఇక్కడ మీరు ప్రతీ స్టాక్ యొక్క లోతైన విశ్లేషణను చూడవచ్చు.")
-            st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "VWAP"]], use_container_width=True)
-            
-        # --- కొత్త మార్పులు ముగిశాయి ---
+        def style_signal(val):
+            bg = '#008000' if "BUY" in val else '#FF0000' if "SELL" in val else '#333333'
+            return f'background-color: {bg}; color: white; font-weight: bold'
 
-        # Charting Section
-        st.markdown("---")
-        selected = st.selectbox("Select stock to view Chart:", stocks)
-        chart_df = get_data(selected)
-        if chart_df is not None:
-            chart_df = add_indicators(chart_df)
-            fig = go.Figure()
-            fig.add_trace(go.Candlestick(x=chart_df.index, open=chart_df['Open'], high=chart_df['High'], low=chart_df['Low'], close=chart_df['Close'], name="Price"))
-            fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
-            fig.update_layout(title=f"{selected} Advanced Chart", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No data found. Check your connection.")
+        st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.applymap(style_signal, subset=['SIGNAL']))
+        
+        with st.expander("🔍 Click to see AI Analysis & Indicator Details"):
+            st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "VWAP"]], use_container_width=True)
+
+# =============================
+# CHART SECTION (Moved outside to fix Error)
+# =============================
+st.markdown("---")
+selected = st.selectbox("Select stock to view Chart:", stocks) # ఇక్కడ stocks లిస్ట్ ఎప్పుడూ అందుబాటులో ఉంటుంది
+chart_df = get_data(selected)
+
+if chart_df is not None:
+    chart_df = add_indicators(chart_df)
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=chart_df.index, open=chart_df['Open'], high=chart_df['High'], low=chart_df['Low'], close=chart_df['Close'], name="Price"))
+    fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
+    fig.update_layout(title=f"{selected} Advanced Chart", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
+    st.plotly_chart(fig, use_container_width=True)
