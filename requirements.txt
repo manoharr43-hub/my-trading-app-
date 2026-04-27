@@ -1,7 +1,7 @@
 streamlit
 yfinance
 pandas
-plotly
+numpy
+pytz
 streamlit-autorefresh
-ta==0.10.2
-openpyxl
+xlsxwriter
