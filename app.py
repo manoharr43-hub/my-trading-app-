@@ -89,12 +89,12 @@ def smart_money(df):
     return ""
 
 # =============================
-# SIGNAL
+# SIGNAL (UPDATED)
 # =============================
 def signal(score):
     if score >= 80: return "🚀 STRONG BUY"
     elif score >= 60: return "BUY"
-    elif score <= 30: return "💀 STRONG SELL"
+    elif score <= 20: return "💀 STRONG SELL"
     elif score <= 40: return "SELL"
     else: return "WAIT"
 
@@ -104,7 +104,7 @@ def signal(score):
 tab1, tab2 = st.tabs(["🔍 LIVE AI SCANNER", "📊 BACKTEST"])
 
 # =============================
-# LIVE SCANNER
+# LIVE SCANNER (UNCHANGED)
 # =============================
 with tab1:
 
@@ -136,7 +136,6 @@ with tab1:
             target = round(entry * 1.015, 2)
             sl = round(entry * 0.99, 2)
 
-            # ✅ TIME ADD
             last_time = df5.index[-1].strftime('%H:%M')
 
             if "STRONG" not in sig:
@@ -161,7 +160,7 @@ with tab1:
             st.warning("No strong signals")
 
 # =============================
-# BACKTEST
+# BACKTEST (FIXED)
 # =============================
 with tab2:
 
@@ -191,13 +190,16 @@ with tab2:
                 sc = ai_score(df.iloc[:i+1])
                 sig = signal(sc)
 
-                if "STRONG" not in sig:
-                    continue
-
+                # ✅ BUY / SELL logic FIX
                 entry = df.iloc[i]['Close']
                 next_price = df.iloc[i+1]['Close']
 
-                result = "WIN" if next_price > entry else "LOSS"
+                if "BUY" in sig:
+                    result = "WIN" if next_price > entry else "LOSS"
+                elif "SELL" in sig:
+                    result = "WIN" if next_price < entry else "LOSS"
+                else:
+                    continue
 
                 if result == "WIN":
                     wins += 1
@@ -207,6 +209,7 @@ with tab2:
                 logs.append({
                     "TIME": df.index[i].strftime('%H:%M'),
                     "STOCK": s,
+                    "SIGNAL": sig,
                     "ENTRY": round(entry,2),
                     "NEXT": round(next_price,2),
                     "RESULT": result
@@ -222,7 +225,7 @@ with tab2:
             st.warning("No trades found")
 
 # =============================
-# CHART
+# CHART (UNCHANGED)
 # =============================
 st.markdown("---")
 stock_sel = st.selectbox("📊 Chart View", stocks)
