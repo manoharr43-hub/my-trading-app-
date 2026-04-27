@@ -147,3 +147,17 @@ with tab3:
         
         fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
+        if last['Close'] > last['VWAP'] and last['EMA20'] > last['EMA50']:
+    sig = "🚀 STRONG BUY"
+    sl = round(price * 0.99, 2)
+    tgt = round(price * 1.02, 2)
+
+elif last['Close'] < last['VWAP'] and last['EMA20'] < last['EMA50']:
+    sig = "🔻 STRONG SELL"
+    sl = round(price * 1.01, 2)
+    tgt = round(price * 0.98, 2)
+
+else:
+    sig = "WAIT"
+    sl, tgt = 0, 0
+
