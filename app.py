@@ -3,25 +3,24 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9 - BACKTEST EDITION", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.1 - FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-# IST Time Setup
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V9 - ULTIMATE TRACKER & BACKTESTER")
-st.write(f"🕒 **Last Market Sync (IST):** {current_time}")
+st.title("🚀 NSE AI PRO V9.1 - SMART MONEY & BACKTESTER")
+st.write(f"🕒 **Current Sync Time (IST):** {current_time}")
 st.markdown("---")
 
 # =============================
-# ALL SECTOR STOCK LIST
+# STOCK LIST
 # =============================
 stocks = [
     "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", 
@@ -39,18 +38,14 @@ def get_data(stock, period="2d", interval="15m"):
     except: return None
 
 def add_indicators(df):
-    # EMA
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
-    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    # MACD
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
@@ -88,10 +83,10 @@ def get_signal(df, score):
 # =============================
 # UI SCANNER & BACKTEST
 # =============================
-col1, col2 = st.columns(2)
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST REPORT"])
 
-with col1:
-    if st.button("🔍 SCAN LIVE MARKET"):
+with tab1:
+    if st.button("🔍 RUN LIVE SCAN"):
         data_results = []
         with st.spinner("Analyzing Market..."):
             for s in stocks:
@@ -102,7 +97,7 @@ with col1:
                     sig = get_signal(df, score)
                     smart_alert = get_smart_alerts(df)
                     curr_price = round(df['Close'].iloc[-1], 2)
-                    last_candle_time = df.index[-1].astimezone(IST).strftime('%H:%M')
+                    last_time = df.index[-1].astimezone(IST).strftime('%H:%M')
                     
                     if "BUY" in sig:
                         sl, target = round(curr_price * 0.99, 2), round(curr_price * 1.02, 2)
@@ -111,50 +106,39 @@ with col1:
                     else: sl = target = 0
                     
                     data_results.append({
-                        "STOCK": s, "TIME": last_candle_time, "PRICE": curr_price, 
+                        "STOCK": s, "TIME": last_time, "PRICE": curr_price, 
                         "SIGNAL": sig, "SMART ALERT": smart_alert, 
                         "STOPLOSS": sl, "TARGET": target
                     })
         if data_results:
-            st.subheader("📊 LIVE SIGNALS")
-            res_df = pd.DataFrame(data_results)
-            st.table(res_df)
+            st.table(pd.DataFrame(data_results))
 
-with col2:
-    if st.button("📊 RUN 30-DAY BACKTEST"):
-        bt_results = []
-        with st.spinner("Backtesting last 30 days data..."):
+with tab2:
+    if st.button("📈 START 30-DAY BACKTEST"):
+        bt_full_logs = []
+        with st.spinner("Checking last 30 days..."):
             for s in stocks:
                 df_bt = get_data(s, period="1mo", interval="15m")
                 if df_bt is not None and len(df_bt) > 50:
                     df_bt = add_indicators(df_bt)
-                    wins = 0
-                    total_trades = 0
-                    
-                    for i in range(50, len(df_bt)-5):
-                        row = df_bt.iloc[i]
+                    for i in range(50, len(df_bt)-1):
                         score = calculate_ai_score(df_bt.iloc[:i+1])
-                        
-                        if score >= 80: # Strong Buy Condition
-                            total_trades += 1
-                            entry_p = df_bt.iloc[i+1]['Open']
-                            future_data = df_bt.iloc[i+1:i+6] # Next 5 candles
-                            if future_data['High'].max() >= entry_p * 1.015: # 1.5% Target
-                                wins += 1
-                    
-                    win_rate = round((wins/total_trades)*100, 2) if total_trades > 0 else 0
-                    bt_results.append({"STOCK": s, "TRADES": total_trades, "WIN RATE": f"{win_rate}%"})
-        
-        if bt_results:
-            st.subheader("📈 BACKTEST REPORT")
-            st.table(pd.DataFrame(bt_results))
+                        if score >= 80: # Strong Buy Logic
+                            sig_time = df_bt.index[i].astimezone(IST).strftime('%Y-%m-%d %H:%M')
+                            bt_full_logs.append({
+                                "DATE & TIME": sig_time, "STOCK": s, 
+                                "PRICE": round(df_bt.iloc[i]['Close'], 2), "SIGNAL": "STRONG BUY"
+                            })
+        if bt_full_logs:
+            st.subheader("📅 Backtest Log (Historical Entry Points)")
+            st.dataframe(pd.DataFrame(bt_full_logs), use_container_width=True)
 
 # =============================
 # CHART SECTION
 # =============================
 st.markdown("---")
-selected = st.selectbox("Select stock to view Chart:", stocks)
-chart_df = get_data(selected)
+selected = st.selectbox("Select Stock for Chart:", stocks)
+chart_df = get_data(selected, period="5d", interval="15m")
 if chart_df is not None:
     chart_df = add_indicators(chart_df)
     fig = go.Figure()
