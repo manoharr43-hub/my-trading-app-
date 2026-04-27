@@ -10,13 +10,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V11", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V12", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V11 - PRO SYSTEM")
+st.title("🚀 NSE AI PRO V12 - PULLBACK ENTRY SYSTEM")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 st.markdown("---")
 
@@ -115,6 +115,28 @@ def smart_money(df):
     return ""
 
 # =============================
+# PULLBACK ENTRY
+# =============================
+def pullback_entry(df):
+    try:
+        last = df.iloc[-1]
+
+        breakout = last['Close'] > df['High'].rolling(20).max().iloc[-2]
+
+        pullback = abs(last['Close'] - last['EMA20']) / last['EMA20'] < 0.004
+
+        bullish = last['Close'] > last['Open']
+
+        volume_ok = last['Volume'] > df['Volume'].rolling(20).mean().iloc[-1]
+
+        if breakout and pullback and bullish and volume_ok:
+            return "✅ PULLBACK ENTRY"
+        else:
+            return ""
+    except:
+        return ""
+
+# =============================
 # EXCEL
 # =============================
 def convert_excel(df):
@@ -153,6 +175,8 @@ with tab1:
             score = (ai_score(df5) + ai_score(df15) + ai_score(df1h)) / 3
             sig = signal(score)
 
+            pb = pullback_entry(df5)
+
             if "STRONG" not in sig:
                 continue
 
@@ -167,6 +191,7 @@ with tab1:
                 "STOCK": s,
                 "PRICE": entry,
                 "SIGNAL": sig,
+                "PULLBACK": pb,
                 "SMART": smart_money(df5),
                 "TARGET": target,
                 "SL": sl,
@@ -201,7 +226,6 @@ with tab2:
                 continue
 
             df = add_indicators(df)
-
             df = df[df.index.date == date]
             df = df.between_time("09:15", "15:30")
 
@@ -242,7 +266,6 @@ with tab2:
                 })
 
         if logs:
-
             df_logs = pd.DataFrame(logs)
             acc = (wins/total)*100 if total > 0 else 0
 
