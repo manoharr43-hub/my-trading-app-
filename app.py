@@ -5,17 +5,18 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import pytz
+import time
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V20 - LIVE+BACKTEST", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V21 - LIVE+BACKTEST", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V20 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V21 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -29,6 +30,19 @@ sector_map = {
     "OTHERS": ["ITC", "LT", "BAJFINANCE", "TATASTEEL", "BHARTIARTL"]
 }
 all_stocks = [s for sub in sector_map.values() for s in sub]
+
+# =============================
+# SAFE LOADER (Rate Limit Fix)
+# =============================
+def safe_history(ticker, period="2d", interval="15m", retries=3, delay=5):
+    for i in range(retries):
+        try:
+            df = yf.Ticker(ticker + ".NS").history(period=period, interval=interval)
+            if not df.empty:
+                return df
+        except Exception as e:
+            time.sleep(delay)
+    return pd.DataFrame()
 
 # =============================
 # CORE FUNCTIONS
@@ -75,7 +89,7 @@ with tab1:
         live_results = []
         with st.spinner("Analyzing Live Entry Points..."):
             for s in all_stocks:
-                df_l = yf.Ticker(s + ".NS").history(period="2d", interval="15m")
+                df_l = safe_history(s, period="2d", interval="15m")
                 if not df_l.empty:
                     df_l.index = df_l.index.tz_convert(IST)
                     df_l = add_indicators(df_l)
@@ -83,6 +97,3 @@ with tab1:
                     
                     price = round(last['Close'], 2)
                     sig = "WAIT"
-                    sl, tgt = 0, 0
-                    
-                    # ✅ BUY + SELL Logic
