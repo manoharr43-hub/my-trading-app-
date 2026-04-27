@@ -9,13 +9,13 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V17 - LIVE+BACKTEST", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V19 - LIVE+BACKTEST", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V17 - ULTIMATE DASHBOARD")
+st.title("🚀 NSE AI PRO V19 - ULTIMATE DASHBOARD")
 st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
@@ -109,7 +109,7 @@ with tab1:
                     sl = round(price * 0.99, 2)
                     tgt = round(price * 1.02, 2)
 
-                # SELL LOGIC (NEW 🔥)
+                # SELL LOGIC
                 elif last['Close'] < last['VWAP'] and last['EMA20'] < last['EMA50']:
                     signal = "🔻 STRONG SELL"
                     sl = round(price * 1.01, 2)
