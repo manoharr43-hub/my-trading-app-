@@ -7,7 +7,7 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V7 - FIXED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V7 - FINAL", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 st.title("🚀 NSE AI PRO DASHBOARD V7")
@@ -24,7 +24,7 @@ stocks = [
 ]
 
 # =============================
-# FUNCTIONS
+# DATA & INDICATOR FUNCTIONS
 # =============================
 def get_data(stock):
     try:
@@ -39,7 +39,7 @@ def add_indicators(df):
     delta = df['Close'].diff()
     gain = delta.where(delta > 0, 0).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
+    rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
@@ -67,7 +67,7 @@ def get_signal(df, score):
     else: return "WAIT"
 
 # =============================
-# SCANNER LOGIC
+# MAIN SCANNER LOGIC
 # =============================
 if st.button("🔍 RUN AI SCANNER"):
     data_results = []
@@ -79,29 +79,40 @@ if st.button("🔍 RUN AI SCANNER"):
                 score = calculate_ai_score(df)
                 sig = get_signal(df, score)
                 curr_price = round(df['Close'].iloc[-1], 2)
+                
+                # సరిచేసిన Entry, SL, Target Logic
+                if "BUY" in sig:
+                    sl = round(curr_price * 0.99, 2)     # 1% SL below
+                    target = round(curr_price * 1.02, 2) # 2% Target above
+                elif "SELL" in sig:
+                    sl = round(curr_price * 1.01, 2)     # 1% SL above
+                    target = round(curr_price * 0.98, 2) # 2% Target below
+                else:
+                    sl = entry = target = 0
+                
                 data_results.append({
                     "STOCK": s, "PRICE": curr_price, "AI SCORE": f"{score}%",
                     "SIGNAL": sig, "VWAP": round(df['VWAP'].iloc[-1], 2),
                     "RSI": round(df['RSI'].iloc[-1], 1), "ENTRY": curr_price,
-                    "STOPLOSS": round(curr_price * 0.985, 2), "TARGET": round(curr_price * 1.03, 2)
+                    "STOPLOSS": sl, "TARGET": target
                 })
 
     if data_results:
         res_df = pd.DataFrame(data_results)
         st.subheader("📊 REAL-TIME SIGNALS")
         
-        # టేబుల్ కలర్ స్టైలింగ్ ఫంక్షన్ (Fixed)
         def style_signal(val):
             bg = '#008000' if "BUY" in val else '#FF0000' if "SELL" in val else '#333333'
             return f'background-color: {bg}; color: white; font-weight: bold'
 
-        # ఇక్కడ .map() లేదా .applymap() బదులు పాత పద్ధతిలో కేవలం డేటా చూపిస్తున్నాను లేదా లేటెస్ట్ .map() వాడుతున్నాను
+        # Main Table
         try:
             st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.map(style_signal, subset=['SIGNAL']))
         except AttributeError:
             st.table(res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]].style.applymap(style_signal, subset=['SIGNAL']))
         
-        with st.expander("🔍 Click to see AI Analysis & Indicator Details"):
+        # New Accordion/Expander Feature
+        with st.expander("🔍 Click to see Technical Deep-Dive (RSI, VWAP, AI Score)"):
             st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "VWAP"]], use_container_width=True)
 
 # =============================
@@ -118,3 +129,5 @@ if chart_df is not None:
     fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
     fig.update_layout(title=f"{selected} Advanced Chart", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
     st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("చార్ట్ చూడటానికి పైన ఉన్న బటన్ నొక్కండి లేదా వేరే స్టాక్ సెలెక్ట్ చేయండి.")
