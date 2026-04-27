@@ -28,7 +28,7 @@ stocks = [
 ]
 
 # =============================
-# DATA FETCH (UPDATED - PERIOD SUPPORT)
+# DATA FETCH (UPDATED)
 # =============================
 def get_data(stock, interval, period="5d"):
     try:
@@ -160,7 +160,7 @@ with tab1:
             st.warning("No strong signals")
 
 # =============================
-# BACKTEST (FIXED FULL DAY)
+# BACKTEST (FINAL FIX)
 # =============================
 with tab2:
 
@@ -174,7 +174,7 @@ with tab2:
 
         for s in stocks:
 
-            # ✅ FIX: 1 MONTH DATA
+            # ✅ FIX 1: More historical data
             df = get_data(s, "15m", period="1mo")
 
             if df is None or len(df) < 50:
@@ -182,8 +182,11 @@ with tab2:
 
             df = add_indicators(df)
 
-            # ✅ FIX: CORRECT DATE FILTER
+            # ✅ FIX 2: Correct date filter
             df = df[df.index.date == bt_date]
+
+            # ✅ FIX 3: Full trading hours
+            df = df.between_time("09:15", "15:30")
 
             if len(df) < 20:
                 continue
@@ -196,7 +199,6 @@ with tab2:
                 entry = df.iloc[i]['Close']
                 next_price = df.iloc[i+1]['Close']
 
-                # ✅ FIX: BUY/SELL LOGIC
                 if "BUY" in sig:
                     result = "WIN" if next_price > entry else "LOSS"
                 elif "SELL" in sig:
