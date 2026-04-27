@@ -9,20 +9,24 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.6 - BACKTEST FIXED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.7", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V9.6 - ULTIMATE TRACKER")
+st.title("🚀 NSE AI PRO V9.7 - ULTIMATE TRACKER")
 st.write(f"🕒 **Current Market Sync (IST):** {current_time}")
 st.markdown("---")
 
 # =============================
 # STOCK LIST
 # =============================
-stocks = ["HDFCBANK","ICICIBANK","SBIN","RELIANCE","TCS","INFY","ITC","LT","BHARTIARTL"]
+stocks = {
+    "HDFCBANK":"Banking","ICICIBANK":"Banking","SBIN":"Banking",
+    "RELIANCE":"Oil & Gas","TCS":"IT","INFY":"IT",
+    "ITC":"FMCG","LT":"Infra","BHARTIARTL":"Telecom"
+}
 
 # =============================
 # CORE FUNCTIONS
@@ -73,7 +77,7 @@ tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST REPORT"])
 with tab1:
     if st.button("🔍 SCAN LIVE"):
         results = []
-        for s in stocks:
+        for s, sector in stocks.items():
             df = get_data(s)
             if df is not None:
                 df = add_indicators(df)
@@ -81,18 +85,18 @@ with tab1:
                 sig = get_signal(score, df['Close'].iloc[-1], df['VWAP'].iloc[-1])
                 curr_price = round(df['Close'].iloc[-1], 2)
                 last_time = df.index[-1].astimezone(IST).strftime('%H:%M')
-                results.append({"STOCK":s,"TIME":last_time,"PRICE":curr_price,"SIGNAL":sig})
+                results.append({"STOCK":s,"SECTOR":sector,"TIME":last_time,"PRICE":curr_price,"SIGNAL":sig})
         if results: st.table(pd.DataFrame(results))
 
 with tab2:
     bt_date = st.date_input("📅 Select Backtest Date", datetime.now(IST).date())
     if st.button("📈 RUN BACKTEST"):
         bt_logs = []
-        for s in stocks:
+        for s, sector in stocks.items():
             df_bt = get_data(s, period="1mo", interval="15m")
             if df_bt is not None and len(df_bt) > 50:
                 df_bt = add_indicators(df_bt)
-                df_bt = df_bt[df_bt.index.date == bt_date]  # 👉 Date filter
+                df_bt = df_bt[df_bt.index.date == bt_date]
                 for i in range(50, len(df_bt)):
                     score = calculate_ai_score(df_bt.iloc[:i+1])
                     sig = get_signal(score, df_bt.iloc[i]['Close'], df_bt.iloc[i]['VWAP'])
@@ -100,22 +104,29 @@ with tab2:
                     bt_logs.append({
                         "DATE & TIME": sig_dt,
                         "STOCK": s,
+                        "SECTOR": sector,
                         "ENTRY PRICE": round(df_bt.iloc[i]['Close'], 2),
                         "SIGNAL": sig
                     })
-        if bt_logs: st.dataframe(pd.DataFrame(bt_logs), use_container_width=True)
+        if bt_logs:
+            df_logs = pd.DataFrame(bt_logs).sort_values(by="DATE & TIME")
+            st.dataframe(df_logs, use_container_width=True)
+            df_logs.to_csv("signals_backtest.csv", index=False)
+            st.success("✅ Backtest logs saved to signals_backtest.csv")
         else: st.warning("ఈ తేదీకి signals ఏవీ దొరకలేదు.")
 
 # =============================
 # CHART SECTION
 # =============================
 st.markdown("---")
-selected = st.selectbox("Select stock to view Chart:", stocks)
+selected = st.selectbox("Select stock to view Chart:", list(stocks.keys()))
 chart_df = get_data(selected, period="5d", interval="15m")
 if chart_df is not None:
     chart_df = add_indicators(chart_df)
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=chart_df.index, open=chart_df['Open'], high=chart_df['High'], low=chart_df['Low'], close=chart_df['Close'], name="Price"))
     fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['VWAP'], line=dict(color='orange', width=1.5), name="VWAP"))
+    fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['EMA20'], line=dict(color='green', width=1), name="EMA20"))
+    fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df['EMA50'], line=dict(color='red', width=1), name="EMA50"))
     fig.update_layout(title=f"{selected} Analysis", template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
     st.plotly_chart(fig, use_container_width=True)
