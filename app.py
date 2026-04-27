@@ -10,34 +10,44 @@ from io import BytesIO
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V10", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V11 CLEAN", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
-IST = pytz.timezone('Asia/Kolkata')
-current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+IST = pytz.timezone("Asia/Kolkata")
+now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V10 - SMART MONEY SYSTEM")
-st.write(f"🕒 Market Time (IST): {current_time}")
+st.title("🚀 NSE AI PRO V11 - CLEAN VERSION")
+st.write(f"🕒 IST Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 st.markdown("---")
 
 # =============================
-# STOCK LIST
+# STOCK LIST (STATIC SAFE)
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
-    "SBIN","ITC","LT","BHARTIARTL"
+    "SBIN","ITC","LT","BHARTIARTL","AXISBANK",
+    "KOTAKBANK","HCLTECH","WIPRO","MARUTI","ASIANPAINT"
 ]
 
 # =============================
 # DATA FETCH
 # =============================
-def get_data(stock, interval, period="5d"):
+@st.cache_data(ttl=300)
+def get_data(symbol, interval="5m", period="5d"):
     try:
-        df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
+        df = yf.Ticker(symbol + ".NS").history(period=period, interval=interval)
+
         if df is None or df.empty:
             return None
-        df.index = df.index.tz_convert(IST)
+
+        # SAFE TIMEZONE FIX
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC").tz_convert(IST)
+        else:
+            df.index = df.index.tz_convert(IST)
+
         return df.dropna()
+
     except:
         return None
 
@@ -45,6 +55,7 @@ def get_data(stock, interval, period="5d"):
 # INDICATORS
 # =============================
 def add_indicators(df):
+
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
@@ -61,6 +72,8 @@ def add_indicators(df):
     df['MACD'] = exp1 - exp2
     df['Signal'] = df['MACD'].ewm(span=9).mean()
 
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
+
     return df
 
 # =============================
@@ -70,8 +83,8 @@ def ai_score(df):
     last = df.iloc[-1]
     score = 0
 
-    if last['EMA20'] > last['EMA50']: score += 20
-    if 45 < last['RSI'] < 70: score += 20
+    if last['EMA20'] > last['EMA50']: score += 25
+    if 50 < last['RSI'] < 70: score += 15
     if last['Close'] > last['VWAP']: score += 20
     if last['MACD'] > last['Signal']: score += 20
     if last['Volume'] > df['Volume'].rolling(20).mean().iloc[-1]: score += 20
@@ -85,8 +98,13 @@ def smart_money(df):
     last = df.iloc[-1]
     avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
 
-    if last['Volume'] > avg_vol * 2 and last['Close'] > last['VWAP']:
-        return "🔥 BIG PLAYER"
+    move = abs(last['Close'] - last['Open']) / last['Open'] * 100
+
+    if last['Volume'] > avg_vol * 2 and move > 0.5:
+        if last['Close'] > last['VWAP']:
+            return "🔥 BIG BUYER"
+        else:
+            return "💀 BIG SELLER"
     return ""
 
 # =============================
@@ -100,21 +118,24 @@ def signal(score):
     else: return "WAIT"
 
 # =============================
-# EXCEL CONVERTER (NEW)
+# EXCEL EXPORT
 # =============================
-def convert_to_excel(df):
+def convert_excel(df):
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Backtest')
-    return output.getvalue()
+    try:
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        return output.getvalue()
+    except:
+        return None
 
 # =============================
 # TABS
 # =============================
-tab1, tab2 = st.tabs(["🔍 LIVE AI SCANNER", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST"])
 
 # =============================
-# LIVE SCANNER (UNCHANGED)
+# LIVE SCANNER
 # =============================
 with tab1:
 
@@ -128,7 +149,8 @@ with tab1:
             df15 = get_data(s, "15m")
             df1h = get_data(s, "1h")
 
-            if df5 is None or df15 is None or df1h is None:
+            # SAFE CHECK
+            if any(x is None or x.empty for x in [df5, df15, df1h]):
                 continue
 
             df5 = add_indicators(df5)
@@ -136,45 +158,41 @@ with tab1:
             df1h = add_indicators(df1h)
 
             score = (ai_score(df5) + ai_score(df15) + ai_score(df1h)) / 3
-
             sig = signal(score)
-            sm = smart_money(df5)
-
-            last_price = df5['Close'].iloc[-1]
-
-            entry = round(last_price, 2)
-            target = round(entry * 1.015, 2)
-            sl = round(entry * 0.99, 2)
-
-            last_time = df5.index[-1].strftime('%H:%M')
 
             if "STRONG" not in sig:
                 continue
 
+            price = df5['Close'].iloc[-1]
+            atr = df5['ATR'].iloc[-1]
+
+            entry = round(price, 2)
+            target = round(entry + atr * 1.5, 2)
+            sl = round(entry - atr, 2)
+
             results.append({
-                "TIME": last_time,
                 "STOCK": s,
                 "PRICE": entry,
                 "SIGNAL": sig,
-                "SMART": sm,
+                "SMART": smart_money(df5),
                 "TARGET": target,
-                "STOPLOSS": sl,
-                "AI SCORE": round(score,1)
+                "SL": sl,
+                "SCORE": round(score,1)
             })
 
         if results:
-            df_res = pd.DataFrame(results).sort_values(by="AI SCORE", ascending=False)
-            st.dataframe(df_res, use_container_width=True)
-            st.success(f"🔥 {len(df_res)} Strong Signals Found")
+            df = pd.DataFrame(results).sort_values("SCORE", ascending=False)
+            st.dataframe(df, use_container_width=True)
+            st.success(f"{len(df)} Signals Found")
         else:
-            st.warning("No strong signals")
+            st.warning("No signals")
 
 # =============================
-# BACKTEST (UNCHANGED + DOWNLOAD ADDED)
+# BACKTEST
 # =============================
 with tab2:
 
-    bt_date = st.date_input("📅 Select Date", datetime.now(IST).date())
+    date = st.date_input("Select Date")
 
     if st.button("📈 RUN BACKTEST"):
 
@@ -184,15 +202,12 @@ with tab2:
 
         for s in stocks:
 
-            df = get_data(s, "5m", period="7d")
-
-            if df is None or len(df) < 50:
+            df = get_data(s, "5m", "7d")
+            if df is None or df.empty:
                 continue
 
             df = add_indicators(df)
-
-            df = df[df.index.date == bt_date]
-            df = df.between_time("09:15", "15:30")
+            df = df[df.index.date == date]
 
             if len(df) < 20:
                 continue
@@ -203,77 +218,37 @@ with tab2:
                 sig = signal(sc)
 
                 entry = df.iloc[i]['Close']
-                next_price = df.iloc[i+1]['Close']
+                next_p = df.iloc[i+1]['Close']
 
                 if "BUY" in sig:
-                    result = "WIN" if next_price > entry else "LOSS"
+                    res = "WIN" if next_p > entry else "LOSS"
                 elif "SELL" in sig:
-                    result = "WIN" if next_price < entry else "LOSS"
+                    res = "WIN" if next_p < entry else "LOSS"
                 else:
                     continue
 
-                if result == "WIN":
+                if res == "WIN":
                     wins += 1
 
                 total += 1
 
                 logs.append({
-                    "TIME": df.index[i].strftime('%H:%M'),
                     "STOCK": s,
-                    "SIGNAL": sig,
                     "ENTRY": round(entry,2),
-                    "NEXT": round(next_price,2),
-                    "RESULT": result
+                    "NEXT": round(next_p,2),
+                    "RESULT": res
                 })
 
         if logs:
-            df_logs = pd.DataFrame(logs)
+            df = pd.DataFrame(logs)
             acc = (wins/total)*100 if total > 0 else 0
 
-            st.dataframe(df_logs, use_container_width=True)
+            st.dataframe(df, use_container_width=True)
             st.metric("🎯 Accuracy", f"{acc:.2f}%")
 
-            # ✅ DOWNLOAD BUTTON
-            excel_data = convert_to_excel(df_logs)
-
-            st.download_button(
-                label="📥 Download Backtest Excel",
-                data=excel_data,
-                file_name=f"backtest_{bt_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            excel = convert_excel(df)
+            if excel:
+                st.download_button("📥 Download Excel", excel, "backtest.xlsx")
 
         else:
             st.warning("No trades found")
-
-# =============================
-# CHART (UNCHANGED)
-# =============================
-st.markdown("---")
-stock_sel = st.selectbox("📊 Chart View", stocks)
-
-df_chart = get_data(stock_sel, "15m")
-
-if df_chart is not None:
-
-    df_chart = add_indicators(df_chart)
-
-    import plotly.graph_objects as go
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Candlestick(
-        x=df_chart.index,
-        open=df_chart['Open'],
-        high=df_chart['High'],
-        low=df_chart['Low'],
-        close=df_chart['Close']
-    ))
-
-    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA20'], name="EMA20"))
-    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA50'], name="EMA50"))
-    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['VWAP'], name="VWAP"))
-
-    fig.update_layout(height=600, template="plotly_dark")
-
-    st.plotly_chart(fig, use_container_width=True)
