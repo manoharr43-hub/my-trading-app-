@@ -20,18 +20,12 @@ st.write(f"🕒 Market Time (IST): {current_time}")
 st.markdown("---")
 
 # =============================
-# LOAD NSE 200 STOCKS
+# STOCK LIST
 # =============================
-@st.cache_data(ttl=86400)
-def load_stocks():
-    try:
-        url = "https://archives.nseindia.com/content/indices/ind_nifty200list.csv"
-        df = pd.read_csv(url)
-        return df['Symbol'].tolist()
-    except:
-        return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK"]
-
-stocks = load_stocks()
+stocks = [
+    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
+    "SBIN","ITC","LT","BHARTIARTL"
+]
 
 # =============================
 # DATA FETCH
@@ -114,11 +108,11 @@ tab1, tab2 = st.tabs(["🔍 LIVE AI SCANNER", "📊 BACKTEST"])
 # =============================
 with tab1:
 
-    if st.button("🚀 RUN FULL SCAN"):
+    if st.button("🚀 RUN SCAN"):
 
         results = []
 
-        for s in stocks[:80]:  # limit for speed
+        for s in stocks:
 
             df5 = get_data(s, "5m")
             df15 = get_data(s, "15m")
@@ -142,10 +136,14 @@ with tab1:
             target = round(entry * 1.015, 2)
             sl = round(entry * 0.99, 2)
 
+            # ✅ TIME ADD
+            last_time = df5.index[-1].strftime('%H:%M')
+
             if "STRONG" not in sig:
                 continue
 
             results.append({
+                "TIME": last_time,
                 "STOCK": s,
                 "PRICE": entry,
                 "SIGNAL": sig,
@@ -158,11 +156,9 @@ with tab1:
         if results:
             df_res = pd.DataFrame(results).sort_values(by="AI SCORE", ascending=False)
             st.dataframe(df_res, use_container_width=True)
-
-            st.success(f"🔥 {len(df_res)} Strong Opportunities Found")
-
+            st.success(f"🔥 {len(df_res)} Strong Signals Found")
         else:
-            st.warning("No strong signals found")
+            st.warning("No strong signals")
 
 # =============================
 # BACKTEST
@@ -177,7 +173,7 @@ with tab2:
         wins = 0
         total = 0
 
-        for s in stocks[:30]:
+        for s in stocks:
 
             df = get_data(s, "15m")
 
@@ -222,7 +218,6 @@ with tab2:
 
             st.dataframe(df_logs, use_container_width=True)
             st.metric("🎯 Accuracy", f"{acc:.2f}%")
-
         else:
             st.warning("No trades found")
 
@@ -230,7 +225,7 @@ with tab2:
 # CHART
 # =============================
 st.markdown("---")
-stock_sel = st.selectbox("📊 Chart View", stocks[:50])
+stock_sel = st.selectbox("📊 Chart View", stocks)
 
 df_chart = get_data(stock_sel, "15m")
 
