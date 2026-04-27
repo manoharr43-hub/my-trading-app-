@@ -5,6 +5,7 @@ import numpy as np
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import pytz
+from io import BytesIO
 
 # =============================
 # CONFIG
@@ -99,6 +100,15 @@ def signal(score):
     else: return "WAIT"
 
 # =============================
+# EXCEL CONVERTER (NEW)
+# =============================
+def convert_to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Backtest')
+    return output.getvalue()
+
+# =============================
 # TABS
 # =============================
 tab1, tab2 = st.tabs(["🔍 LIVE AI SCANNER", "📊 BACKTEST"])
@@ -160,7 +170,7 @@ with tab1:
             st.warning("No strong signals")
 
 # =============================
-# BACKTEST (FIXED FULL DAY USING 5m)
+# BACKTEST (UNCHANGED + DOWNLOAD ADDED)
 # =============================
 with tab2:
 
@@ -174,7 +184,6 @@ with tab2:
 
         for s in stocks:
 
-            # ✅ FIX: use 5m data (full day available)
             df = get_data(s, "5m", period="7d")
 
             if df is None or len(df) < 50:
@@ -182,10 +191,7 @@ with tab2:
 
             df = add_indicators(df)
 
-            # Date filter
             df = df[df.index.date == bt_date]
-
-            # Full trading hours
             df = df.between_time("09:15", "15:30")
 
             if len(df) < 20:
@@ -226,6 +232,17 @@ with tab2:
 
             st.dataframe(df_logs, use_container_width=True)
             st.metric("🎯 Accuracy", f"{acc:.2f}%")
+
+            # ✅ DOWNLOAD BUTTON
+            excel_data = convert_to_excel(df_logs)
+
+            st.download_button(
+                label="📥 Download Backtest Excel",
+                data=excel_data,
+                file_name=f"backtest_{bt_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
         else:
             st.warning("No trades found")
 
