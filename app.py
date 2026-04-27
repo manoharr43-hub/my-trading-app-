@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG & UI SETUP
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V33", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V34", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V33 - CLEAN PULLBACK SYSTEM")
+st.title("🚀 NSE AI PRO V34 - PULLBACK TREND FILTER")
 st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -30,26 +30,23 @@ stocks = [
 ]
 
 # =============================
-# INDICATORS
+# INDICATORS (V34)
 # =============================
-def add_indicators(df, interval='5m'):
+def add_indicators(df):
     df = df.copy()
     if len(df) < 20: return df
     
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
     
+    # RSI for Strength
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / (loss + 1e-9)
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    high_low = df['High'] - df['Low']
-    tr = pd.concat([high_low, abs(df['High'] - df['Close'].shift()), abs(df['Low'] - df['Close'].shift())], axis=1).max(axis=1)
-    df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
-    
     return df
 
 @st.cache_data(ttl=60)
@@ -59,22 +56,16 @@ def fetch_data(symbols, interval, period):
 
 data_5m = fetch_data(stocks, "5m", "5d")
 
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Backtest')
-    return output.getvalue()
-
 # =============================
 # TABS
 # =============================
-tab1, tab2 = st.tabs(["🚀 LIVE PULLBACK", "📊 BACKTEST PULLBACK (FIXED)"])
+tab1, tab2 = st.tabs(["🚀 LIVE FILTERED PULLBACK", "📊 FILTERED BACKTEST"])
 
 # -----------------------------
-# TAB 1: LIVE PULLBACK
+# TAB 1: LIVE FILTERED
 # -----------------------------
 with tab1:
-    if st.button("SCAN LIVE"):
+    if st.button("RUN FILTERED SCAN"):
         res = []
         for s in stocks:
             try:
@@ -83,23 +74,30 @@ with tab1:
                 dist = abs(l['Close'] - l['EMA20']) / l['EMA20']
                 
                 if dist < 0.004:
-                    # Buy vs Sell logic
-                    action = "BUY 🟢 (Support)" if l['Close'] > l['Open'] else "SELL 🔴 (Resistance)"
+                    # ✅ TREND FILTER: VWAP ఆధారంగా Buy/Sell వేరు చేయడం
+                    if l['Close'] > l['VWAP'] and l['Close'] > l['Open']:
+                        action = "BUY PULLBACK 🟢"
+                    elif l['Close'] < l['VWAP'] and l['Close'] < l['Open']:
+                        action = "SELL PULLBACK 🔴"
+                    else:
+                        continue # ట్రెండ్ సరిగ్గా లేకపోతే వదిలేయాలి
+
                     res.append({
                         "TIME": df.index[-1].astimezone(IST).strftime('%H:%M'),
                         "STOCK": s, "ACTION": action, "PRICE": round(l['Close'], 2),
+                        "RSI": round(l['RSI'], 1),
                         "BIG PLAYER": "🔥" if l['Volume'] > l['VolAvg']*2 else "-"
                     })
             except: continue
         if res: st.table(pd.DataFrame(res))
-        else: st.info("No Pullback signals found.")
+        else: st.info("No Filtered Pullback signals found.")
 
 # -----------------------------
-# TAB 2: BACKTEST PULLBACK (ADDED)
+# TAB 2: BACKTEST (FILTERED)
 # -----------------------------
 with tab2:
-    bt_date = st.date_input("Select Date", value=now.date() - timedelta(days=1))
-    if st.button("RUN BACKTEST PULLBACKS"):
+    bt_date = st.date_input("Select History Date", value=now.date() - timedelta(days=1))
+    if st.button("RUN FILTERED BACKTEST"):
         bt_res = []
         for s in stocks:
             try:
@@ -114,20 +112,22 @@ with tab2:
                     dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
                     
                     if dist < 0.004:
-                        # Identify Type
-                        pb_type = "BUY PULLBACK 🟢" if row['Close'] > row['Open'] else "SELL PULLBACK 🔴"
+                        # ✅ TREND FILTER in Backtest
+                        if row['Close'] > row['VWAP'] and row['Close'] > row['Open']:
+                            pb_type = "BUY PULLBACK 🟢"
+                        elif row['Close'] < row['VWAP'] and row['Close'] < row['Open']:
+                            pb_type = "SELL PULLBACK 🔴"
+                        else:
+                            continue
+
                         bt_res.append({
                             "TIME": df_day.index[i].strftime('%H:%M'),
-                            "STOCK": s, 
-                            "TYPE": pb_type, 
-                            "PRICE": round(row['Close'], 2),
+                            "STOCK": s, "TYPE": pb_type, "PRICE": round(row['Close'], 2),
                             "VOL SPIKE": "🔥" if row['Volume'] > row['VolAvg']*2 else "-"
                         })
             except: continue
         
         if bt_res:
-            bt_df = pd.DataFrame(bt_res)
-            st.dataframe(bt_df, use_container_width=True)
-            st.download_button("📥 Excel Download", data=to_excel(bt_df), file_name=f"Pullback_BT_{bt_date}.xlsx")
+            st.dataframe(pd.DataFrame(bt_res), use_container_width=True)
         else:
-            st.warning("No Pullback data for this date.")
+            st.warning("No Filtered Pullback data for this date.")
