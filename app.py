@@ -3,51 +3,47 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor
 
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V12 - ALL SECTORS", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V14 - BACKTEST FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V12 - ALL SECTOR TRACKER")
-st.write(f"🕒 **Current Market Sync (IST):** {current_time}")
+st.title("🚀 NSE AI PRO V14 - ULTIMATE DASHBOARD")
+st.write(f"🕒 **System Sync (IST):** {current_time}")
 
 # =============================
-# ALL SECTOR STOCK LIST (NSE)
+# STOCK SECTORS
 # =============================
 sector_map = {
-    "BANKING": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK", "INDUSINDBK", "AUBANK", "FEDERALBNK"],
-    "IT": ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM", "LTIM", "COFORGE", "PERSISTENT"],
-    "AUTO": ["TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "TVSMOTOR", "ASHOKLEY"],
-    "PHARMA": ["SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "APOLLOHOSP", "TORNTPHARM", "AUROPHARMA"],
-    "FMCG": ["ITC", "HINDUNILVR", "BRITANNIA", "NESTLEIND", "VBL", "TATACONSUM", "GODREJCP", "DABUR"],
-    "METAL": ["TATASTEEL", "JSWSTEEL", "HINDALCO", "COALINDIA", "VEDL", "NMDC", "SAIL"],
-    "ENERGY/INFRA": ["RELIANCE", "NTPC", "POWERGRID", "ONGC", "BPCL", "LT", "ADANIPORTS", "ADANIENT"],
-    "REALTY/MEDIA": ["DLF", "LODHA", "OBEROIRLTY", "SUNTV", "ZEEL", "PVRINOX"]
+    "BANKING": ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "KOTAKBANK"],
+    "IT": ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM"],
+    "AUTO": ["TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "EICHERMOT"],
+    "ENERGY": ["RELIANCE", "NTPC", "POWERGRID", "ONGC", "BPCL"],
+    "OTHERS": ["ITC", "LT", "BAJFINANCE", "TATASTEEL", "BHARTIARTL"]
 }
 all_stocks = [s for sub in sector_map.values() for s in sub]
 
 # =============================
 # CORE FUNCTIONS
 # =============================
-def get_data(stock, period="1y", interval="1d"):
+def get_clean_data(stock, period="1y", interval="1d"):
     try:
         df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
         if df.empty: return None
-        df.index = df.index.tz_localize(None) 
+        df.index = df.index.tz_localize(None) # Timezone error fix
         return df.dropna()
     except: return None
 
 def add_indicators(df):
     df = df.copy()
-    # Indicators
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
     
@@ -57,59 +53,96 @@ def add_indicators(df):
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
     
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    
     df['Vol_Avg'] = df['Volume'].rolling(20).mean()
     df['Big_Player'] = df['Volume'] > (df['Vol_Avg'] * 3.5)
-    
     df['Bull_Rev'] = (df['RSI'].shift(1) < 30) & (df['RSI'] > 30)
     return df
 
 # =============================
-# UI LAYOUT
+# UI - TABS
 # =============================
-tab1, tab2, tab3 = st.tabs(["🔍 SECTOR-WISE SCANNER", "📈 ONE-DAY ANALYSIS", "📊 ALL SECTOR STATUS"])
+tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCANNER", "📊 30-DAY BACKTEST REPORT", "📈 CHART ANALYSIS"])
 
 with tab1:
-    selected_sector = st.selectbox("Select Sector to Scan:", list(sector_map.keys()))
-    if st.button(f"Scan {selected_sector}"):
-        results = []
-        with st.spinner(f"Scanning {selected_sector} Sector..."):
-            for s in sector_map[selected_sector]:
-                df = yf.Ticker(s + ".NS").history(period="2d", interval="15m")
-                if not df.empty:
-                    df = add_indicators(df)
-                    last = df.iloc[-1]
-                    status = "WAIT"
-                    if last['Close'] > last['VWAP'] and last['EMA20'] > last['EMA50']: status = "🚀 STRONG BUY"
+    col_sel, col_btn = st.columns([1, 4])
+    with col_sel:
+        s_sec = st.selectbox("Select Sector", list(sector_map.keys()))
+    
+    if st.button(f"🚀 SCAN {s_sec}"):
+        live_results = []
+        with st.spinner("Analyzing Live Entry Points..."):
+            for s in sector_map[s_sec]:
+                df_l = yf.Ticker(s + ".NS").history(period="2d", interval="15m")
+                if not df_l.empty:
+                    df_l.index = df_l.index.tz_convert(IST)
+                    df_l = add_indicators(df_l)
+                    last = df_l.iloc[-1]
                     
-                    results.append({"STOCK": s, "PRICE": round(last['Close'], 2), "SIGNAL": status, "RSI": round(last['RSI'], 2)})
-        st.table(pd.DataFrame(results))
+                    price = round(last['Close'], 2)
+                    sig = "WAIT"
+                    sl, tgt = 0, 0
+                    
+                    if last['Close'] > last['VWAP'] and last['EMA20'] > last['EMA50']:
+                        sig = "🚀 STRONG BUY"
+                        sl = round(price * 0.99, 2)
+                        tgt = round(price * 1.02, 2)
+                    
+                    live_results.append({
+                        "STOCK": s, "TIME": df_l.index[-1].strftime('%H:%M'),
+                        "ENTRY": price, "SIGNAL": sig, "STOPLOSS": sl, "TARGET": tgt,
+                        "ALERT": "🐋 BIG FISH" if last['Big_Player'] else "Normal"
+                    })
+        if live_results:
+            st.dataframe(pd.DataFrame(live_results), use_container_width=True)
 
 with tab2:
-    selected_stock = st.selectbox("Select Stock for Chart:", all_stocks)
-    c_df = get_data(selected_stock)
+    st.header("📊 Historical Backtest Report")
+    st.info("గత 30 రోజుల్లో ఈ స్ట్రాటజీ ప్రకారం వచ్చిన పక్కా ఎంట్రీలు కింద టేబుల్‌లో చూడవచ్చు.")
+    
+    if st.button("📈 GENERATE BACKTEST REPORT"):
+        back_logs = []
+        with st.spinner("Fetching Historical Back Data..."):
+            for s in all_stocks:
+                df_b = get_clean_data(s, period="2mo", interval="1d")
+                if df_b is not None:
+                    df_b = add_indicators(df_b)
+                    # కండిషన్: Big Player Entry లేదా Strong Bullish ట్రెండ్
+                    hits = df_b[(df_b['Big_Player']) | (df_b['Bull_Rev'])]
+                    for idx, row in hits.tail(5).iterrows():
+                        back_logs.append({
+                            "DATE": idx.strftime('%Y-%m-%d'),
+                            "STOCK": s,
+                            "ENTRY PRICE": round(row['Close'], 2),
+                            "STOPLOSS": round(row['Close'] * 0.99, 2),
+                            "TARGET": round(row['Close'] * 1.02, 2),
+                            "SIGNAL TYPE": "🐋 BIG PLAYER" if row['Big_Player'] else "🔄 REVERSAL"
+                        })
+        
+        if back_logs:
+            report_df = pd.DataFrame(back_logs)
+            st.success(f"మొత్తం {len(report_df)} ఎంట్రీలు దొరికాయి.")
+            st.dataframe(report_df, use_container_width=True)
+        else:
+            st.warning("గత 30 రోజుల్లో సిగ్నల్స్ ఏవీ దొరకలేదు.")
+
+with tab3:
+    st.header("📈 Technical Chart Analysis")
+    sel_stock = st.selectbox("Select Stock:", all_stocks)
+    c_df = get_clean_data(sel_stock)
     if c_df is not None:
         c_df = add_indicators(c_df)
+        last_val = round(c_df.iloc[-1]['Close'], 2)
+        
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=c_df.index, open=c_df['Open'], high=c_df['High'], low=c_df['Low'], close=c_df['Close'], name="Daily"))
         
-        # Big Player Entry (🟡 Yellow Diamond)
-        big_p = c_df[c_df['Big_Player']]
-        fig.add_trace(go.Scatter(x=big_p.index, y=big_p['Low']*0.98, mode='markers', marker=dict(symbol='diamond', size=10, color='yellow'), name="Big Player"))
+        # SL & Target Visuals
+        fig.add_hline(y=last_val * 1.02, line_dash="dash", line_color="green", annotation_text="Target (2%)")
+        fig.add_hline(y=last_val * 0.99, line_dash="dash", line_color="red", annotation_text="SL (1%)")
         
-        fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False, title=f"{selected_stock} Trend")
+        # Markers
+        big_entry = c_df[c_df['Big_Player']]
+        fig.add_trace(go.Scatter(x=big_entry.index, y=big_entry['Low']*0.98, mode='markers', marker=dict(symbol='diamond', size=10, color='yellow'), name="Big Player"))
+        
+        fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
-
-with tab3:
-    st.info("ప్రస్తుతం మార్కెట్‌లో ఏ సెక్టార్ బలంగా ఉందో ఇక్కడ చూడవచ్చు.")
-    if st.button("Check All Sectors"):
-        sector_results = []
-        for sec, stk_list in sector_map.items():
-            # సెక్టార్‌లోని మొదటి స్టాక్‌ను బట్టి సెక్టార్ మూడ్‌ని అంచనా వేయడం
-            test_df = get_data(stk_list[0], period="5d", interval="1d")
-            if test_df is not None:
-                test_df = add_indicators(test_df)
-                last_val = test_df.iloc[-1]
-                mood = "🟢 BULLISH" if last_val['Close'] > last_val['EMA20'] else "🔴 BEARISH"
-                sector_results.append({"SECTOR": sec, "MOOD": mood, "TOP STOCK": stk_list[0]})
-        st.table(pd.DataFrame(sector_results))
