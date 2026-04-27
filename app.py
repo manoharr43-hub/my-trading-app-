@@ -14,7 +14,7 @@ st.title("🚀 NSE AI PRO DASHBOARD V7")
 st.markdown("---")
 
 # =============================
-# STOCK LIST (మీరు మరిన్ని యాడ్ చేసుకోవచ్చు)
+# STOCK LIST
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
@@ -24,11 +24,10 @@ stocks = [
 ]
 
 # =============================
-# DATA LOADER (WITH CACHE FOR SPEED)
+# DATA LOADER
 # =============================
 def get_data(stock):
     try:
-        # 15 min interval for Intraday clarity
         df = yf.Ticker(stock + ".NS").history(period="5d", interval="15m")
         if df is None or df.empty:
             return None
@@ -37,7 +36,7 @@ def get_data(stock):
         return None
 
 # =============================
-# ADVANCED INDICATORS (VWAP & MACD)
+# ADVANCED INDICATORS
 # =============================
 def add_indicators(df):
     # EMA
@@ -51,7 +50,7 @@ def add_indicators(df):
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # VWAP (Volume Weighted Average Price)
+    # VWAP
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
     
     # MACD
@@ -63,32 +62,18 @@ def add_indicators(df):
     return df
 
 # =============================
-# ENHANCED AI SCORE (100% SCALE)
+# AI SCORE & SIGNAL ENGINE
 # =============================
 def calculate_ai_score(df):
     score = 0
     last = df.iloc[-1]
-    
-    # Trend Score (EMA)
     if last['EMA20'] > last['EMA50']: score += 20
-    
-    # Momentum Score (RSI)
     if 40 < last['RSI'] < 70: score += 20
-    
-    # Volume Score
     if last['Volume'] > df['Volume'].rolling(20).mean().iloc[-1]: score += 20
-    
-    # VWAP Score (Price above VWAP is Bullish)
     if last['Close'] > last['VWAP']: score += 20
-    
-    # MACD Score
     if last['MACD'] > last['Signal_Line']: score += 20
-    
     return score
 
-# =============================
-# SMART SIGNAL ENGINE
-# =============================
 def get_signal(df, score):
     last = df.iloc[-1]
     if score >= 80 and last['Close'] > last['VWAP']:
@@ -125,8 +110,8 @@ if st.button("🔍 RUN AI SCANNER"):
                     "VWAP": round(df['VWAP'].iloc[-1], 2),
                     "RSI": round(df['RSI'].iloc[-1], 1),
                     "ENTRY": curr_price,
-                    "STOPLOSS": round(curr_price * 0.985, 2), # 1.5% SL
-                    "TARGET": round(curr_price * 1.03, 2)     # 3% Target
+                    "STOPLOSS": round(curr_price * 0.985, 2),
+                    "TARGET": round(curr_price * 1.03, 2)
                 })
 
     if data_results:
@@ -135,14 +120,25 @@ if st.button("🔍 RUN AI SCANNER"):
         # UI Styling
         def style_signal(val):
             color = 'white'
-            if "BUY" in val: bg = '#008000' # Green
-            elif "SELL" in val: bg = '#FF0000' # Red
+            if "BUY" in val: bg = '#008000'
+            elif "SELL" in val: bg = '#FF0000'
             else: bg = '#333333'; color = '#aaaaaa'
             return f'background-color: {bg}; color: {color}; font-weight: bold'
 
-        st.subheader("📊 REAL-TIME SIGNALS")
-        st.table(res_df.style.applymap(style_signal, subset=['SIGNAL']))
+        # --- ఇక్కడి నుండి కొత్త మార్పులు ---
         
+        st.subheader("📊 REAL-TIME SIGNALS")
+        # మెయిన్ టేబుల్ - కేవలం ముఖ్యమైన వివరాలు మాత్రమే
+        main_display = res_df[["STOCK", "PRICE", "SIGNAL", "ENTRY", "STOPLOSS", "TARGET"]]
+        st.table(main_display.style.applymap(style_signal, subset=['SIGNAL']))
+        
+        # క్లిక్ చేస్తే ఓపెన్ అయ్యే డీటెయిల్ సెక్షన్ (Accordion / Expander)
+        with st.expander("🔍 Click to see AI Analysis & Indicator Details (RSI, VWAP, Score)"):
+            st.info("ఇక్కడ మీరు ప్రతీ స్టాక్ యొక్క లోతైన విశ్లేషణను చూడవచ్చు.")
+            st.dataframe(res_df[["STOCK", "AI SCORE", "RSI", "VWAP"]], use_container_width=True)
+            
+        # --- కొత్త మార్పులు ముగిశాయి ---
+
         # Charting Section
         st.markdown("---")
         selected = st.selectbox("Select stock to view Chart:", stocks)
