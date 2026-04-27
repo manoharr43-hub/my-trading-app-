@@ -9,13 +9,13 @@ import pytz
 # =============================
 # CONFIG & REFRESH
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V9.7 - FIXED", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V9.8 - FIXED", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone('Asia/Kolkata')
 current_time = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
 
-st.title("🚀 NSE AI PRO V9.7 - ULTIMATE TRACKER")
+st.title("🚀 NSE AI PRO V9.8 - ULTIMATE TRACKER")
 st.write(f"🕒 **Current Market Sync (IST):** {current_time}")
 st.markdown("---")
 
@@ -170,9 +170,10 @@ with tab1:
             st.warning("⚠️ No data found / API issue")
 
 # =============================
-# BACKTEST
+# BACKTEST (DATE FILTER)
 # =============================
 with tab2:
+    bt_date = st.date_input("📅 Select Backtest Date", datetime.now(IST).date())
     if st.button("📈 RUN BACKTEST", key="backtest_btn"):
         logs = []
         for s in stocks:
@@ -181,6 +182,8 @@ with tab2:
                 if df is None or len(df) < 50:
                     continue
                 df = add_indicators(df)
+                # ✅ Date filter
+                df = df[df.index.date == bt_date]
                 for i in range(50, len(df)):
                     score = calculate_ai_score(df.iloc[:i+1])
                     if score >= 80:
@@ -196,7 +199,7 @@ with tab2:
         if logs:
             st.dataframe(pd.DataFrame(logs), use_container_width=True)
         else:
-            st.warning("No signals found")
+            st.warning("⚠️ No signals found for selected date")
 
 # =============================
 # CHART
@@ -216,10 +219,4 @@ if df is not None:
     ))
     fig.add_trace(go.Scatter(
         x=df.index,
-        y=df['VWAP'],
-        name="VWAP"
-    ))
-    fig.update_layout(template="plotly_dark", height=600)
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("Chart data not available")
+        y=df['VW
