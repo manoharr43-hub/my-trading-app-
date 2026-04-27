@@ -28,11 +28,11 @@ stocks = [
 ]
 
 # =============================
-# DATA FETCH
+# DATA FETCH (UPDATED - PERIOD SUPPORT)
 # =============================
-def get_data(stock, interval):
+def get_data(stock, interval, period="5d"):
     try:
-        df = yf.Ticker(stock + ".NS").history(period="5d", interval=interval)
+        df = yf.Ticker(stock + ".NS").history(period=period, interval=interval)
         if df is None or df.empty:
             return None
         df.index = df.index.tz_convert(IST)
@@ -89,7 +89,7 @@ def smart_money(df):
     return ""
 
 # =============================
-# SIGNAL (UPDATED)
+# SIGNAL
 # =============================
 def signal(score):
     if score >= 80: return "🚀 STRONG BUY"
@@ -160,7 +160,7 @@ with tab1:
             st.warning("No strong signals")
 
 # =============================
-# BACKTEST (FIXED)
+# BACKTEST (FIXED FULL DAY)
 # =============================
 with tab2:
 
@@ -174,13 +174,16 @@ with tab2:
 
         for s in stocks:
 
-            df = get_data(s, "15m")
+            # ✅ FIX: 1 MONTH DATA
+            df = get_data(s, "15m", period="1mo")
 
             if df is None or len(df) < 50:
                 continue
 
             df = add_indicators(df)
-            df = df[df.index.strftime('%Y-%m-%d') == str(bt_date)]
+
+            # ✅ FIX: CORRECT DATE FILTER
+            df = df[df.index.date == bt_date]
 
             if len(df) < 20:
                 continue
@@ -190,10 +193,10 @@ with tab2:
                 sc = ai_score(df.iloc[:i+1])
                 sig = signal(sc)
 
-                # ✅ BUY / SELL logic FIX
                 entry = df.iloc[i]['Close']
                 next_price = df.iloc[i+1]['Close']
 
+                # ✅ FIX: BUY/SELL LOGIC
                 if "BUY" in sig:
                     result = "WIN" if next_price > entry else "LOSS"
                 elif "SELL" in sig:
