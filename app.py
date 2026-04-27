@@ -2,26 +2,26 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 import pytz
 from io import BytesIO
+from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🔥 NSE AI PRO V11 CLEAN", layout="wide")
+st.set_page_config(page_title="🔥 NSE AI PRO V11", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V11 - CLEAN VERSION")
-st.write(f"🕒 IST Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+st.title("🚀 NSE AI PRO V11 - PRO SYSTEM")
+st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 st.markdown("---")
 
 # =============================
-# STOCK LIST (STATIC SAFE)
+# STOCKS
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
@@ -30,24 +30,21 @@ stocks = [
 ]
 
 # =============================
-# DATA FETCH
+# DATA
 # =============================
 @st.cache_data(ttl=300)
 def get_data(symbol, interval="5m", period="5d"):
     try:
         df = yf.Ticker(symbol + ".NS").history(period=period, interval=interval)
-
         if df is None or df.empty:
             return None
 
-        # SAFE TIMEZONE FIX
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC").tz_convert(IST)
         else:
             df.index = df.index.tz_convert(IST)
 
         return df.dropna()
-
     except:
         return None
 
@@ -92,6 +89,16 @@ def ai_score(df):
     return score
 
 # =============================
+# SIGNAL
+# =============================
+def signal(score):
+    if score >= 80: return "🚀 STRONG BUY"
+    elif score >= 60: return "BUY"
+    elif score <= 20: return "💀 STRONG SELL"
+    elif score <= 40: return "SELL"
+    else: return "WAIT"
+
+# =============================
 # SMART MONEY
 # =============================
 def smart_money(df):
@@ -108,26 +115,13 @@ def smart_money(df):
     return ""
 
 # =============================
-# SIGNAL
-# =============================
-def signal(score):
-    if score >= 80: return "🚀 STRONG BUY"
-    elif score >= 60: return "BUY"
-    elif score <= 20: return "💀 STRONG SELL"
-    elif score <= 40: return "SELL"
-    else: return "WAIT"
-
-# =============================
-# EXCEL EXPORT
+# EXCEL
 # =============================
 def convert_excel(df):
     output = BytesIO()
-    try:
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
-        return output.getvalue()
-    except:
-        return None
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
 
 # =============================
 # TABS
@@ -149,7 +143,6 @@ with tab1:
             df15 = get_data(s, "15m")
             df1h = get_data(s, "1h")
 
-            # SAFE CHECK
             if any(x is None or x.empty for x in [df5, df15, df1h]):
                 continue
 
@@ -192,7 +185,7 @@ with tab1:
 # =============================
 with tab2:
 
-    date = st.date_input("Select Date")
+    date = st.date_input("📅 Select Date")
 
     if st.button("📈 RUN BACKTEST"):
 
@@ -203,27 +196,34 @@ with tab2:
         for s in stocks:
 
             df = get_data(s, "5m", "7d")
+
             if df is None or df.empty:
                 continue
 
             df = add_indicators(df)
-            df = df[df.index.date == date]
 
-            if len(df) < 20:
+            df = df[df.index.date == date]
+            df = df.between_time("09:15", "15:30")
+
+            if len(df) < 30:
                 continue
 
             for i in range(20, len(df)-1):
 
-                sc = ai_score(df.iloc[:i+1])
+                temp = df.iloc[:i+1]
+
+                sc = ai_score(temp)
                 sig = signal(sc)
 
-                entry = df.iloc[i]['Close']
+                entry = temp.iloc[-1]['Close']
                 next_p = df.iloc[i+1]['Close']
 
-                if "BUY" in sig:
+                if sig in ["BUY", "🚀 STRONG BUY"]:
                     res = "WIN" if next_p > entry else "LOSS"
-                elif "SELL" in sig:
+
+                elif sig in ["SELL", "💀 STRONG SELL"]:
                     res = "WIN" if next_p < entry else "LOSS"
+
                 else:
                     continue
 
@@ -233,22 +233,57 @@ with tab2:
                 total += 1
 
                 logs.append({
+                    "TIME": df.index[i].strftime('%H:%M'),
                     "STOCK": s,
+                    "SIGNAL": sig,
                     "ENTRY": round(entry,2),
                     "NEXT": round(next_p,2),
                     "RESULT": res
                 })
 
         if logs:
-            df = pd.DataFrame(logs)
+
+            df_logs = pd.DataFrame(logs)
             acc = (wins/total)*100 if total > 0 else 0
 
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df_logs, use_container_width=True)
             st.metric("🎯 Accuracy", f"{acc:.2f}%")
+            st.success(f"Total Trades: {total}")
 
-            excel = convert_excel(df)
-            if excel:
-                st.download_button("📥 Download Excel", excel, "backtest.xlsx")
+            excel = convert_excel(df_logs)
+            st.download_button("📥 Download Excel", excel, "backtest.xlsx")
 
         else:
             st.warning("No trades found")
+
+# =============================
+# CHART
+# =============================
+st.markdown("---")
+
+stock_sel = st.selectbox("📊 Chart View", stocks)
+df_chart = get_data(stock_sel, "15m")
+
+if df_chart is not None:
+
+    df_chart = add_indicators(df_chart)
+
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['Open'],
+        high=df_chart['High'],
+        low=df_chart['Low'],
+        close=df_chart['Close']
+    ))
+
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA20'], name="EMA20"))
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['EMA50'], name="EMA50"))
+    fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['VWAP'], name="VWAP"))
+
+    fig.update_layout(height=600, template="plotly_dark")
+
+    st.plotly_chart(fig, use_container_width=True)
