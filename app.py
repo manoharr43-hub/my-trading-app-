@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 import pytz, io
 from streamlit_autorefresh import st_autorefresh
@@ -9,38 +8,79 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V45", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V47", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V45 - LIVE + BACKTEST + BIG MOVE")
-st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+st.title("🚀 NSE AI PRO V47 - NSE200 PRO SYSTEM")
+st.write(f"🕒 Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
-# STOCK LIST
+# NSE 200 STOCKS
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","LT","ITC","HINDUNILVR",
-          "BAJFINANCE","TITAN","MARUTI","TATAMOTORS","ADANIENT","ADANIPORTS","WIPRO","HCLTECH","LTIM",
-          "BEL","DLF","INDUSINDBK","PNB","BANKBARODA","CANBK","YESBANK","ZOMATO"]
+stocks = [
+"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","BHARTIARTL","ITC","KOTAKBANK","LT",
+"HINDUNILVR","ASIANPAINT","AXISBANK","MARUTI","SUNPHARMA","TITAN","ULTRACEMCO","WIPRO","NESTLEIND",
+"POWERGRID","NTPC","BAJFINANCE","BAJAJFINSV","ONGC","ADANIENT","ADANIPORTS","JSWSTEEL","TATASTEEL",
+"HCLTECH","TECHM","GRASIM","DIVISLAB","DRREDDY","CIPLA","BRITANNIA","EICHERMOT","HEROMOTOCO",
+"TATAMOTORS","M&M","COALINDIA","BPCL","IOC","SHREECEM","HAVELLS","SIEMENS","DLF","PIDILITIND",
+"INDUSINDBK","BANKBARODA","PNB","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO",
+"BEL","LTIM","ABB","ABCAPITAL","ABFRL","ACC","ADANIGREEN","ADANITRANS","ALKEM","AMBUJACEM",
+"APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASTRAL","ATUL","AUROPHARMA","BAJAJHLDNG","BALKRISIND",
+"BANDHANBNK","BERGEPAINT","BIOCON","BOSCHLTD","CHOLAFIN","COLPAL","CONCOR","CROMPTON","DABUR",
+"DALBHARAT","DEEPAKNTR","DELHIVERY","ESCORTS","EXIDEIND","GAIL","GLENMARK","GMRINFRA",
+"GNFC","GODREJCP","GODREJPROP","HAL","HINDALCO","HINDCOPPER","ICICIGI","ICICIPRULI",
+"IGL","INDIGO","INDUSTOWER","IRCTC","JINDALSTEL","JSWENERGY","JUBLFOOD","LALPATHLAB",
+"LICHSGFIN","LUPIN","MARICO","MFSL","MGL","MPHASIS","MUTHOOTFIN","NAM-INDIA",
+"NAUKRI","NMDC","OBEROIRLTY","OFSS","PAGEIND","PEL","PETRONET","PIIND",
+"POLYCAB","PVRINOX","RAMCOCEM","RECLTD","SAIL","SBICARD","SBILIFE","SRF",
+"SUNTV","SYNGENE","TATACHEM","TATACOMM","TATAELXSI","TORNTPHARM","TORNTPOWER",
+"TRENT","TVSMOTOR","UBL","UNIONBANK","UPL","VEDL","VOLTAS","WHIRLPOOL","ZYDUSLIFE"
+]
 
 # =============================
 # INDICATORS
 # =============================
-def indicators(df):
+def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    
+
     tr = pd.concat([
         df['High'] - df['Low'],
         abs(df['High'] - df['Close'].shift()),
         abs(df['Low'] - df['Close'].shift())
     ], axis=1).max(axis=1)
-    
+
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     return df
+
+# =============================
+# PULLBACK LOGIC
+# =============================
+def get_pullback(close, ema20, vwap, prev_close):
+    dist = abs(close - ema20) / ema20
+
+    if dist < 0.004:
+        if close > ema20 and close > vwap:
+            return "SUPPORT BUY 🟢"
+        elif close < ema20 and close < vwap:
+            return "RESIST SELL 🔴"
+    elif prev_close < ema20 and close > ema20:
+        return "RECENT BUY 🔼"
+    elif prev_close > ema20 and close < ema20:
+        return "RECENT SELL 🔽"
+    return None
+
+# =============================
+# FILTER
+# =============================
+def best_trade(row):
+    body = abs(row['Close'] - row['Open'])
+    rng = row['High'] - row['Low']
+    return body > rng*0.5 and row['Volume'] > row['VolAvg']*2 and row['ATR'] > row['Close']*0.002
 
 # =============================
 # FETCH
@@ -52,9 +92,9 @@ def get_data():
 data = get_data()
 
 # =============================
-# EXCEL EXPORT
+# EXCEL
 # =============================
-def excel(df):
+def to_excel(df):
     output = io.BytesIO()
     df.to_excel(output, index=False)
     return output.getvalue()
@@ -62,136 +102,90 @@ def excel(df):
 # =============================
 # TABS
 # =============================
-tab1, tab2, tab3 = st.tabs(["🔴 LIVE", "📊 PULLBACK BACKTEST", "🔥 BIG MOVE BACKTEST"])
+tab1, tab2 = st.tabs(["🔴 LIVE", "📊 BACKTEST"])
 
 # =============================
-# LIVE SCAN
+# LIVE
 # =============================
 with tab1:
-    if st.button("RUN LIVE"):
-        res = []
+    if st.button("RUN LIVE NSE200"):
+        out = []
 
         for s in stocks:
             try:
-                df = data[s+".NS"].dropna()
-                df = indicators(df)
+                df = add_indicators(data[s+".NS"].dropna())
+                l, prev = df.iloc[-1], df.iloc[-2]
 
-                last = df.iloc[-1]
-                dist = abs(last['Close'] - last['EMA20']) / last['EMA20']
+                pull = get_pullback(l['Close'], l['EMA20'], l['VWAP'], prev['Close'])
 
-                if dist < 0.004:
-                    signal = None
+                if pull:
+                    sig = "BUY" if "BUY" in pull else "SELL"
 
-                    if last['Close'] > last['VWAP']:
-                        signal = "BUY"
-                    elif last['Close'] < last['VWAP']:
-                        signal = "SELL"
+                    if best_trade(l):
+                        entry = round(l['Close'],2)
 
-                    if signal:
-                        entry = round(last['Close'],2)
-
-                        res.append({
+                        out.append({
                             "TIME": df.index[-1].tz_convert(IST).strftime('%H:%M'),
                             "STOCK": s,
-                            "SIGNAL": signal,
+                            "SIGNAL": sig,
+                            "PULLBACK": pull,
                             "ENTRY": entry,
-                            "SL": round(entry - last['ATR']*1.5 if signal=="BUY" else entry + last['ATR']*1.5,2),
-                            "TGT": round(entry + last['ATR']*3 if signal=="BUY" else entry - last['ATR']*3,2),
-                            "BIG": "🔥" if last['Volume'] > last['VolAvg']*2 else "-"
+                            "SL": round(entry - l['ATR']*1.5 if sig=="BUY" else entry + l['ATR']*1.5,2),
+                            "TGT": round(entry + l['ATR']*3 if sig=="BUY" else entry - l['ATR']*3,2),
+                            "BIG MOVE": "🔥" if l['Volume'] > l['VolAvg']*2.5 else "NO"
                         })
             except:
                 continue
 
-        if res:
-            df = pd.DataFrame(res)
-            st.dataframe(df, use_container_width=True)
-            st.download_button("Download", excel(df), "live.xlsx")
+        if out:
+            df_out = pd.DataFrame(out)
+            st.dataframe(df_out, use_container_width=True)
+            st.download_button("📥 Download", to_excel(df_out), "NSE200_LIVE.xlsx")
         else:
-            st.warning("No signals")
+            st.warning("No Trades Found")
 
 # =============================
-# PULLBACK BACKTEST
+# BACKTEST
 # =============================
 with tab2:
     date = st.date_input("Select Date", now.date()-timedelta(days=1))
 
-    if st.button("RUN PULLBACK BT"):
+    if st.button("RUN BACKTEST NSE200"):
         logs = []
 
         for s in stocks:
             try:
                 df = data[s+".NS"].dropna()
                 df.index = df.index.tz_convert(IST)
-
-                df = df[df.index.date == date]
-                df = indicators(df)
+                df = add_indicators(df[df.index.date == date])
 
                 for i in range(20, len(df)):
-                    row = df.iloc[i]
-                    dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
+                    row, prev = df.iloc[i], df.iloc[i-1]
 
-                    if dist < 0.004:
-                        sig = None
-                        if row['Close'] > row['VWAP']:
-                            sig = "BUY"
-                        elif row['Close'] < row['VWAP']:
-                            sig = "SELL"
+                    pull = get_pullback(row['Close'], row['EMA20'], row['VWAP'], prev['Close'])
 
-                        if sig:
-                            entry = row['Close']
+                    if pull:
+                        sig = "BUY" if "BUY" in pull else "SELL"
+
+                        if best_trade(row):
+                            entry = round(row['Close'],2)
 
                             logs.append({
                                 "TIME": df.index[i].strftime('%H:%M'),
                                 "STOCK": s,
-                                "TYPE": sig,
-                                "PRICE": entry
+                                "SIGNAL": sig,
+                                "PULLBACK": pull,
+                                "ENTRY": entry,
+                                "SL": round(entry - row['ATR']*1.5 if sig=="BUY" else entry + row['ATR']*1.5,2),
+                                "TGT": round(entry + row['ATR']*3 if sig=="BUY" else entry - row['ATR']*3,2),
+                                "BIG MOVE": "🔥" if row['Volume'] > row['VolAvg']*2.5 else "NO"
                             })
             except:
                 continue
 
         if logs:
-            df = pd.DataFrame(logs)
-            st.dataframe(df)
-            st.download_button("Download", excel(df), "pullback.xlsx")
-
-# =============================
-# BIG MOVE BACKTEST
-# =============================
-with tab3:
-    date2 = st.date_input("Big Move Date", now.date()-timedelta(days=1))
-
-    if st.button("RUN BIG MOVE"):
-        logs = []
-
-        for s in stocks:
-            try:
-                df = data[s+".NS"].dropna()
-                df.index = df.index.tz_convert(IST)
-
-                df = df[df.index.date == date2]
-                df = indicators(df)
-
-                for i in range(30, len(df)):
-                    row = df.iloc[i]
-
-                    body = abs(row['Close'] - row['Open'])
-                    rng = row['High'] - row['Low']
-
-                    breakout_up = row['Close'] > df['High'].iloc[i-10:i].max()
-                    breakout_dn = row['Close'] < df['Low'].iloc[i-10:i].min()
-
-                    vol = row['Volume'] > row['VolAvg']*2
-
-                    if body > rng*0.6 and vol:
-                        if breakout_up:
-                            logs.append({"TIME":df.index[i].strftime('%H:%M'),"STOCK":s,"TYPE":"BUY 🚀"})
-                        elif breakout_dn:
-                            logs.append({"TIME":df.index[i].strftime('%H:%M'),"STOCK":s,"TYPE":"SELL 🔻"})
-
-            except:
-                continue
-
-        if logs:
-            df = pd.DataFrame(logs)
-            st.dataframe(df)
-            st.download_button("Download", excel(df), "bigmove.xlsx")
+            df_log = pd.DataFrame(logs)
+            st.dataframe(df_log, use_container_width=True)
+            st.download_button("📥 Download", to_excel(df_log), "NSE200_BACKTEST.xlsx")
+        else:
+            st.warning("No Trades Found")
