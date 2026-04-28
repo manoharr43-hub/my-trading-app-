@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V51.3", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V51.4", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V51.3 - TIME LOCKED ENGINE")
+st.title("🚀 NSE AI PRO V51.4 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST (NSE)
