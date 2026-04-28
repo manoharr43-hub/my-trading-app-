@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.7", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.8", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.7 - TIME LOCKED ENGINE")
+st.title("🚀 NSE AI PRO V52.8 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST
@@ -204,45 +204,3 @@ with tab2:
                             if low <= sl:
                                 exit_price = sl
                                 exit_reason = "SL HIT"
-                            elif high >= target:
-                                exit_price = target
-                                exit_reason = "TARGET HIT"
-
-                        elif trade_type == "SELL":
-                            if high >= sl:
-                                exit_price = sl
-                                exit_reason = "SL HIT"
-                            elif low <= target:
-                                exit_price = target
-                                exit_reason = "TARGET HIT"
-
-                        if exit_reason:
-                            pnl = round(exit_price - entry_price, 2) if trade_type=="BUY" else round(entry_price - exit_price, 2)
-
-                            logs.append({
-                                "STOCK": s,
-                                "TYPE": trade_type,
-                                "ENTRY TIME": entry_time.strftime('%H:%M'),
-                                "EXIT TIME": time.strftime('%H:%M'),
-                                "ENTRY": round(entry_price,2),
-                                "EXIT": round(exit_price,2),
-                                "P&L": pnl,
-                                "RESULT": exit_reason
-                            })
-
-                            in_trade = False
-                            last_trade_time = time
-
-            except:
-                continue
-
-        df_logs = pd.DataFrame(logs)
-
-        if not df_logs.empty:
-            st.dataframe(df_logs, use_container_width=True)
-
-            total = len(df_logs)
-            wins = len(df_logs[df_logs["P&L"] > 0])
-            loss = len(df_logs[df_logs["P&L"] <= 0])
-
-            st.success(f"Total Trades: {total} | Wins
