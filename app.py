@@ -10,29 +10,40 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V55", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V56", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V55 - SMART MONEY AUTO SCANNER")
-st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+# =============================
+# TITLE
+# =============================
+st.title("🚀 NSE AI PRO V56 - LIVE SMART MONEY SYSTEM")
 
 # =============================
-# STOCK LIST
+# MARKET STATUS
+# =============================
+def market_status():
+    t = datetime.now(IST).time()
+    if time(9,15) <= t <= time(15,30):
+        return "🟢 MARKET OPEN"
+    return "🔴 MARKET CLOSED"
+
+st.subheader(f"{market_status()} | LIVE TRADING DASHBOARD")
+
+# =============================
+# LIVE TIME DISPLAY
+# =============================
+st.info(f"🕒 CURRENT TIME (IST): {now.strftime('%H:%M:%S')}")
+
+# =============================
+# STOCKS
 # =============================
 stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","LT","ITC","AXISBANK","BAJFINANCE"]
 
 # =============================
-# MARKET TIME FILTER
-# =============================
-def market_open():
-    t = datetime.now(IST).time()
-    return time(9,15) <= t <= time(15,30)
-
-# =============================
-# DATA
+# DATA FETCH
 # =============================
 @st.cache_data(ttl=60)
 def fetch():
@@ -89,31 +100,31 @@ def ai_score(r):
     return min(100, max(0, score))
 
 # =============================
-# BIG PLAYER ENTRY (FIXED)
+# BIG PLAYER ENTRY
 # =============================
-def big_player(r, prev_high, prev_low):
+def big_player(r, high, low):
     if r["Volume"] > r["VolAvg"] * 2.5:
-        if r["Close"] > prev_high:
+        if r["Close"] > high:
             return "🔥 BIG BUY BREAKOUT"
-        elif r["Close"] < prev_low:
+        elif r["Close"] < low:
             return "🔴 BIG SELL BREAKDOWN"
         else:
             return "⚡ ACCUMULATION"
     return "-"
 
 # =============================
-# PULLBACK SIGNAL
+# SIGNAL LOGIC
 # =============================
-def signal(row):
-    if abs(row["Close"] - row["EMA20"]) / row["EMA20"] < 0.004:
-        if row["Close"] > row["VWAP"]:
+def signal(r):
+    if abs(r["Close"] - r["EMA20"]) / r["EMA20"] < 0.004:
+        if r["Close"] > r["VWAP"]:
             return "BUY 🟢"
-        elif row["Close"] < row["VWAP"]:
+        elif r["Close"] < r["VWAP"]:
             return "SELL 🔴"
     return None
 
 # =============================
-# SAFE TIME
+# SAFE TIME FIX
 # =============================
 def safe_time(t):
     t = pd.to_datetime(t)
@@ -123,7 +134,7 @@ def safe_time(t):
     return t.strftime("%H:%M")
 
 # =============================
-# EXCEL
+# EXCEL EXPORT
 # =============================
 def to_excel(df):
     output = io.BytesIO()
@@ -132,13 +143,15 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# LIVE SCAN (AUTO + MARKET TIME)
+# LIVE SCAN (ONLY MARKET TIME)
 # =============================
-if market_open():
+if market_status() == "🟢 MARKET OPEN":
 
-    if st.button("🚀 RUN LIVE SCAN"):
+    if st.button("🚀 RUN LIVE SCANNER"):
 
         results = []
+
+        last_i = {}
 
         for s in stocks:
             df = get_df(s)
@@ -148,16 +161,16 @@ if market_open():
             df = indicators(df)
             support, resistance = sr(df)
 
-            last_i = -999
+            last_i[s] = -999
 
             for i in range(20, len(df)):
                 row = df.iloc[i]
 
                 sig = signal(row)
 
-                if sig and (i - last_i > 10):  # cooldown
+                if sig and (i - last_i[s] > 10):
 
-                    last_i = i
+                    last_i[s] = i
 
                     results.append({
                         "TIME": safe_time(df.index[i]),
@@ -176,7 +189,7 @@ if market_open():
             df_res = pd.DataFrame(results)
             df_res = df_res.sort_values("AI_SCORE", ascending=False)
 
-            st.subheader("🏆 LIVE MARKET SCAN RESULTS")
+            st.subheader("🏆 LIVE SCANNER RESULTS")
             st.dataframe(df_res, use_container_width=True)
 
             st.download_button(
@@ -188,7 +201,7 @@ if market_open():
             st.warning("No signals found")
 
 else:
-    st.warning("⛔ Market Closed (9:15 AM - 3:30 PM Only)")
+    st.error("⛔ MARKET CLOSED (9:15 AM - 3:30 PM ONLY)")
 
 # =============================
 # BACKTEST SYSTEM
