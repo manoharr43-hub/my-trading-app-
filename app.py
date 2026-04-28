@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V53", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52 - STABLE SMART MONEY SYSTEM")
+st.title("🚀 NSE AI PRO V53 - NO DUPLICATE SIGNAL SYSTEM")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -25,7 +25,7 @@ st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","LT","ITC","AXISBANK","BAJFINANCE"]
 
 # =============================
-# DATA
+# FETCH DATA
 # =============================
 @st.cache_data(ttl=60)
 def fetch():
@@ -93,14 +93,12 @@ def pullback(r):
     return None
 
 # =============================
-# SAFE TIME FIX (NO CRASH)
+# SAFE TIME
 # =============================
 def safe_time(t):
     t = pd.to_datetime(t)
-
     if t.tz is None:
         t = t.tz_localize("UTC")
-
     t = t.tz_convert("Asia/Kolkata")
     return t.strftime("%H:%M")
 
@@ -114,11 +112,13 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# LIVE SCAN (FULL DAY)
+# LIVE SCAN (ANTI DUPLICATE FIX)
 # =============================
-if st.button("🚀 RUN LIVE FULL SCAN"):
+if st.button("🚀 RUN LIVE SCAN (NO DUPLICATES)"):
 
     results = []
+
+    last_signal_index = {}
 
     for s in stocks:
         df = get_df(s)
@@ -128,12 +128,19 @@ if st.button("🚀 RUN LIVE FULL SCAN"):
         df = indicators(df)
         support, resistance = sr(df)
 
+        last_signal_index[s] = -999
+
         for i in range(20, len(df)):
             row = df.iloc[i]
 
             signal = pullback(row)
 
+            # 🔥 COOLDOWN (NO REPEAT SIGNAL)
             if signal:
+                if i - last_signal_index[s] < 12:   # ~1 hour approx
+                    continue
+
+                last_signal_index[s] = i
 
                 results.append({
                     "TIME": safe_time(df.index[i]),
@@ -151,19 +158,19 @@ if st.button("🚀 RUN LIVE FULL SCAN"):
         df_res = pd.DataFrame(results)
         df_res = df_res.sort_values("AI_SCORE", ascending=False)
 
-        st.subheader("🏆 LIVE FULL DAY SCAN")
+        st.subheader("🏆 LIVE SCAN RESULTS (NO DUPLICATES)")
         st.dataframe(df_res, use_container_width=True)
 
         st.download_button(
             "📥 DOWNLOAD LIVE EXCEL",
             data=to_excel(df_res),
-            file_name=f"live_scan_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+            file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
         )
     else:
         st.warning("No signals found")
 
 # =============================
-# BACKTEST (FIXED TIME + SR)
+# BACKTEST (NO REPEAT FIX)
 # =============================
 st.subheader("📊 BACKTEST SYSTEM")
 
@@ -191,12 +198,20 @@ if st.button("📊 RUN BACKTEST"):
 
         support, resistance = sr(df_day)
 
+        last_i = -999
+
         for i in range(20, len(df_day)):
             row = df_day.iloc[i]
 
             signal = pullback(row)
 
             if signal:
+
+                # 🔥 NO REPEAT BACKTEST SIGNALS
+                if i - last_i < 12:
+                    continue
+
+                last_i = i
 
                 logs.append({
                     "TIME": safe_time(df_day.index[i]),
@@ -210,7 +225,7 @@ if st.button("📊 RUN BACKTEST"):
     if logs:
         df_logs = pd.DataFrame(logs)
 
-        st.subheader("📊 BACKTEST RESULTS")
+        st.subheader("📊 BACKTEST RESULTS (CLEAN)")
         st.dataframe(df_logs, use_container_width=True)
 
         st.download_button(
