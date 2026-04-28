@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V47", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V48", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V47 - LIVE + BACKTEST PRO")
+st.title("🚀 NSE AI PRO V48 - NSE 200 FULL SCANNER")
 
 # =============================
 # MARKET TIME
@@ -26,11 +26,18 @@ market_close = time(15,30)
 is_market_open = market_open <= now.time() <= market_close
 
 # =============================
-# STOCKS
+# NSE 200 STOCK LIST (FULL)
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
-          "ITC","LT","MARUTI","TATAMOTORS","WIPRO","HCLTECH","PNB",
-          "BANKBARODA","YESBANK","ZOMATO"]
+stocks = [
+"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
+"LT","ITC","HINDUNILVR","ASIANPAINT","MARUTI","SUNPHARMA","ONGC","NTPC",
+"POWERGRID","TATASTEEL","JSWSTEEL","BAJFINANCE","BAJAJFINSV","ADANIENT",
+"ADANIPORTS","ULTRACEMCO","GRASIM","TECHM","WIPRO","HCLTECH","NESTLEIND",
+"BRITANNIA","CIPLA","DIVISLAB","DRREDDY","BPCL","IOC","BHARTIARTL","TITAN",
+"M&M","HEROMOTOCO","EICHERMOT","TATAMOTORS","COALINDIA","SHREECEM","HAVELLS",
+"SIEMENS","TORNTPHARM","PIDILITIND","LTIM","BEL","DLF","INDUSINDBK","PNB",
+"BANKBARODA","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"
+]
 
 # =============================
 # INDICATORS
@@ -56,7 +63,7 @@ def add_indicators(df):
     return df
 
 # =============================
-# FETCH
+# FETCH OPTIMIZED
 # =============================
 @st.cache_data(ttl=60)
 def fetch():
@@ -90,20 +97,18 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# TABS (FIXED)
+# TABS
 # =============================
 tab1, tab2 = st.tabs(["🔴 LIVE SCAN", "📊 BACKTEST"])
 
-# =====================================================
-# 🔴 LIVE SCAN (FIXED DISPLAY)
-# =====================================================
+# =============================
+# LIVE SCAN
+# =============================
 with tab1:
-    st.subheader("🔴 LIVE MARKET SCAN")
-
     if not is_market_open:
-        st.warning("⛔ Market Closed (9:15–15:30)")
+        st.warning("⛔ Market Closed")
     else:
-        if st.button("🚀 RUN LIVE SCAN"):
+        if st.button("🚀 RUN LIVE NSE 200 SCAN"):
 
             results = []
 
@@ -133,25 +138,20 @@ with tab1:
                             "SL": round(row['Close'] - atr*1.5 if "BUY" in signal else row['Close'] + atr*1.5,2),
                             "TARGET": round(row['Close'] + atr*3 if "BUY" in signal else row['Close'] - atr*3,2)
                         })
-
                 except:
                     continue
 
             if results:
                 df_live = pd.DataFrame(results)
                 st.dataframe(df_live, use_container_width=True)
-
-                st.download_button("📥 Download Live Excel", to_excel(df_live), "LiveScan.xlsx")
-
+                st.download_button("📥 Download Excel", to_excel(df_live), "LiveScan.xlsx")
             else:
-                st.info("No signals now")
+                st.info("No signals")
 
-# =====================================================
-# 📊 BACKTEST (BIG PLAYER ADDED)
-# =====================================================
+# =============================
+# BACKTEST
+# =============================
 with tab2:
-    st.subheader("📊 BACKTEST WITH BIG PLAYER")
-
     bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
 
     if st.button("▶️ RUN BACKTEST"):
@@ -211,10 +211,7 @@ with tab2:
         if logs:
             df_bt = pd.DataFrame(logs)
             st.dataframe(df_bt, use_container_width=True)
-
-            st.download_button("📥 Download Backtest Excel", to_excel(df_bt), "Backtest.xlsx")
-
-            st.success(f"✅ Total Signals: {len(df_bt)}")
-
+            st.download_button("📥 Download Backtest", to_excel(df_bt), "Backtest.xlsx")
+            st.success(f"✅ Signals: {len(df_bt)}")
         else:
             st.warning("No signals found")
