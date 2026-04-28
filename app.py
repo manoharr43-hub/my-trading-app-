@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
 import io
@@ -10,22 +10,29 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V53", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V55", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V53 - NO DUPLICATE SIGNAL SYSTEM")
+st.title("🚀 NSE AI PRO V55 - SMART MONEY AUTO SCANNER")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
-# STOCKS
+# STOCK LIST
 # =============================
 stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","LT","ITC","AXISBANK","BAJFINANCE"]
 
 # =============================
-# FETCH DATA
+# MARKET TIME FILTER
+# =============================
+def market_open():
+    t = datetime.now(IST).time()
+    return time(9,15) <= t <= time(15,30)
+
+# =============================
+# DATA
 # =============================
 @st.cache_data(ttl=60)
 def fetch():
@@ -82,13 +89,26 @@ def ai_score(r):
     return min(100, max(0, score))
 
 # =============================
-# PULLBACK
+# BIG PLAYER ENTRY (FIXED)
 # =============================
-def pullback(r):
-    if abs(r["Close"] - r["EMA20"]) / r["EMA20"] < 0.004:
-        if r["Close"] > r["VWAP"]:
+def big_player(r, prev_high, prev_low):
+    if r["Volume"] > r["VolAvg"] * 2.5:
+        if r["Close"] > prev_high:
+            return "🔥 BIG BUY BREAKOUT"
+        elif r["Close"] < prev_low:
+            return "🔴 BIG SELL BREAKDOWN"
+        else:
+            return "⚡ ACCUMULATION"
+    return "-"
+
+# =============================
+# PULLBACK SIGNAL
+# =============================
+def signal(row):
+    if abs(row["Close"] - row["EMA20"]) / row["EMA20"] < 0.004:
+        if row["Close"] > row["VWAP"]:
             return "BUY 🟢"
-        elif r["Close"] < r["VWAP"]:
+        elif row["Close"] < row["VWAP"]:
             return "SELL 🔴"
     return None
 
@@ -112,65 +132,66 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# LIVE SCAN (ANTI DUPLICATE FIX)
+# LIVE SCAN (AUTO + MARKET TIME)
 # =============================
-if st.button("🚀 RUN LIVE SCAN (NO DUPLICATES)"):
+if market_open():
 
-    results = []
+    if st.button("🚀 RUN LIVE SCAN"):
 
-    last_signal_index = {}
+        results = []
 
-    for s in stocks:
-        df = get_df(s)
-        if df is None or len(df) < 50:
-            continue
+        for s in stocks:
+            df = get_df(s)
+            if df is None or len(df) < 50:
+                continue
 
-        df = indicators(df)
-        support, resistance = sr(df)
+            df = indicators(df)
+            support, resistance = sr(df)
 
-        last_signal_index[s] = -999
+            last_i = -999
 
-        for i in range(20, len(df)):
-            row = df.iloc[i]
+            for i in range(20, len(df)):
+                row = df.iloc[i]
 
-            signal = pullback(row)
+                sig = signal(row)
 
-            # 🔥 COOLDOWN (NO REPEAT SIGNAL)
-            if signal:
-                if i - last_signal_index[s] < 12:   # ~1 hour approx
-                    continue
+                if sig and (i - last_i > 10):  # cooldown
 
-                last_signal_index[s] = i
+                    last_i = i
 
-                results.append({
-                    "TIME": safe_time(df.index[i]),
-                    "STOCK": s,
-                    "SIGNAL": signal,
-                    "AI_SCORE": ai_score(row),
-                    "SUPPORT": support.iloc[i],
-                    "RESISTANCE": resistance.iloc[i],
-                    "ENTRY": row["Close"],
-                    "SL": row["Close"] - row["ATR"]*1.5 if "BUY" in signal else row["Close"] + row["ATR"]*1.5,
-                    "TARGET": row["Close"] + row["ATR"]*3 if "BUY" in signal else row["Close"] - row["ATR"]*3
-                })
+                    results.append({
+                        "TIME": safe_time(df.index[i]),
+                        "STOCK": s,
+                        "SIGNAL": sig,
+                        "AI_SCORE": ai_score(row),
+                        "BIG_PLAYER": big_player(row, resistance.iloc[i], support.iloc[i]),
+                        "SUPPORT": support.iloc[i],
+                        "RESISTANCE": resistance.iloc[i],
+                        "ENTRY": row["Close"],
+                        "SL": row["Close"] - row["ATR"]*1.5 if "BUY" in sig else row["Close"] + row["ATR"]*1.5,
+                        "TARGET": row["Close"] + row["ATR"]*3 if "BUY" in sig else row["Close"] - row["ATR"]*3
+                    })
 
-    if results:
-        df_res = pd.DataFrame(results)
-        df_res = df_res.sort_values("AI_SCORE", ascending=False)
+        if results:
+            df_res = pd.DataFrame(results)
+            df_res = df_res.sort_values("AI_SCORE", ascending=False)
 
-        st.subheader("🏆 LIVE SCAN RESULTS (NO DUPLICATES)")
-        st.dataframe(df_res, use_container_width=True)
+            st.subheader("🏆 LIVE MARKET SCAN RESULTS")
+            st.dataframe(df_res, use_container_width=True)
 
-        st.download_button(
-            "📥 DOWNLOAD LIVE EXCEL",
-            data=to_excel(df_res),
-            file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
-        )
-    else:
-        st.warning("No signals found")
+            st.download_button(
+                "📥 DOWNLOAD LIVE EXCEL",
+                data=to_excel(df_res),
+                file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+            )
+        else:
+            st.warning("No signals found")
+
+else:
+    st.warning("⛔ Market Closed (9:15 AM - 3:30 PM Only)")
 
 # =============================
-# BACKTEST (NO REPEAT FIX)
+# BACKTEST SYSTEM
 # =============================
 st.subheader("📊 BACKTEST SYSTEM")
 
@@ -203,20 +224,17 @@ if st.button("📊 RUN BACKTEST"):
         for i in range(20, len(df_day)):
             row = df_day.iloc[i]
 
-            signal = pullback(row)
+            sig = signal(row)
 
-            if signal:
-
-                # 🔥 NO REPEAT BACKTEST SIGNALS
-                if i - last_i < 12:
-                    continue
+            if sig and (i - last_i > 10):
 
                 last_i = i
 
                 logs.append({
                     "TIME": safe_time(df_day.index[i]),
                     "STOCK": s,
-                    "SIGNAL": signal,
+                    "SIGNAL": sig,
+                    "BIG_PLAYER": big_player(row, resistance.iloc[i], support.iloc[i]),
                     "SUPPORT": support.iloc[i],
                     "RESISTANCE": resistance.iloc[i],
                     "PRICE": row["Close"]
@@ -225,7 +243,7 @@ if st.button("📊 RUN BACKTEST"):
     if logs:
         df_logs = pd.DataFrame(logs)
 
-        st.subheader("📊 BACKTEST RESULTS (CLEAN)")
+        st.subheader("📊 BACKTEST RESULTS")
         st.dataframe(df_logs, use_container_width=True)
 
         st.download_button(
