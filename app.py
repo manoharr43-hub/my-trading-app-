@@ -5,18 +5,18 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from streamlit_autorefresh import st_autorefresh
-import io, os
+import io
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V45.1", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V45.3", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V45.1 - LIVE + BACKTEST + SECTOR + BIG MOVE")
+st.title("🚀 NSE AI PRO V45.3 - LIVE + BACKTEST + SECTOR + BIG MOVE")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -92,7 +92,7 @@ tab1, tab2, tab3 = st.tabs(["🔍 LIVE SCAN", "📊 BACKTEST", "🔥 BIG MOVE"])
 # LIVE SCAN
 # =============================
 with tab1:
-    if st.button("RUN LIVE SCAN"):
+    if st.button("RUN LIVE SCAN", key="live_btn"):
         results, sector_summary = [], {}
         for s in stocks:
             try:
@@ -141,7 +141,7 @@ with tab1:
 # =============================
 with tab2:
     bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
-    if st.button("RUN BACKTEST"):
+    if st.button("RUN BACKTEST", key="bt_btn"):
         logs = []
         for s in stocks:
             try:
@@ -182,7 +182,7 @@ with tab2:
 # BIG MOVE TAB
 # =============================
 with tab3:
-    if st.button("RUN BIG MOVE SCAN"):
+    if st.button("RUN BIG MOVE SCAN", key="bm_btn"):
         big_logs = []
         for s in stocks:
             try:
@@ -191,5 +191,4 @@ with tab3:
                 df = add_indicators(df.dropna())
                 l = df.iloc[-1]
                 if l["BigMove"] > 1 or l["VolSpike"] > 1.5:
-                    big_logs.append({
-                        "TIME": df.index[-1].astime
+                    big
