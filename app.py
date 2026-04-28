@@ -146,3 +146,44 @@ with tab2:
             st.dataframe(bt_df, use_container_width=True)
             st.download_button("📥 Download Excel Report", data=to_excel(bt_df), file_name=f"Backtest_{bt_date}.xlsx")
         else: st.warning("No signals found for this date.")
+            # =============================
+# TABS
+# =============================
+tab1, tab2, tab3 = st.tabs(["🔍 LIVE PULLBACK SCAN", "📊 BACKTEST & EXCEL", "🔥 BIG MOVE TABLE"])
+
+# -----------------------------
+# TAB 3: BIG MOVE TABLE
+# -----------------------------
+with tab3:
+    if st.button("RUN BIG MOVE SCAN"):
+        big_logs = []
+        for s in stocks:
+            try:
+                df_raw = data_5m.get(s + ".NS")
+                if df_raw is None or df_raw.empty: continue
+                df = add_indicators(df_raw.dropna())
+                l = df.iloc[-1]
+
+                # BIG MOVE condition → Strong volume + Trend confirmation
+                if l['Volume'] > l['VolAvg'] * 3:
+                    trend = "UP" if l['EMA20'] > l['EMA50'] else "DOWN"
+                    entry = round(l['Close'], 2)
+                    big_logs.append({
+                        "TIME": df.index[-1].astimezone(IST).strftime('%H:%M'),
+                        "STOCK": s,
+                        "TREND": trend,
+                        "ENTRY": entry,
+                        "VWAP": round(l['VWAP'], 2),
+                        "BIG PLAYER": "🔥 YES",
+                        "SL": round(entry - (l['ATR']*2) if trend=="UP" else entry + (l['ATR']*2), 2),
+                        "TGT": round(entry + (l['ATR']*4) if trend=="UP" else entry - (l['ATR']*4), 2)
+                    })
+            except: continue
+
+        if big_logs:
+            big_df = pd.DataFrame(big_logs)
+            st.dataframe(big_df, use_container_width=True)
+            st.download_button("📥 Download BIG MOVE Excel", data=to_excel(big_df), file_name=f"BigMove_{now.strftime('%Y%m%d_%H%M')}.xlsx")
+        else:
+            st.warning("No BIG MOVE signals found right now.")
+
