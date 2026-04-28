@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V48", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V49", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V48 - SMART MONEY AI SYSTEM")
+st.title("🚀 NSE AI PRO V49 - SMART MONEY AI SYSTEM")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -28,7 +28,7 @@ stocks = [
 ]
 
 # =============================
-# DATA FETCH
+# FETCH DATA
 # =============================
 @st.cache_data(ttl=60)
 def fetch_data():
@@ -71,7 +71,9 @@ def indicators(df):
 # SUPPORT / RESISTANCE
 # =============================
 def sr(df):
-    return df["Low"].rolling(20).min().iloc[-1], df["High"].rolling(20).max().iloc[-1]
+    support = df["Low"].rolling(20).min().iloc[-1]
+    resistance = df["High"].rolling(20).max().iloc[-1]
+    return support, resistance
 
 # =============================
 # AI SCORE
@@ -97,7 +99,8 @@ def big_player(r, df):
         return "🔴 BIG SELL BREAKDOWN"
     elif r["Volume"] > r["VolAvg"] * 2:
         return "⚡ ACCUMULATION"
-    return "-"
+    else:
+        return "-"
 
 # =============================
 # EXCEL
@@ -153,7 +156,6 @@ if st.button("🚀 RUN LIVE SCAN"):
 
     if results:
         df_res = pd.DataFrame(results)
-
         df_res = df_res.sort_values("AI_SCORE", ascending=False).head(10)
 
         st.subheader("🏆 TOP 10 STOCKS")
@@ -164,16 +166,25 @@ if st.button("🚀 RUN LIVE SCAN"):
             data=to_excel(df_res),
             file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
         )
-
     else:
         st.warning("No signals found")
 
 # =============================
-# BACKTEST
+# BACKTEST (FIXED DATE SELECT)
 # =============================
+st.subheader("📊 BACKTEST SECTION")
+
+bt_date = st.date_input(
+    "📅 Select Backtest Date",
+    value=now.date() - timedelta(days=1),
+    min_value=now.date() - timedelta(days=30),
+    max_value=now.date()
+)
+
+st.info(f"Selected Date: {bt_date}")
+
 if st.button("📊 RUN BACKTEST"):
 
-    bt_date = now.date() - timedelta(days=1)
     logs = []
 
     for s in stocks:
@@ -183,7 +194,7 @@ if st.button("📊 RUN BACKTEST"):
 
         df = indicators(df)
 
-        # FIXED DATE FILTER
+        # FIX DATE FILTER
         df["DATE"] = pd.to_datetime(df.index).date
         df_day = df[df["DATE"] == bt_date]
 
@@ -209,7 +220,7 @@ if st.button("📊 RUN BACKTEST"):
         st.dataframe(df_logs, use_container_width=True)
 
         st.download_button(
-            "📥 DOWNLOAD BACKTEST",
+            "📥 DOWNLOAD BACKTEST EXCEL",
             data=to_excel(df_logs),
             file_name=f"backtest_{bt_date}.xlsx"
         )
