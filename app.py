@@ -8,27 +8,25 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.5", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.6", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.5 - TIME LOCKED ENGINE")
+st.title("🚀 NSE AI PRO V52.6 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST
 # =============================
-stocks = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
-    "LT","ITC","HINDUNILVR","ASIANPAINT","MARUTI","SUNPHARMA","ONGC","NTPC",
-    "POWERGRID","TATASTEEL","JSWSTEEL","BAJFINANCE","BAJAJFINSV","ADANIENT",
-    "ADANIPORTS","ULTRACEMCO","GRASIM","TECHM","WIPRO","HCLTECH","NESTLEIND",
-    "BRITANNIA","CIPLA","DIVISLAB","DRREDDY","BPCL","IOC","BHARTIARTL","TITAN",
-    "M&M","HEROMOTOCO","EICHERMOT","TATAMOTORS","COALINDIA","HAVELLS",
-    "SIEMENS","PIDILITIND","BEL","DLF","INDUSINDBK","PNB","BANKBARODA",
-    "CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"
-]
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
+          "LT","ITC","HINDUNILVR","ASIANPAINT","MARUTI","SUNPHARMA","ONGC","NTPC",
+          "POWERGRID","TATASTEEL","JSWSTEEL","BAJFINANCE","BAJAJFINSV","ADANIENT",
+          "ADANIPORTS","ULTRACEMCO","GRASIM","TECHM","WIPRO","HCLTECH","NESTLEIND",
+          "BRITANNIA","CIPLA","DIVISLAB","DRREDDY","BPCL","IOC","BHARTIARTL","TITAN",
+          "M&M","HEROMOTOCO","EICHERMOT","TATAMOTORS","COALINDIA","HAVELLS",
+          "SIEMENS","PIDILITIND","BEL","DLF","INDUSINDBK","PNB","BANKBARODA",
+          "CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"]
 
 # =============================
 # INDICATORS
@@ -62,7 +60,6 @@ def analyze(row):
         trend_down = row['EMA20'] < row['EMA50']
 
         signal = None
-
         if dist < 0.004:
             if row['Close'] > row['VWAP'] and trend_up:
                 signal = "BUY"
@@ -85,71 +82,23 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# LIVE FETCH
-# =============================
-@st.cache_data(ttl=300)
-def fetch_live():
-    tickers = [s + ".NS" for s in stocks]
-    return yf.download(tickers, period="1d", interval="5m", group_by='ticker', progress=False)
-
-# =============================
-# UI
+# BACKTEST (STRICT DATE + TIME FIX)
 # =============================
 tab1, tab2 = st.tabs(["🔴 LIVE", "📊 BACKTEST"])
 
-# =============================
-# LIVE SCAN
-# =============================
-with tab1:
-    if st.button("RUN LIVE"):
-        data = fetch_live()
-        results = []
-
-        for s in stocks:
-            try:
-                df = data.get(s + ".NS")
-                df = add_indicators(df)
-                if df is None:
-                    continue
-
-                row = df.iloc[-1]
-                signal, bp, bm = analyze(row)
-
-                if signal:
-                    t = pd.to_datetime(df.index[-1], utc=True).tz_convert(IST)
-
-                    atr = row['ATR']
-
-                    results.append({
-                        "TIME": t.strftime('%H:%M'),
-                        "STOCK": s,
-                        "SIGNAL": signal,
-                        "BIG PLAYER": "🔥" if bp else "-",
-                        "BIG MOVE": "🚀" if bm else "-",
-                        "ENTRY": round(row['Close'], 2),
-                        "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5, 2),
-                        "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3, 2)
-                    })
-            except:
-                continue
-
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
-
-# =============================
-# BACKTEST (STRICT TIME FIX)
-# =============================
 with tab2:
-    bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
+    bt_date = st.date_input("Select Date", value=(now.date() - timedelta(days=1)))
 
     if st.button("RUN BACKTEST"):
         logs = []
         cooldown = timedelta(minutes=45)
 
+        # ✅ Strict Date Fix
+        start = datetime.combine(bt_date, datetime.min.time()).replace(tzinfo=IST)
+        end   = start + timedelta(days=1)
+
         for s in stocks:
             try:
-                start = pd.to_datetime(bt_date)
-                end = start + timedelta(days=1)
-
                 df = yf.download(s + ".NS", start=start, end=end, interval="5m", progress=False)
                 if df is None or df.empty:
                     continue
@@ -166,7 +115,7 @@ with tab2:
 
                 for i in range(1, len(df)):
                     row = df.iloc[i]
-                    time = df.index[i]   # ✅ already IST
+                    time = df.index[i]
 
                     # ✅ NSE Market Hours Filter (09:15–15:30 IST)
                     if time.hour < 9 or (time.hour == 9 and time.minute < 15):
@@ -182,7 +131,6 @@ with tab2:
                     if not in_trade and signal:
                         entry_price = row['Close']
                         atr = row['ATR']
-
                         sl = entry_price - atr*1.5 if signal=="BUY" else entry_price + atr*1.5
                         target = entry_price + atr*3 if signal=="BUY" else entry_price - atr*3
 
@@ -193,29 +141,22 @@ with tab2:
                     elif in_trade:
                         high = row['High']
                         low = row['Low']
-
                         exit_price = None
                         exit_reason = None
 
                         if trade_type == "BUY":
                             if low <= sl:
-                                exit_price = sl
-                                exit_reason = "SL HIT"
+                                exit_price = sl; exit_reason = "SL HIT"
                             elif high >= target:
-                                exit_price = target
-                                exit_reason = "TARGET HIT"
-
+                                exit_price = target; exit_reason = "TARGET HIT"
                         elif trade_type == "SELL":
                             if high >= sl:
-                                exit_price = sl
-                                exit_reason = "SL HIT"
+                                exit_price = sl; exit_reason = "SL HIT"
                             elif low <= target:
-                                exit_price = target
-                                exit_reason = "TARGET HIT"
+                                exit_price = target; exit_reason = "TARGET HIT"
 
                         if exit_reason:
                             pnl = round(exit_price - entry_price, 2) if trade_type=="BUY" else round(entry_price - exit_price, 2)
-
                             logs.append({
                                 "STOCK": s,
                                 "TYPE": trade_type,
@@ -226,7 +167,6 @@ with tab2:
                                 "P&L": pnl,
                                 "RESULT": exit_reason
                             })
-
                             in_trade = False
                             last_trade_time = time
 
@@ -234,13 +174,9 @@ with tab2:
                 continue
 
         df_logs = pd.DataFrame(logs)
-
         if not df_logs.empty:
             st.dataframe(df_logs, use_container_width=True)
-
-            total = len(df_logs)
-            wins = len(df_logs[df_logs["P&L"] > 0])
-            loss = len(df_logs[df_logs["P&L"] <= 0])
-
-            st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
-
+            st.success(f"Total Trades: {len(df_logs)} | Wins: {len(df_logs[df_logs['P&L']>0])} | Loss: {len(df_logs[df_logs['P&L']<=0])}")
+            st.download_button("📥 Download Excel", to_excel(df_logs), file_name="backtest.xlsx")
+        else:
+            st.warning("No trades found")
