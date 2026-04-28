@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.2", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.3", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.2 - STABLE ENGINE")
+st.title("🚀 NSE AI PRO V52.3 - TIME FIXED ENGINE")
 
 # =============================
 # STOCK LIST
@@ -139,7 +139,7 @@ with tab1:
         st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 # =============================
-# BACKTEST (FULL FIXED)
+# BACKTEST (TIME FIXED)
 # =============================
 with tab2:
     bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
@@ -157,6 +157,11 @@ with tab2:
                 if df is None or df.empty:
                     continue
 
+                # ✅ TIME FIX (MAIN CHANGE)
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize("UTC")
+                df.index = df.index.tz_convert(IST)
+
                 df = add_indicators(df)
                 if df is None:
                     continue
@@ -166,18 +171,19 @@ with tab2:
 
                 for i in range(1, len(df)):
                     row = df.iloc[i]
-                    time = pd.to_datetime(df.index[i])
+                    time = df.index[i]   # ✅ already IST
 
-                    if time.tz is None:
-                        time = time.tz_localize("UTC")
-                    time = time.tz_convert(IST)
+                    # Optional NSE filter
+                    if not (time.hour > 9 or (time.hour == 9 and time.minute >= 15)):
+                        continue
+                    if time.hour >= 15 and time.minute > 30:
+                        continue
 
                     if last_trade_time and (time - last_trade_time < cooldown):
                         continue
 
                     signal, bp, bm = analyze(row)
 
-                    # ENTRY
                     if not in_trade and signal:
                         entry_price = row['Close']
                         atr = row['ATR']
@@ -189,7 +195,6 @@ with tab2:
                         entry_time = time
                         trade_type = signal
 
-                    # EXIT
                     elif in_trade:
                         high = row['High']
                         low = row['Low']
@@ -244,7 +249,6 @@ with tab2:
 
             st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
 
-            # Excel Download
             excel = to_excel(df_logs)
             st.download_button("📥 Download Excel", excel, file_name="backtest.xlsx")
 
