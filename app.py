@@ -2,19 +2,22 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
-import pytz, io
+import pytz, io, os
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.3", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V53", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.3 - TIME FIXED ENGINE")
+EXPORT_FOLDER = "exports"
+os.makedirs(EXPORT_FOLDER, exist_ok=True)
+
+st.title("🚀 NSE AI PRO V53 - AUTO ENGINE")
 
 # =============================
 # STOCK LIST
@@ -31,15 +34,19 @@ stocks = [
 ]
 
 # =============================
-# INDICATORS
+# INDICATORS (FIXED VWAP)
 # =============================
 def add_indicators(df):
     if df is None or len(df) < 50:
         return None
     df = df.copy()
+
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+
+    # ✅ DAILY VWAP FIX
+    df['VWAP'] = (df['Close'] * df['Volume']).groupby(df.index.date).cumsum() / \
+                 df['Volume'].groupby(df.index.date).cumsum()
 
     tr = pd.concat([
         df['High'] - df['Low'],
@@ -63,7 +70,7 @@ def analyze(row):
 
         signal = None
 
-        if dist < 0.004:
+        if dist < 0.006:
             if row['Close'] > row['VWAP'] and trend_up:
                 signal = "BUY"
             elif row['Close'] < row['VWAP'] and trend_down:
@@ -77,15 +84,22 @@ def analyze(row):
         return None, False, False
 
 # =============================
-# EXCEL
+# EXCEL MULTI SHEET
 # =============================
-def to_excel(df):
+def to_excel_multi(df):
     output = io.BytesIO()
-    df.to_excel(output, index=False)
+
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name='ALL', index=False)
+
+        df[df["SIGNAL"]=="BUY"].to_excel(writer, sheet_name='BUY', index=False)
+        df[df["SIGNAL"]=="SELL"].to_excel(writer, sheet_name='SELL', index=False)
+        df[df["BIG PLAYER"]=="🔥"].to_excel(writer, sheet_name='BIG_PLAYER', index=False)
+
     return output.getvalue()
 
 # =============================
-# LIVE FETCH
+# DATA FETCH
 # =============================
 @st.cache_data(ttl=300)
 def fetch_live():
@@ -95,56 +109,81 @@ def fetch_live():
 # =============================
 # UI
 # =============================
-tab1, tab2 = st.tabs(["🔴 LIVE", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["🔴 LIVE AUTO", "📊 BACKTEST"])
 
 # =============================
-# LIVE SCAN
+# LIVE AUTO SCAN + EXPORT
 # =============================
 with tab1:
-    if st.button("RUN LIVE"):
-        data = fetch_live()
-        results = []
 
-        for s in stocks:
-            try:
-                df = data.get(s + ".NS")
-                df = add_indicators(df)
-                if df is None:
-                    continue
+    data = fetch_live()
+    results = []
 
-                row = df.iloc[-1]
-                signal, bp, bm = analyze(row)
-
-                if signal:
-                    t = pd.to_datetime(df.index[-1])
-                    if t.tz is None:
-                        t = t.tz_localize("UTC")
-                    t = t.tz_convert(IST)
-
-                    atr = row['ATR']
-
-                    results.append({
-                        "TIME": t.strftime('%H:%M'),
-                        "STOCK": s,
-                        "SIGNAL": signal,
-                        "BIG PLAYER": "🔥" if bp else "-",
-                        "BIG MOVE": "🚀" if bm else "-",
-                        "ENTRY": round(row['Close'], 2),
-                        "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5, 2),
-                        "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3, 2)
-                    })
-            except:
+    for s in stocks:
+        try:
+            df = data.get(s + ".NS")
+            df = add_indicators(df)
+            if df is None:
                 continue
 
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
+            row = df.iloc[-1]
+            signal, bp, bm = analyze(row)
+
+            if signal:
+                t = pd.to_datetime(df.index[-1])
+                if t.tz is None:
+                    t = t.tz_localize("UTC")
+                t = t.tz_convert(IST)
+
+                if not (t.hour > 9 or (t.hour == 9 and t.minute >= 15)):
+                    continue
+                if t.hour >= 15 and t.minute > 30:
+                    continue
+
+                atr = row['ATR']
+
+                results.append({
+                    "TIME": t.strftime('%H:%M'),
+                    "STOCK": s,
+                    "SIGNAL": signal,
+                    "BIG PLAYER": "🔥" if bp else "-",
+                    "BIG MOVE": "🚀" if bm else "-",
+                    "ENTRY": round(row['Close'], 2),
+                    "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5, 2),
+                    "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3, 2)
+                })
+        except:
+            continue
+
+    df_live = pd.DataFrame(results)
+
+    if not df_live.empty:
+        st.dataframe(df_live, use_container_width=True)
+
+        filename = f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+        filepath = os.path.join(EXPORT_FOLDER, filename)
+
+        excel_data = to_excel_multi(df_live)
+
+        with open(filepath, "wb") as f:
+            f.write(excel_data)
+
+        st.success(f"Auto saved: {filepath}")
+
+        st.download_button("📥 Download Now", excel_data, file_name=filename)
+
+    else:
+        st.warning("No signals")
 
 # =============================
-# BACKTEST (TIME FIXED)
+# BACKTEST (REALISTIC)
 # =============================
 with tab2:
+
     bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
 
     if st.button("RUN BACKTEST"):
+
         logs = []
         cooldown = timedelta(minutes=45)
 
@@ -157,7 +196,6 @@ with tab2:
                 if df is None or df.empty:
                     continue
 
-                # ✅ TIME FIX (MAIN CHANGE)
                 if df.index.tz is None:
                     df.index = df.index.tz_localize("UTC")
                 df.index = df.index.tz_convert(IST)
@@ -166,14 +204,15 @@ with tab2:
                 if df is None:
                     continue
 
-                last_trade_time = None
                 in_trade = False
+                last_trade_time = None
 
                 for i in range(1, len(df)):
-                    row = df.iloc[i]
-                    time = df.index[i]   # ✅ already IST
 
-                    # Optional NSE filter
+                    prev = df.iloc[i-1]
+                    row = df.iloc[i]
+                    time = df.index[i]
+
                     if not (time.hour > 9 or (time.hour == 9 and time.minute >= 15)):
                         continue
                     if time.hour >= 15 and time.minute > 30:
@@ -182,9 +221,10 @@ with tab2:
                     if last_trade_time and (time - last_trade_time < cooldown):
                         continue
 
-                    signal, bp, bm = analyze(row)
+                    signal, _, _ = analyze(prev)
 
                     if not in_trade and signal:
+
                         entry_price = row['Close']
                         atr = row['ATR']
 
@@ -196,30 +236,36 @@ with tab2:
                         trade_type = signal
 
                     elif in_trade:
+
                         high = row['High']
                         low = row['Low']
 
                         exit_price = None
-                        exit_reason = None
+                        reason = None
 
                         if trade_type == "BUY":
                             if low <= sl:
                                 exit_price = sl
-                                exit_reason = "SL HIT"
+                                reason = "SL HIT"
                             elif high >= target:
                                 exit_price = target
-                                exit_reason = "TARGET HIT"
+                                reason = "TARGET HIT"
 
-                        elif trade_type == "SELL":
+                        else:
                             if high >= sl:
                                 exit_price = sl
-                                exit_reason = "SL HIT"
+                                reason = "SL HIT"
                             elif low <= target:
                                 exit_price = target
-                                exit_reason = "TARGET HIT"
+                                reason = "TARGET HIT"
 
-                        if exit_reason:
-                            pnl = round(exit_price - entry_price, 2) if trade_type=="BUY" else round(entry_price - exit_price, 2)
+                        # ✅ Day Exit
+                        if time.hour == 15 and time.minute >= 25:
+                            exit_price = row['Close']
+                            reason = "DAY EXIT"
+
+                        if reason:
+                            pnl = round(exit_price - entry_price,2) if trade_type=="BUY" else round(entry_price - exit_price,2)
 
                             logs.append({
                                 "STOCK": s,
@@ -229,7 +275,7 @@ with tab2:
                                 "ENTRY": round(entry_price,2),
                                 "EXIT": round(exit_price,2),
                                 "P&L": pnl,
-                                "RESULT": exit_reason
+                                "RESULT": reason
                             })
 
                             in_trade = False
@@ -245,12 +291,12 @@ with tab2:
 
             total = len(df_logs)
             wins = len(df_logs[df_logs["P&L"] > 0])
-            loss = len(df_logs[df_logs["P&L"] <= 0])
+            loss = total - wins
+            acc = round((wins/total)*100,2)
 
-            st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
+            st.success(f"Trades: {total} | Wins: {wins} | Loss: {loss} | Accuracy: {acc}%")
 
-            excel = to_excel(df_logs)
-            st.download_button("📥 Download Excel", excel, file_name="backtest.xlsx")
+            st.download_button("📥 Download Backtest", to_excel_multi(df_logs), file_name="backtest.xlsx")
 
         else:
             st.warning("No trades found")
