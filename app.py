@@ -2,19 +2,19 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
-import pytz, io, os
+import pytz, io
 from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V51.2", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V51.3", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V51.2 - TIME LOCKED ENGINE")
+st.title("🚀 NSE AI PRO V51.3 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST (NSE)
@@ -108,7 +108,7 @@ with tab1:
                 if signal:
                     atr = row['ATR']
                     results.append({
-                        "TIME": df.index[-1].tz_localize("UTC").tz_convert(IST).strftime('%H:%M'),
+                        "TIME": pd.to_datetime(df.index[-1]).tz_localize("UTC").tz_convert(IST).strftime('%H:%M'),
                         "STOCK": s,
                         "SIGNAL": signal,
                         "BIG PLAYER": "🔥" if bp else "-",
@@ -132,8 +132,9 @@ with tab2:
             try:
                 df = data.get(s + ".NS")
                 if df is None: continue
-                # ✅ TIME FIX
-                df.index = df.index.tz_localize("UTC").tz_convert(IST) if df.index.tz is None else df.index.tz_convert(IST)
+                # ✅ STRICT UTC → IST FIX
+                df.index = pd.to_datetime(df.index)
+                df.index = df.index.tz_localize("UTC").tz_convert(IST)
                 # ✅ MARKET HOURS
                 df = df.between_time("09:15", "15:30")
                 # ✅ DATE FILTER
