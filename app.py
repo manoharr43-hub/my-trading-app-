@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
@@ -10,13 +9,13 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V48", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V49", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V48 - NSE 200 FULL SCANNER")
+st.title("🚀 NSE AI PRO V49 - BIG MOVE SYSTEM")
 
 # =============================
 # MARKET TIME
@@ -26,7 +25,7 @@ market_close = time(15,30)
 is_market_open = market_open <= now.time() <= market_close
 
 # =============================
-# NSE 200 STOCK LIST (FULL)
+# NSE STOCK LIST
 # =============================
 stocks = [
 "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
@@ -34,17 +33,19 @@ stocks = [
 "POWERGRID","TATASTEEL","JSWSTEEL","BAJFINANCE","BAJAJFINSV","ADANIENT",
 "ADANIPORTS","ULTRACEMCO","GRASIM","TECHM","WIPRO","HCLTECH","NESTLEIND",
 "BRITANNIA","CIPLA","DIVISLAB","DRREDDY","BPCL","IOC","BHARTIARTL","TITAN",
-"M&M","HEROMOTOCO","EICHERMOT","TATAMOTORS","COALINDIA","SHREECEM","HAVELLS",
-"SIEMENS","TORNTPHARM","PIDILITIND","LTIM","BEL","DLF","INDUSINDBK","PNB",
-"BANKBARODA","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"
+"M&M","HEROMOTOCO","EICHERMOT","TATAMOTORS","COALINDIA","HAVELLS",
+"SIEMENS","PIDILITIND","BEL","DLF","INDUSINDBK","PNB","BANKBARODA",
+"CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"
 ]
 
 # =============================
 # INDICATORS
 # =============================
 def add_indicators(df):
-    if len(df) < 50:
-        return df
+    if df is None or df.empty or len(df) < 50:
+        return None
+
+    df = df.copy()
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
@@ -60,10 +61,10 @@ def add_indicators(df):
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
 
-    return df
+    return df.dropna()
 
 # =============================
-# FETCH OPTIMIZED
+# FETCH
 # =============================
 @st.cache_data(ttl=60)
 def fetch():
@@ -73,20 +74,38 @@ def fetch():
 data = fetch()
 
 # =============================
-# SIGNAL
+# SIGNAL + BIG MOVE
 # =============================
-def get_signal(row):
-    dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
+def analyze_row(row):
+    try:
+        dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
 
-    trend_up = row['EMA20'] > row['EMA50']
-    trend_down = row['EMA20'] < row['EMA50']
+        trend_up = row['EMA20'] > row['EMA50']
+        trend_down = row['EMA20'] < row['EMA50']
 
-    if dist < 0.004:
-        if row['Close'] > row['VWAP'] and trend_up:
-            return "BUY 🟢"
-        elif row['Close'] < row['VWAP'] and trend_down:
-            return "SELL 🔴"
-    return None
+        signal = None
+        if dist < 0.004:
+            if row['Close'] > row['VWAP'] and trend_up:
+                signal = "BUY 🟢"
+            elif row['Close'] < row['VWAP'] and trend_down:
+                signal = "SELL 🔴"
+
+        big_player = (
+            row['Volume'] > row['VolAvg']*2 and
+            abs(row['Close']-row['Open']) > row['ATR']*0.5
+        )
+
+        big_move = (
+            row['Volume'] > row['VolAvg']*2 and
+            abs(row['Close']-row['Open']) > row['ATR']*0.7 and
+            ((row['Close'] > row['VWAP'] and trend_up) or
+             (row['Close'] < row['VWAP'] and trend_down))
+        )
+
+        return signal, big_player, big_move
+
+    except:
+        return None, False, False
 
 # =============================
 # EXCEL
@@ -108,43 +127,43 @@ with tab1:
     if not is_market_open:
         st.warning("⛔ Market Closed")
     else:
-        if st.button("🚀 RUN LIVE NSE 200 SCAN"):
+        if st.button("🚀 RUN LIVE SCAN"):
 
             results = []
 
             for s in stocks:
                 try:
                     df = data.get(s + ".NS")
-                    if df is None or df.empty:
+                    df = add_indicators(df)
+
+                    if df is None:
                         continue
 
-                    df = add_indicators(df.dropna())
-                    row = df.iloc[-1]
+                    row = df.iloc[-1]   # ✅ SAFE
 
-                    signal = get_signal(row)
+                    signal, big_player, big_move = analyze_row(row)
 
                     if signal:
                         atr = row['ATR']
-
-                        big_player = (row['Volume'] > row['VolAvg']*2) and \
-                                     (abs(row['Close']-row['Open']) > atr*0.5)
 
                         results.append({
                             "TIME": df.index[-1].astimezone(IST).strftime('%H:%M'),
                             "STOCK": s,
                             "SIGNAL": signal,
-                            "BIG PLAYER": "🔥 YES" if big_player else "-",
+                            "BIG PLAYER": "🔥" if big_player else "-",
+                            "BIG MOVE": "🚀" if big_move else "-",
                             "ENTRY": round(row['Close'],2),
                             "SL": round(row['Close'] - atr*1.5 if "BUY" in signal else row['Close'] + atr*1.5,2),
                             "TARGET": round(row['Close'] + atr*3 if "BUY" in signal else row['Close'] - atr*3,2)
                         })
+
                 except:
                     continue
 
             if results:
                 df_live = pd.DataFrame(results)
                 st.dataframe(df_live, use_container_width=True)
-                st.download_button("📥 Download Excel", to_excel(df_live), "LiveScan.xlsx")
+                st.download_button("📥 Download", to_excel(df_live), "Live.xlsx")
             else:
                 st.info("No signals")
 
@@ -163,19 +182,19 @@ with tab2:
         for s in stocks:
             try:
                 df = data.get(s + ".NS")
-                if df is None or df.empty:
+                df = add_indicators(df)
+
+                if df is None:
                     continue
 
-                df = df.dropna()
-                df.index = df.index.tz_convert(IST)
-                df = add_indicators(df[df.index.date == bt_date])
+                df = df[df.index.tz_convert(IST).date == bt_date]
 
                 for i in range(20, len(df)):
                     row = df.iloc[i]
                     prev = df.iloc[i-1]
                     curr_time = df.index[i]
 
-                    signal = get_signal(row)
+                    signal, big_player, big_move = analyze_row(row)
 
                     if signal:
 
@@ -190,14 +209,12 @@ with tab2:
 
                         atr = row['ATR']
 
-                        big_player = (row['Volume'] > row['VolAvg']*2) and \
-                                     (abs(row['Close']-row['Open']) > atr*0.5)
-
                         logs.append({
                             "TIME": curr_time.strftime('%H:%M'),
                             "STOCK": s,
                             "TYPE": signal,
-                            "BIG PLAYER": "🔥 YES" if big_player else "-",
+                            "BIG PLAYER": "🔥" if big_player else "-",
+                            "BIG MOVE": "🚀" if big_move else "-",
                             "PRICE": round(row['Close'],2),
                             "SL": round(row['Close'] - atr*1.5 if "BUY" in signal else row['Close'] + atr*1.5,2),
                             "TARGET": round(row['Close'] + atr*3 if "BUY" in signal else row['Close'] - atr*3,2)
@@ -211,13 +228,7 @@ with tab2:
         if logs:
             df_bt = pd.DataFrame(logs)
             st.dataframe(df_bt, use_container_width=True)
-            st.download_button("📥 Download Backtest", to_excel(df_bt), "Backtest.xlsx")
+            st.download_button("📥 Download", to_excel(df_bt), "Backtest.xlsx")
             st.success(f"✅ Signals: {len(df_bt)}")
         else:
-            st.warning("No signals found")
-big_move = (
-    row['Volume'] > row['VolAvg']*2 and
-    abs(row['Close']-row['Open']) > row['ATR']*0.5 and
-    ((row['Close'] > row['VWAP'] and row['EMA20'] > row['EMA50']) or
-     (row['Close'] < row['VWAP'] and row['EMA20'] < row['EMA50']))
-)
+            st.warning("No signals")
