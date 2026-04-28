@@ -10,32 +10,27 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V56", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V57", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-# =============================
-# TITLE
-# =============================
-st.title("🚀 NSE AI PRO V56 - LIVE SMART MONEY SYSTEM")
+st.title("🚀 NSE AI PRO V57 - SMART MONEY CLEAN ENGINE")
+
+st.info(f"🕒 TIME: {now.strftime('%H:%M:%S')} IST")
 
 # =============================
-# MARKET STATUS
+# MARKET TIME CHECK
 # =============================
-def market_status():
+def market_open():
     t = datetime.now(IST).time()
-    if time(9,15) <= t <= time(15,30):
-        return "🟢 MARKET OPEN"
-    return "🔴 MARKET CLOSED"
+    return time(9,15) <= t <= time(15,30)
 
-st.subheader(f"{market_status()} | LIVE TRADING DASHBOARD")
-
-# =============================
-# LIVE TIME DISPLAY
-# =============================
-st.info(f"🕒 CURRENT TIME (IST): {now.strftime('%H:%M:%S')}")
+if market_open():
+    st.success("🟢 MARKET OPEN")
+else:
+    st.error("🔴 MARKET CLOSED")
 
 # =============================
 # STOCKS
@@ -89,42 +84,47 @@ def sr(df):
     return df["Low"].rolling(20).min(), df["High"].rolling(20).max()
 
 # =============================
-# AI SCORE
+# STRONG CANDLE FILTER
 # =============================
-def ai_score(r):
-    score = 0
-    if r["Close"] > r["EMA20"]: score += 25
-    if r["Close"] > r["VWAP"]: score += 20
-    if r["Volume"] > r["VolAvg"] * 2: score += 25
-    if r["Close"] > r["Open"]: score += 15
-    return min(100, max(0, score))
+def strong_candle(r):
+    body = abs(r["Close"] - r["Open"])
+    range_ = r["High"] - r["Low"]
+
+    if range_ == 0:
+        return False
+
+    return (body / range_) > 0.4
 
 # =============================
-# BIG PLAYER ENTRY
+# SIGNAL (CLEAN VERSION)
+# =============================
+def signal(r):
+    if not strong_candle(r):
+        return None
+
+    if r["Close"] > r["EMA20"] and r["Close"] > r["VWAP"]:
+        return "BUY 🟢"
+
+    if r["Close"] < r["EMA20"] and r["Close"] < r["VWAP"]:
+        return "SELL 🔴"
+
+    return None
+
+# =============================
+# BIG PLAYER (REAL LOGIC)
 # =============================
 def big_player(r, high, low):
-    if r["Volume"] > r["VolAvg"] * 2.5:
+    if r["Volume"] > r["VolAvg"] * 2.2:
         if r["Close"] > high:
-            return "🔥 BIG BUY BREAKOUT"
+            return "🔥 BREAKOUT BUY"
         elif r["Close"] < low:
-            return "🔴 BIG SELL BREAKDOWN"
+            return "🔴 BREAKDOWN SELL"
         else:
             return "⚡ ACCUMULATION"
     return "-"
 
 # =============================
-# SIGNAL LOGIC
-# =============================
-def signal(r):
-    if abs(r["Close"] - r["EMA20"]) / r["EMA20"] < 0.004:
-        if r["Close"] > r["VWAP"]:
-            return "BUY 🟢"
-        elif r["Close"] < r["VWAP"]:
-            return "SELL 🔴"
-    return None
-
-# =============================
-# SAFE TIME FIX
+# SAFE TIME
 # =============================
 def safe_time(t):
     t = pd.to_datetime(t)
@@ -134,7 +134,7 @@ def safe_time(t):
     return t.strftime("%H:%M")
 
 # =============================
-# EXCEL EXPORT
+# EXCEL
 # =============================
 def to_excel(df):
     output = io.BytesIO()
@@ -143,15 +143,14 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# LIVE SCAN (ONLY MARKET TIME)
+# LIVE SCANNER (NO DUPLICATES)
 # =============================
-if market_status() == "🟢 MARKET OPEN":
+if market_open():
 
     if st.button("🚀 RUN LIVE SCANNER"):
 
         results = []
-
-        last_i = {}
+        last_trade = {}
 
         for s in stocks:
             df = get_df(s)
@@ -161,35 +160,39 @@ if market_status() == "🟢 MARKET OPEN":
             df = indicators(df)
             support, resistance = sr(df)
 
-            last_i[s] = -999
+            last_trade[s] = None
 
             for i in range(20, len(df)):
                 row = df.iloc[i]
 
                 sig = signal(row)
 
-                if sig and (i - last_i[s] > 10):
+                if sig:
 
-                    last_i[s] = i
+                    trend = "BUY" if sig.startswith("BUY") else "SELL"
+
+                    # 🔥 NO DUPLICATE TRADE
+                    if last_trade[s] == trend:
+                        continue
+
+                    last_trade[s] = trend
 
                     results.append({
                         "TIME": safe_time(df.index[i]),
                         "STOCK": s,
                         "SIGNAL": sig,
-                        "AI_SCORE": ai_score(row),
                         "BIG_PLAYER": big_player(row, resistance.iloc[i], support.iloc[i]),
+                        "ENTRY": row["Close"],
                         "SUPPORT": support.iloc[i],
                         "RESISTANCE": resistance.iloc[i],
-                        "ENTRY": row["Close"],
-                        "SL": row["Close"] - row["ATR"]*1.5 if "BUY" in sig else row["Close"] + row["ATR"]*1.5,
-                        "TARGET": row["Close"] + row["ATR"]*3 if "BUY" in sig else row["Close"] - row["ATR"]*3
+                        "SL": row["Close"] - row["ATR"]*1.5 if trend=="BUY" else row["Close"] + row["ATR"]*1.5,
+                        "TARGET": row["Close"] + row["ATR"]*3 if trend=="BUY" else row["Close"] - row["ATR"]*3
                     })
 
         if results:
             df_res = pd.DataFrame(results)
-            df_res = df_res.sort_values("AI_SCORE", ascending=False)
 
-            st.subheader("🏆 LIVE SCANNER RESULTS")
+            st.subheader("🏆 CLEAN LIVE SCANNER RESULTS")
             st.dataframe(df_res, use_container_width=True)
 
             st.download_button(
@@ -198,20 +201,17 @@ if market_status() == "🟢 MARKET OPEN":
                 file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
             )
         else:
-            st.warning("No signals found")
+            st.warning("No strong signals found")
 
 else:
-    st.error("⛔ MARKET CLOSED (9:15 AM - 3:30 PM ONLY)")
+    st.error("⛔ MARKET CLOSED")
 
 # =============================
-# BACKTEST SYSTEM
+# BACKTEST CLEAN SYSTEM
 # =============================
 st.subheader("📊 BACKTEST SYSTEM")
 
-bt_date = st.date_input(
-    "📅 Select Date",
-    value=now.date() - timedelta(days=1)
-)
+bt_date = st.date_input("📅 Select Date", value=now.date() - timedelta(days=1))
 
 if st.button("📊 RUN BACKTEST"):
 
@@ -232,16 +232,21 @@ if st.button("📊 RUN BACKTEST"):
 
         support, resistance = sr(df_day)
 
-        last_i = -999
+        last_trade = None
 
         for i in range(20, len(df_day)):
             row = df_day.iloc[i]
 
             sig = signal(row)
 
-            if sig and (i - last_i > 10):
+            if sig:
 
-                last_i = i
+                trend = "BUY" if sig.startswith("BUY") else "SELL"
+
+                if last_trade == trend:
+                    continue
+
+                last_trade = trend
 
                 logs.append({
                     "TIME": safe_time(df_day.index[i]),
