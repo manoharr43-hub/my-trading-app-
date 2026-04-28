@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.6", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.7", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.6 - DATE LOCKED ENGINE")
+st.title("🚀 NSE AI PRO V52.7 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST
@@ -150,7 +150,6 @@ with tab2:
 
         for s in stocks:
             try:
-                # ✅ Strict Date Fix
                 start = datetime.combine(bt_date, datetime.min.time()).replace(tzinfo=IST)
                 end   = start + timedelta(days=1)
 
@@ -158,7 +157,6 @@ with tab2:
                 if df is None or df.empty:
                     continue
 
-                # ✅ Strict UTC → IST conversion
                 if df.index.tz is None:
                     df.index = df.index.tz_localize("UTC")
                 df.index = df.index.tz_convert(IST)
@@ -172,9 +170,8 @@ with tab2:
 
                 for i in range(1, len(df)):
                     row = df.iloc[i]
-                    time = df.index[i]   # ✅ already IST
+                    time = df.index[i]
 
-                    # ✅ NSE Market Hours Filter (09:15–15:30 IST)
                     if time.hour < 9 or (time.hour == 9 and time.minute < 15):
                         continue
                     if time.hour > 15 or (time.hour == 15 and time.minute > 30):
@@ -245,4 +242,7 @@ with tab2:
             st.dataframe(df_logs, use_container_width=True)
 
             total = len(df_logs)
-            wins =
+            wins = len(df_logs[df_logs["P&L"] > 0])
+            loss = len(df_logs[df_logs["P&L"] <= 0])
+
+            st.success(f"Total Trades: {total} | Wins
