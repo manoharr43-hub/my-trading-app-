@@ -2,7 +2,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
-import pytz, io
+import pytz
+import io
 
 # =========================
 # CONFIGURATION
@@ -16,10 +17,7 @@ st.title("🚀 NSE AI BACKTEST (IST 9:15AM - 3:30PM)")
 # =========================
 # STOCKS LIST
 # =========================
-stocks = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
-    "LT","ITC","HINDUNILVR","ASIANPAINT","MARUTI","SUNPHARMA","ONGC","NTPC"
-]
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"]
 
 # =========================
 # INDICATORS
@@ -36,7 +34,7 @@ def add_indicators(df):
     ], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
-    return df.dropna()
+    return df
 
 # =========================
 # SIGNAL ENGINE
@@ -80,13 +78,14 @@ if st.button("RUN BACKTEST"):
             if df is None or df.empty:
                 continue
 
-            # ✅ Short UTC → IST conversion
-            df.index = pd.to_datetime(df.index, utc=True).tz_convert(IST)
+            # ----> CRUCIAL: Always localize to UTC first, then convert to IST <----
+            df.index = pd.to_datetime(df.index)
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC').tz_convert(IST)
+            else:
+                df.index = df.index.tz_convert(IST)
 
-            df = add_indicators(df)
-            if df is None or df.empty:
-                continue
-
+            df = add_indicators(df).dropna()
             last_trade_time = None
             in_trade = False
 
@@ -94,7 +93,7 @@ if st.button("RUN BACKTEST"):
                 row = df.iloc[j]
                 time = df.index[j]
 
-                # ✅ NSE Market Hours Filter (09:15–15:30 IST)
+                # Filter for NSE market hours (IST 09:15 - 15:30)
                 if time.hour < 9 or (time.hour == 9 and time.minute < 15):
                     continue
                 if time.hour > 15 or (time.hour == 15 and time.minute > 30):
@@ -136,9 +135,9 @@ if st.button("RUN BACKTEST"):
                         logs.append({
                             "STOCK": s,
                             "TYPE": trade_type,
-                            "ENTRY TIME": entry_time.strftime('%H:%M'),
-                            "EXIT TIME": time.strftime('%H:%M'),
-                            "MARKET TIME": time.strftime('%I:%M %p'),
+                            "ENTRY TIME": entry_time.strftime('%H:%M'),        # always IST
+                            "EXIT TIME": time.strftime('%H:%M'),               # always IST
+                            "MARKET TIME": time.strftime('%I:%M %p'),          # always IST
                             "ENTRY": round(entry_price,2),
                             "EXIT": round(exit_price,2),
                             "P&L": pnl,
