@@ -3,22 +3,22 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta, time
 import pytz
-from streamlit_autorefresh import st_autorefresh
 import io
+from streamlit_autorefresh import st_autorefresh
 
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V50", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V51", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V50 - TIME PERFECT ENGINE")
+st.title("🚀 NSE AI PRO V51 - TIME LOCKED ENGINE")
 
 # =============================
-# NSE STOCKS (EXPAND AS NEEDED)
+# STOCK LIST (NSE)
 # =============================
 stocks = [
 "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
@@ -43,12 +43,12 @@ def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    df['VWAP'] = (df['Close']*df['Volume']).cumsum()/(df['Volume'].cumsum()+1e-9)
+    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
 
     tr = pd.concat([
-        df['High']-df['Low'],
-        abs(df['High']-df['Close'].shift()),
-        abs(df['Low']-df['Close'].shift())
+        df['High'] - df['Low'],
+        abs(df['High'] - df['Close'].shift()),
+        abs(df['Low'] - df['Close'].shift())
     ], axis=1).max(axis=1)
 
     df['ATR'] = tr.rolling(14).mean()
@@ -84,13 +84,13 @@ def analyze(row):
                 signal = "SELL"
 
         big_player = (
-            row['Volume'] > row['VolAvg']*2 and
-            abs(row['Close']-row['Open']) > row['ATR']*0.5
+            row['Volume'] > row['VolAvg'] * 2 and
+            abs(row['Close'] - row['Open']) > row['ATR'] * 0.5
         )
 
         big_move = (
-            row['Volume'] > row['VolAvg']*2 and
-            abs(row['Close']-row['Open']) > row['ATR']*0.7
+            row['Volume'] > row['VolAvg'] * 2 and
+            abs(row['Close'] - row['Open']) > row['ATR'] * 0.7
         )
 
         return signal, big_player, big_move
@@ -111,7 +111,7 @@ def to_excel(df):
 tab1, tab2 = st.tabs(["🔴 LIVE", "📊 BACKTEST"])
 
 # =============================
-# LIVE
+# LIVE SCAN
 # =============================
 with tab1:
     if st.button("RUN LIVE"):
@@ -140,8 +140,8 @@ with tab1:
                         "BIG PLAYER": "🔥" if bp else "-",
                         "BIG MOVE": "🚀" if bm else "-",
                         "ENTRY": round(row['Close'],2),
-                        "SL": round(row['Close']-atr*1.5 if signal=="BUY" else row['Close']+atr*1.5,2),
-                        "TARGET": round(row['Close']+atr*3 if signal=="BUY" else row['Close']-atr*3,2)
+                        "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5,2),
+                        "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3,2)
                     })
             except:
                 continue
@@ -149,7 +149,7 @@ with tab1:
         st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 # =============================
-# BACKTEST (TIME FIXED)
+# BACKTEST (TIME LOCKED)
 # =============================
 with tab2:
     bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
@@ -169,13 +169,16 @@ with tab2:
 
                 df = df.dropna()
 
-                # ✅ TIME FIX (CRITICAL)
+                # ✅ TIME FIX
                 if df.index.tz is None:
                     df.index = df.index.tz_localize("UTC").tz_convert(IST)
                 else:
                     df.index = df.index.tz_convert(IST)
 
-                # ✅ DATE FILTER AFTER TZ FIX
+                # ✅ ONLY MARKET HOURS
+                df = df.between_time("09:15", "15:30")
+
+                # ✅ DATE FILTER
                 df = df[df.index.date == bt_date]
 
                 df = add_indicators(df)
@@ -188,16 +191,12 @@ with tab2:
                     prev = df.iloc[i-1]
                     t = df.index[i]
 
-                    # only market time
-                    if not (time(9,15) <= t.time() <= time(15,30)):
-                        continue
-
                     signal, bp, bm = analyze(row)
 
                     if signal:
 
                         # noise filter
-                        if abs(row['Close']-prev['Close']) < row['ATR']*0.2:
+                        if abs(row['Close'] - prev['Close']) < row['ATR'] * 0.2:
                             continue
 
                         # duplicate control
@@ -213,8 +212,8 @@ with tab2:
                             "BIG PLAYER": "🔥" if bp else "-",
                             "BIG MOVE": "🚀" if bm else "-",
                             "PRICE": round(row['Close'],2),
-                            "SL": round(row['Close']-atr*1.5 if signal=="BUY" else row['Close']+atr*1.5,2),
-                            "TARGET": round(row['Close']+atr*3 if signal=="BUY" else row['Close']-atr*3,2)
+                            "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5,2),
+                            "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3,2)
                         })
 
                         last_time[s] = t
