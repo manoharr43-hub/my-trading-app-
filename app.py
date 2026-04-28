@@ -10,37 +10,44 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V46", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V47", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V46 - CLEAN BACKTEST SYSTEM")
-st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+st.title("🚀 NSE AI PRO V47 - LIVE + BACKTEST PRO")
 
 # =============================
-# STOCK LIST
+# MARKET TIME
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","ITC","LT","MARUTI","TATAMOTORS","WIPRO","HCLTECH","SBIN","PNB","BANKBARODA","YESBANK","ZOMATO"]
+market_open = time(9,15)
+market_close = time(15,30)
+is_market_open = market_open <= now.time() <= market_close
+
+# =============================
+# STOCKS
+# =============================
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
+          "ITC","LT","MARUTI","TATAMOTORS","WIPRO","HCLTECH","PNB",
+          "BANKBARODA","YESBANK","ZOMATO"]
 
 # =============================
 # INDICATORS
 # =============================
 def add_indicators(df):
-    df = df.copy()
     if len(df) < 50:
         return df
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+    df['VWAP'] = (df['Close']*df['Volume']).cumsum()/(df['Volume'].cumsum()+1e-9)
 
     tr = pd.concat([
-        df['High'] - df['Low'],
-        abs(df['High'] - df['Close'].shift()),
-        abs(df['Low'] - df['Close'].shift())
+        df['High']-df['Low'],
+        abs(df['High']-df['Close'].shift()),
+        abs(df['Low']-df['Close'].shift())
     ], axis=1).max(axis=1)
 
     df['ATR'] = tr.rolling(14).mean()
@@ -49,7 +56,7 @@ def add_indicators(df):
     return df
 
 # =============================
-# FETCH DATA
+# FETCH
 # =============================
 @st.cache_data(ttl=60)
 def fetch():
@@ -59,7 +66,7 @@ def fetch():
 data = fetch()
 
 # =============================
-# SIGNAL ENGINE
+# SIGNAL
 # =============================
 def get_signal(row):
     dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
@@ -83,84 +90,131 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# BACKTEST ENGINE (FIXED)
+# TABS (FIXED)
 # =============================
-st.subheader("📊 SMART BACKTEST")
+tab1, tab2 = st.tabs(["🔴 LIVE SCAN", "📊 BACKTEST"])
 
-bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
+# =====================================================
+# 🔴 LIVE SCAN (FIXED DISPLAY)
+# =====================================================
+with tab1:
+    st.subheader("🔴 LIVE MARKET SCAN")
 
-if st.button("🚀 RUN BACKTEST"):
+    if not is_market_open:
+        st.warning("⛔ Market Closed (9:15–15:30)")
+    else:
+        if st.button("🚀 RUN LIVE SCAN"):
 
-    logs = []
-    last_signal_time = {}
-    cooldown = timedelta(minutes=45)
+            results = []
 
-    for s in stocks:
-        try:
-            df = data.get(s + ".NS")
-            if df is None or df.empty:
-                continue
-
-            df = df.dropna()
-            df.index = df.index.tz_convert(IST)
-
-            df = add_indicators(df[df.index.date == bt_date])
-            if df is None or df.empty:
-                continue
-
-            for i in range(20, len(df)):
-                row = df.iloc[i]
-                prev = df.iloc[i-1]
-                curr_time = df.index[i]
-
-                signal = get_signal(row)
-
-                if signal:
-
-                    # 🔥 NOISE FILTER
-                    if abs(row['Close'] - prev['Close']) < (row['ATR'] * 0.2):
+            for s in stocks:
+                try:
+                    df = data.get(s + ".NS")
+                    if df is None or df.empty:
                         continue
 
-                    # 🔁 DUPLICATE CONTROL
-                    if s in last_signal_time:
-                        if curr_time - last_signal_time[s] < cooldown:
+                    df = add_indicators(df.dropna())
+                    row = df.iloc[-1]
+
+                    signal = get_signal(row)
+
+                    if signal:
+                        atr = row['ATR']
+
+                        big_player = (row['Volume'] > row['VolAvg']*2) and \
+                                     (abs(row['Close']-row['Open']) > atr*0.5)
+
+                        results.append({
+                            "TIME": df.index[-1].astimezone(IST).strftime('%H:%M'),
+                            "STOCK": s,
+                            "SIGNAL": signal,
+                            "BIG PLAYER": "🔥 YES" if big_player else "-",
+                            "ENTRY": round(row['Close'],2),
+                            "SL": round(row['Close'] - atr*1.5 if "BUY" in signal else row['Close'] + atr*1.5,2),
+                            "TARGET": round(row['Close'] + atr*3 if "BUY" in signal else row['Close'] - atr*3,2)
+                        })
+
+                except:
+                    continue
+
+            if results:
+                df_live = pd.DataFrame(results)
+                st.dataframe(df_live, use_container_width=True)
+
+                st.download_button("📥 Download Live Excel", to_excel(df_live), "LiveScan.xlsx")
+
+            else:
+                st.info("No signals now")
+
+# =====================================================
+# 📊 BACKTEST (BIG PLAYER ADDED)
+# =====================================================
+with tab2:
+    st.subheader("📊 BACKTEST WITH BIG PLAYER")
+
+    bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
+
+    if st.button("▶️ RUN BACKTEST"):
+
+        logs = []
+        last_signal_time = {}
+        cooldown = timedelta(minutes=45)
+
+        for s in stocks:
+            try:
+                df = data.get(s + ".NS")
+                if df is None or df.empty:
+                    continue
+
+                df = df.dropna()
+                df.index = df.index.tz_convert(IST)
+                df = add_indicators(df[df.index.date == bt_date])
+
+                for i in range(20, len(df)):
+                    row = df.iloc[i]
+                    prev = df.iloc[i-1]
+                    curr_time = df.index[i]
+
+                    signal = get_signal(row)
+
+                    if signal:
+
+                        # noise filter
+                        if abs(row['Close'] - prev['Close']) < (row['ATR'] * 0.2):
                             continue
 
-                    entry = row['Close']
-                    atr = row['ATR']
+                        # duplicate control
+                        if s in last_signal_time:
+                            if curr_time - last_signal_time[s] < cooldown:
+                                continue
 
-                    logs.append({
-                        "TIME": curr_time.strftime('%H:%M'),
-                        "STOCK": s,
-                        "TYPE": signal,
-                        "PRICE": round(entry,2),
-                        "SL": round(entry - atr*1.5 if "BUY" in signal else entry + atr*1.5,2),
-                        "TARGET": round(entry + atr*3 if "BUY" in signal else entry - atr*3,2)
-                    })
+                        atr = row['ATR']
 
-                    last_signal_time[s] = curr_time
+                        big_player = (row['Volume'] > row['VolAvg']*2) and \
+                                     (abs(row['Close']-row['Open']) > atr*0.5)
 
-        except:
-            continue
+                        logs.append({
+                            "TIME": curr_time.strftime('%H:%M'),
+                            "STOCK": s,
+                            "TYPE": signal,
+                            "BIG PLAYER": "🔥 YES" if big_player else "-",
+                            "PRICE": round(row['Close'],2),
+                            "SL": round(row['Close'] - atr*1.5 if "BUY" in signal else row['Close'] + atr*1.5,2),
+                            "TARGET": round(row['Close'] + atr*3 if "BUY" in signal else row['Close'] - atr*3,2)
+                        })
 
-    # =============================
-    # OUTPUT
-    # =============================
-    if logs:
-        df_bt = pd.DataFrame(logs)
+                        last_signal_time[s] = curr_time
 
-        # 🔥 SORT CLEAN
-        df_bt = df_bt.sort_values(by=["STOCK","TIME"])
+            except:
+                continue
 
-        st.dataframe(df_bt, use_container_width=True)
+        if logs:
+            df_bt = pd.DataFrame(logs)
+            st.dataframe(df_bt, use_container_width=True)
 
-        st.download_button(
-            "📥 Download Backtest Excel",
-            to_excel(df_bt),
-            file_name=f"Backtest_{bt_date}.xlsx"
-        )
+            st.download_button("📥 Download Backtest Excel", to_excel(df_bt), "Backtest.xlsx")
 
-        st.success(f"✅ Total Signals: {len(df_bt)}")
+            st.success(f"✅ Total Signals: {len(df_bt)}")
 
-    else:
-        st.warning("❌ No signals found")
+        else:
+            st.warning("No signals found")
