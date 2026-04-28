@@ -40,13 +40,16 @@ def add_indicators(df):
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+
     tr = pd.concat([
         df['High'] - df['Low'],
         abs(df['High'] - df['Close'].shift()),
         abs(df['Low'] - df['Close'].shift())
     ], axis=1).max(axis=1)
+
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
+
     return df.dropna()
 
 # =============================
@@ -57,14 +60,18 @@ def analyze(row):
         dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
         trend_up = row['EMA20'] > row['EMA50']
         trend_down = row['EMA20'] < row['EMA50']
+
         signal = None
+
         if dist < 0.004:
             if row['Close'] > row['VWAP'] and trend_up:
                 signal = "BUY"
             elif row['Close'] < row['VWAP'] and trend_down:
                 signal = "SELL"
+
         big_player = (row['Volume'] > row['VolAvg'] * 2 and abs(row['Close'] - row['Open']) > row['ATR'] * 0.5)
         big_move   = (row['Volume'] > row['VolAvg'] * 2 and abs(row['Close'] - row['Open']) > row['ATR'] * 0.7)
+
         return signal, big_player, big_move
     except:
         return None, False, False
@@ -97,19 +104,25 @@ with tab1:
     if st.button("RUN LIVE"):
         data = fetch_live()
         results = []
+
         for s in stocks:
             try:
                 df = data.get(s + ".NS")
                 df = add_indicators(df)
-                if df is None: continue
+                if df is None:
+                    continue
+
                 row = df.iloc[-1]
                 signal, bp, bm = analyze(row)
+
                 if signal:
                     t = pd.to_datetime(df.index[-1])
                     if t.tz is None:
                         t = t.tz_localize("UTC")
                     t = t.tz_convert(IST)
+
                     atr = row['ATR']
+
                     results.append({
                         "TIME": t.strftime('%H:%M'),
                         "STOCK": s,
@@ -120,20 +133,120 @@ with tab1:
                         "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5, 2),
                         "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3, 2)
                     })
-            except: continue
+            except:
+                continue
+
         st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 # =============================
-# BACKTEST (STRICT FIX)
+# BACKTEST (FULL FIXED)
 # =============================
 with tab2:
     bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
+
     if st.button("RUN BACKTEST"):
         logs = []
         cooldown = timedelta(minutes=45)
+
         for s in stocks:
             try:
                 start = pd.to_datetime(bt_date)
                 end = start + timedelta(days=1)
+
                 df = yf.download(s + ".NS", start=start, end=end, interval="5m", progress=False)
-                if df is None or df.empty: continue
+                if df is None or df.empty:
+                    continue
+
+                df = add_indicators(df)
+                if df is None:
+                    continue
+
+                last_trade_time = None
+                in_trade = False
+
+                for i in range(1, len(df)):
+                    row = df.iloc[i]
+                    time = pd.to_datetime(df.index[i])
+
+                    if time.tz is None:
+                        time = time.tz_localize("UTC")
+                    time = time.tz_convert(IST)
+
+                    if last_trade_time and (time - last_trade_time < cooldown):
+                        continue
+
+                    signal, bp, bm = analyze(row)
+
+                    # ENTRY
+                    if not in_trade and signal:
+                        entry_price = row['Close']
+                        atr = row['ATR']
+
+                        sl = entry_price - atr*1.5 if signal=="BUY" else entry_price + atr*1.5
+                        target = entry_price + atr*3 if signal=="BUY" else entry_price - atr*3
+
+                        in_trade = True
+                        entry_time = time
+                        trade_type = signal
+
+                    # EXIT
+                    elif in_trade:
+                        high = row['High']
+                        low = row['Low']
+
+                        exit_price = None
+                        exit_reason = None
+
+                        if trade_type == "BUY":
+                            if low <= sl:
+                                exit_price = sl
+                                exit_reason = "SL HIT"
+                            elif high >= target:
+                                exit_price = target
+                                exit_reason = "TARGET HIT"
+
+                        elif trade_type == "SELL":
+                            if high >= sl:
+                                exit_price = sl
+                                exit_reason = "SL HIT"
+                            elif low <= target:
+                                exit_price = target
+                                exit_reason = "TARGET HIT"
+
+                        if exit_reason:
+                            pnl = round(exit_price - entry_price, 2) if trade_type=="BUY" else round(entry_price - exit_price, 2)
+
+                            logs.append({
+                                "STOCK": s,
+                                "TYPE": trade_type,
+                                "ENTRY TIME": entry_time.strftime('%H:%M'),
+                                "EXIT TIME": time.strftime('%H:%M'),
+                                "ENTRY": round(entry_price,2),
+                                "EXIT": round(exit_price,2),
+                                "P&L": pnl,
+                                "RESULT": exit_reason
+                            })
+
+                            in_trade = False
+                            last_trade_time = time
+
+            except:
+                continue
+
+        df_logs = pd.DataFrame(logs)
+
+        if not df_logs.empty:
+            st.dataframe(df_logs, use_container_width=True)
+
+            total = len(df_logs)
+            wins = len(df_logs[df_logs["P&L"] > 0])
+            loss = len(df_logs[df_logs["P&L"] <= 0])
+
+            st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
+
+            # Excel Download
+            excel = to_excel(df_logs)
+            st.download_button("📥 Download Excel", excel, file_name="backtest.xlsx")
+
+        else:
+            st.warning("No trades found")
