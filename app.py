@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.4", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.5", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.4 - TIME FIXED ENGINE")
+st.title("🚀 NSE AI PRO V52.5 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST
@@ -244,4 +244,3 @@ with tab2:
 
             st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
 
-            excel = to_excel(df_logs
