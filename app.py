@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.6", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.7", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.6 - TIME LOCKED ENGINE")
+st.title("🚀 NSE AI PRO V52.7 - TIME LOCKED ENGINE")
 
 # =============================
 # STOCK LIST
@@ -82,10 +82,13 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# BACKTEST (STRICT DATE + TIME FIX)
+# UI Tabs
 # =============================
 tab1, tab2 = st.tabs(["🔴 LIVE", "📊 BACKTEST"])
 
+# =============================
+# BACKTEST (STRICT DATE + TIME FIX)
+# =============================
 with tab2:
     bt_date = st.date_input("Select Date", value=(now.date() - timedelta(days=1)))
 
@@ -162,6 +165,7 @@ with tab2:
                                 "TYPE": trade_type,
                                 "ENTRY TIME": entry_time.strftime('%H:%M'),
                                 "EXIT TIME": time.strftime('%H:%M'),
+                                "MARKET TIME": time.strftime('%I:%M %p'),  # ✅ Extra TIME column
                                 "ENTRY": round(entry_price,2),
                                 "EXIT": round(exit_price,2),
                                 "P&L": pnl,
