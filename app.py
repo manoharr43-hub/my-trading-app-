@@ -10,25 +10,22 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V49", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V50", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V49 - SMART MONEY AI SYSTEM")
+st.title("🚀 NSE AI PRO V50 - FULL DAY SCANNER + SMART BACKTEST")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
-# STOCK LIST
+# STOCKS
 # =============================
-stocks = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
-    "SBIN","LT","ITC","AXISBANK","BAJFINANCE"
-]
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","LT","ITC","AXISBANK","BAJFINANCE"]
 
 # =============================
-# FETCH DATA
+# FETCH
 # =============================
 @st.cache_data(ttl=60)
 def fetch_data():
@@ -71,8 +68,8 @@ def indicators(df):
 # SUPPORT / RESISTANCE
 # =============================
 def sr(df):
-    support = df["Low"].rolling(20).min().iloc[-1]
-    resistance = df["High"].rolling(20).max().iloc[-1]
+    support = df["Low"].rolling(20).min()
+    resistance = df["High"].rolling(20).max()
     return support, resistance
 
 # =============================
@@ -84,23 +81,20 @@ def ai_score(r):
     if r["Close"] > r["VWAP"]: score += 20
     if r["Volume"] > r["VolAvg"] * 2: score += 25
     if r["Close"] > r["Open"]: score += 15
-    if r["ATR"] > 0: score += 10
     return min(100, max(0, score))
 
 # =============================
-# BIG PLAYER
+# PULLBACK LOGIC
 # =============================
-def big_player(r, df):
-    support, resistance = sr(df)
+def pullback_signal(row, support, resistance):
+    if abs(row["Close"] - row["EMA20"]) / row["EMA20"] < 0.004:
 
-    if r["Volume"] > r["VolAvg"] * 2.5 and r["Close"] > resistance:
-        return "🔥 BIG BUY BREAKOUT"
-    elif r["Volume"] > r["VolAvg"] * 2.5 and r["Close"] < support:
-        return "🔴 BIG SELL BREAKDOWN"
-    elif r["Volume"] > r["VolAvg"] * 2:
-        return "⚡ ACCUMULATION"
-    else:
-        return "-"
+        if row["Close"] > row["VWAP"] and row["Close"] > row["Open"]:
+            return "BUY PULLBACK 🟢"
+        elif row["Close"] < row["VWAP"] and row["Close"] < row["Open"]:
+            return "SELL PULLBACK 🔴"
+
+    return None
 
 # =============================
 # EXCEL
@@ -112,9 +106,9 @@ def to_excel(df):
     return output.getvalue()
 
 # =============================
-# LIVE SCAN
+# LIVE SCAN (FULL DAY SCAN FIXED)
 # =============================
-if st.button("🚀 RUN LIVE SCAN"):
+if st.button("🚀 RUN FULL DAY LIVE SCAN"):
 
     results = []
 
@@ -124,64 +118,57 @@ if st.button("🚀 RUN LIVE SCAN"):
             continue
 
         df = indicators(df)
-        l = df.iloc[-1]
 
         support, resistance = sr(df)
 
-        dist = abs(l["Close"] - l["EMA20"]) / l["EMA20"]
+        # 🔥 FULL DAY LOOP
+        for i in range(20, len(df)):
+            row = df.iloc[i]
 
-        if dist < 0.004:
+            signal = pullback_signal(row, support.iloc[i], resistance.iloc[i])
 
-            score = ai_score(l)
-            big = big_player(l, df)
+            if signal:
 
-            signal = "BUY 🟢" if l["Close"] > l["VWAP"] else "SELL 🔴"
-            entry = float(l["Close"])
+                score = ai_score(row)
 
-            sl = entry - l["ATR"]*1.5 if "BUY" in signal else entry + l["ATR"]*1.5
-            tgt = entry + l["ATR"]*3 if "BUY" in signal else entry - l["ATR"]*3
+                entry = row["Close"]
 
-            results.append({
-                "TIME": now.strftime("%H:%M"),
-                "STOCK": s,
-                "SIGNAL": signal,
-                "AI_SCORE": score,
-                "BIG_PLAYER": big,
-                "SUPPORT": support,
-                "RESISTANCE": resistance,
-                "ENTRY": entry,
-                "SL": sl,
-                "TARGET": tgt
-            })
+                results.append({
+                    "TIME": df.index[i].strftime("%H:%M"),
+                    "STOCK": s,
+                    "SIGNAL": signal,
+                    "AI_SCORE": score,
+                    "SUPPORT": support.iloc[i],
+                    "RESISTANCE": resistance.iloc[i],
+                    "ENTRY": entry,
+                    "SL": entry - row["ATR"]*1.5 if "BUY" in signal else entry + row["ATR"]*1.5,
+                    "TARGET": entry + row["ATR"]*3 if "BUY" in signal else entry - row["ATR"]*3
+                })
 
     if results:
         df_res = pd.DataFrame(results)
-        df_res = df_res.sort_values("AI_SCORE", ascending=False).head(10)
+        df_res = df_res.sort_values("AI_SCORE", ascending=False)
 
-        st.subheader("🏆 TOP 10 STOCKS")
+        st.subheader("🏆 FULL DAY SCAN RESULTS")
         st.dataframe(df_res, use_container_width=True)
 
         st.download_button(
-            "📥 DOWNLOAD LIVE EXCEL",
+            "📥 DOWNLOAD LIVE SCAN EXCEL",
             data=to_excel(df_res),
-            file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+            file_name=f"full_scan_{now.strftime('%Y%m%d_%H%M')}.xlsx"
         )
     else:
         st.warning("No signals found")
 
 # =============================
-# BACKTEST (FIXED DATE SELECT)
+# BACKTEST FIXED (TIME + SR + PULLBACK)
 # =============================
-st.subheader("📊 BACKTEST SECTION")
+st.subheader("📊 BACKTEST SYSTEM")
 
 bt_date = st.date_input(
-    "📅 Select Backtest Date",
-    value=now.date() - timedelta(days=1),
-    min_value=now.date() - timedelta(days=30),
-    max_value=now.date()
+    "📅 Select Date",
+    value=now.date() - timedelta(days=1)
 )
-
-st.info(f"Selected Date: {bt_date}")
 
 if st.button("📊 RUN BACKTEST"):
 
@@ -194,33 +181,38 @@ if st.button("📊 RUN BACKTEST"):
 
         df = indicators(df)
 
-        # FIX DATE FILTER
         df["DATE"] = pd.to_datetime(df.index).date
         df_day = df[df["DATE"] == bt_date]
 
         if df_day.empty:
             continue
 
+        support, resistance = sr(df_day)
+
         for i in range(20, len(df_day)):
             row = df_day.iloc[i]
 
-            score = ai_score(row)
+            signal = pullback_signal(row, support.iloc[i], resistance.iloc[i])
 
-            if score > 70:
+            if signal:
+
                 logs.append({
                     "TIME": df_day.index[i].strftime("%H:%M"),
                     "STOCK": s,
-                    "AI_SCORE": score,
+                    "SIGNAL": signal,
+                    "SUPPORT": support.iloc[i],
+                    "RESISTANCE": resistance.iloc[i],
                     "PRICE": row["Close"]
                 })
 
     if logs:
         df_logs = pd.DataFrame(logs)
 
+        st.subheader("📊 BACKTEST RESULTS")
         st.dataframe(df_logs, use_container_width=True)
 
         st.download_button(
-            "📥 DOWNLOAD BACKTEST EXCEL",
+            "📥 DOWNLOAD BACKTEST",
             data=to_excel(df_logs),
             file_name=f"backtest_{bt_date}.xlsx"
         )
