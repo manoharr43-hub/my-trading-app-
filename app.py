@@ -8,13 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.3", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V52.6", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.3 - TIME FIXED ENGINE")
+st.title("🚀 NSE AI PRO V52.6 - DATE LOCKED ENGINE")
 
 # =============================
 # STOCK LIST
@@ -139,10 +139,10 @@ with tab1:
         st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 # =============================
-# BACKTEST (TIME FIXED)
+# BACKTEST (STRICT DATE + TIME)
 # =============================
 with tab2:
-    bt_date = st.date_input("Select Date", value=now.date()-timedelta(days=1))
+    bt_date = st.date_input("Select Date", value=(now.date() - timedelta(days=1)))
 
     if st.button("RUN BACKTEST"):
         logs = []
@@ -150,14 +150,15 @@ with tab2:
 
         for s in stocks:
             try:
-                start = pd.to_datetime(bt_date)
-                end = start + timedelta(days=1)
+                # ✅ Strict Date Fix
+                start = datetime.combine(bt_date, datetime.min.time()).replace(tzinfo=IST)
+                end   = start + timedelta(days=1)
 
                 df = yf.download(s + ".NS", start=start, end=end, interval="5m", progress=False)
                 if df is None or df.empty:
                     continue
 
-                # ✅ TIME FIX (MAIN CHANGE)
+                # ✅ Strict UTC → IST conversion
                 if df.index.tz is None:
                     df.index = df.index.tz_localize("UTC")
                 df.index = df.index.tz_convert(IST)
@@ -173,10 +174,10 @@ with tab2:
                     row = df.iloc[i]
                     time = df.index[i]   # ✅ already IST
 
-                    # Optional NSE filter
-                    if not (time.hour > 9 or (time.hour == 9 and time.minute >= 15)):
+                    # ✅ NSE Market Hours Filter (09:15–15:30 IST)
+                    if time.hour < 9 or (time.hour == 9 and time.minute < 15):
                         continue
-                    if time.hour >= 15 and time.minute > 30:
+                    if time.hour > 15 or (time.hour == 15 and time.minute > 30):
                         continue
 
                     if last_trade_time and (time - last_trade_time < cooldown):
@@ -244,13 +245,4 @@ with tab2:
             st.dataframe(df_logs, use_container_width=True)
 
             total = len(df_logs)
-            wins = len(df_logs[df_logs["P&L"] > 0])
-            loss = len(df_logs[df_logs["P&L"] <= 0])
-
-            st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
-
-            excel = to_excel(df_logs)
-            st.download_button("📥 Download Excel", excel, file_name="backtest.xlsx")
-
-        else:
-            st.warning("No trades found")
+            wins =
