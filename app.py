@@ -10,13 +10,13 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V45.3", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V45.4", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V45.3 - LIVE + BACKTEST + SECTOR + BIG MOVE")
+st.title("🚀 NSE AI PRO V45.4 - LIVE + BACKTEST + SECTOR + BIG MOVE")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
@@ -123,7 +123,8 @@ with tab1:
                             "SL": round(l["Close"] - l["ATR"]*1.5 if "BUY" in signal else l["Close"] + l["ATR"]*1.5,2),
                             "TARGET": round(l["Close"] + l["ATR"]*3 if "BUY" in signal else l["Close"] - l["ATR"]*3,2)
                         })
-            except: continue
+            except Exception:
+                continue
 
         if results:
             df_live = pd.DataFrame(results)
@@ -167,7 +168,8 @@ with tab2:
                                 "BIG MOVE": "🔥" if r["BigMove"]>1 else "-",
                                 "VOLUME": r["Volume"]
                             })
-            except: continue
+            except Exception:
+                continue
 
         if logs:
             df_bt = pd.DataFrame(logs)
@@ -190,5 +192,4 @@ with tab3:
                 if df is None or df.empty: continue
                 df = add_indicators(df.dropna())
                 l = df.iloc[-1]
-                if l["BigMove"] > 1 or l["VolSpike"] > 1.5:
-                    big
+                if l["BigMove"] > 1 or l["VolSpike"] > 1.
