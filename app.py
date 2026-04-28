@@ -8,18 +8,21 @@ from streamlit_autorefresh import st_autorefresh
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V52.9", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V53", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.9 - ERROR FREE ENGINE")
+st.title("🚀 NSE AI PRO V53 - ERROR FREE ENGINE")
 
 # =============================
 # STOCK LIST
 # =============================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"]
+stocks = [
+    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK",
+    "LT","ITC","HINDUNILVR","ASIANPAINT","MARUTI","SUNPHARMA","ONGC","NTPC"
+]
 
 # =============================
 # INDICATORS
@@ -61,9 +64,58 @@ def analyze(row):
         return None, False, False
 
 # =============================
+# EXCEL
+# =============================
+def to_excel(df):
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    return output.getvalue()
+
+# =============================
+# UI Tabs
+# =============================
+tab1, tab2 = st.tabs(["🔴 LIVE", "📊 BACKTEST"])
+
+# =============================
+# LIVE SCAN
+# =============================
+with tab1:
+    if st.button("RUN LIVE"):
+        tickers = [s + ".NS" for s in stocks]
+        data = yf.download(tickers, period="1d", interval="5m", group_by='ticker', progress=False)
+        results = []
+        for s in stocks:
+            try:
+                df = data.get(s + ".NS")
+                df = add_indicators(df)
+                if df is None:
+                    continue
+                row = df.iloc[-1]
+                signal, bp, bm = analyze(row)
+                if signal:
+                    t = pd.to_datetime(df.index[-1])
+                    if t.tz is None:
+                        t = t.tz_localize("UTC")
+                    t = t.tz_convert(IST)
+                    atr = row['ATR']
+                    results.append({
+                        "TIME": t.strftime('%H:%M'),
+                        "STOCK": s,
+                        "SIGNAL": signal,
+                        "BIG PLAYER": "🔥" if bp else "-",
+                        "BIG MOVE": "🚀" if bm else "-",
+                        "ENTRY": round(row['Close'], 2),
+                        "SL": round(row['Close'] - atr*1.5 if signal=="BUY" else row['Close'] + atr*1.5, 2),
+                        "TARGET": round(row['Close'] + atr*3 if signal=="BUY" else row['Close'] - atr*3, 2)
+                    })
+            except Exception:
+                continue
+        st.dataframe(pd.DataFrame(results), use_container_width=True)
+
+# =============================
 # BACKTEST
 # =============================
-with st.tab("📊 BACKTEST"):
+with tab2:
     bt_date = st.date_input("Select Date", value=(now.date() - timedelta(days=1)))
     if st.button("RUN BACKTEST"):
         logs = []
@@ -143,5 +195,7 @@ with st.tab("📊 BACKTEST"):
             wins = len(df_logs[df_logs["P&L"] > 0])
             loss = len(df_logs[df_logs["P&L"] <= 0])
             st.success(f"Total Trades: {total} | Wins: {wins} | Loss: {loss}")
+            excel = to_excel(df_logs)
+            st.download_button("📥 Download Excel", excel, file_name="backtest.xlsx")
         else:
             st.warning("No trades found")
