@@ -156,4 +156,8 @@ with tab2:
             except: continue
         if bt_logs:
             bt_df = pd.DataFrame(bt_logs)
-            st.dataframe(bt_df, use_container_width=True
+            st.dataframe(bt_df, use_container_width=True)
+            st.download_button("📥 Download Excel Report", data=to_excel(bt_df), file_name=f"Backtest_{bt_date}.xlsx")
+            save_csv(bt_df, f"Backtest_{bt_date}")
+        else:
+            st.warning("No signals found for this date.")
