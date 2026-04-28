@@ -10,31 +10,22 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V44", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V45 LIVE", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V44 - NSE 200 MASTER PULLBACK")
+st.title("🚀 NSE AI PRO V45 - BIG PLAYER LIVE SCANNER")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
-# STOCK LIST (NSE 200)
+# STOCK LIST (SHORT FOR SPEED)
 # =============================
 stocks = [
-    "ABB","ACC","ADANIENT","ADANIPORTS","ADANIPOWER","ATGL","AWL","ABCAPITAL","ABFRL",
-    "ALKEM","AMBUJACEM","APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASIANPAINT","ASTRAL","AUBANK",
-    "AUROPHARMA","AXISBANK","BAJAJ-AUTO","BAJFINANCE","BAJAJFINSV","BAJAJHLDNG",
-    "BANDHANBNK","BANKBARODA","BEL","BERGEPAINT","BHARTIARTL","BIOCON","BPCL",
-    "BRITANNIA","CANBK","CIPLA","COALINDIA","CONCOR","CUMMINSIND","DLF","DABUR",
-    "DIVISLAB","DRREDDY","EICHERMOT","ESCORTS","FEDERALBNK","GAIL","GLENMARK",
-    "GODREJCP","GRASIM","HAL","HAVELLS","HCLTECH","HDFCBANK","HDFCLIFE",
-    "HEROMOTOCO","HINDALCO","HINDUNILVR","ICICIBANK","ICICIGI","ICICIPRULI",
-    "IDFCFIRSTB","INDIGO","INDUSINDBK","INFY","IOC","IRCTC","ITC","JINDALSTEL",
-    "JSWSTEEL","JUBLFOOD","KOTAKBANK","LT","LTIM","LUPIN","M&M","MARUTI",
-    "NESTLEIND","NTPC","ONGC","PIDILITIND","PNB","POWERGRID","RELIANCE",
-    "SBIN","SUNPHARMA","TATAMOTORS","TATASTEEL","TCS","TECHM","TITAN","ULTRACEMCO","WIPRO"
+    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","LT","ITC",
+    "AXISBANK","KOTAKBANK","HINDUNILVR","BHARTIARTL","TATAMOTORS",
+    "BAJFINANCE","MARUTI","SUNPHARMA","WIPRO","ONGC","NTPC","POWERGRID"
 ]
 
 # =============================
@@ -42,8 +33,6 @@ stocks = [
 # =============================
 def add_indicators(df):
     df = df.copy()
-    if len(df) < 20:
-        return df
 
     df["EMA20"] = df["Close"].ewm(span=20).mean()
     df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / (df["Volume"].cumsum() + 1e-9)
@@ -57,14 +46,22 @@ def add_indicators(df):
 
     df["ATR"] = tr.rolling(14).mean()
     df["VolAvg"] = df["Volume"].rolling(20).mean()
+
+    # 🔥 BIG PLAYER SMART FLOW (NEW)
+    df["VolumeSpike"] = df["Volume"] / (df["VolAvg"] + 1e-9)
+    df["PriceMove"] = abs(df["Close"] - df["Open"])
+
     return df
 
+# =============================
+# DATA FETCH
+# =============================
 @st.cache_data(ttl=60)
-def fetch_data(symbols):
-    tickers = [s + ".NS" for s in symbols]
+def fetch():
+    tickers = [s + ".NS" for s in stocks]
     return yf.download(tickers, period="5d", interval="5m", group_by="ticker", progress=False)
 
-data = fetch_data(stocks)
+data = fetch()
 
 # =============================
 # EXCEL EXPORT
@@ -72,131 +69,71 @@ data = fetch_data(stocks)
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="REPORT")
+        df.to_excel(writer, index=False, sheet_name="LIVE_SCAN")
     return output.getvalue()
 
 # =============================
-# TABS
+# LIVE SCANNER
 # =============================
-tab1, tab2 = st.tabs(["🔍 LIVE SCAN", "📊 BACKTEST"])
+if st.button("🔥 RUN LIVE BIG PLAYER SCAN"):
+    results = []
 
-# =============================
-# TAB 1 - LIVE SCAN
-# =============================
-with tab1:
-    if st.button("RUN LIVE SCAN"):
-        results = []
-
-        for s in stocks:
-            try:
-                df_raw = data.get(s + ".NS")
-                if df_raw is None or df_raw.empty:
-                    continue
-
-                df = add_indicators(df_raw.dropna())
-                l = df.iloc[-1]
-
-                dist = abs(l["Close"] - l["EMA20"]) / l["EMA20"]
-
-                if dist < 0.004:
-                    signal = None
-
-                    if l["Close"] > l["VWAP"] and l["Close"] > l["Open"]:
-                        signal = "BUY 🟢"
-                    elif l["Close"] < l["VWAP"] and l["Close"] < l["Open"]:
-                        signal = "SELL 🔴"
-
-                    if signal:
-                        entry = round(l["Close"], 2)
-
-                        results.append({
-                            "TIME": df.index[-1].astimezone(IST).strftime("%H:%M"),
-                            "STOCK": s,
-                            "SIGNAL": signal,
-                            "ENTRY": entry,
-                            "BIG PLAYER": "🔥 YES" if l["Volume"] > l["VolAvg"]*2.5 else "-",
-                            "SL": round(entry - l["ATR"]*1.5 if "BUY" in signal else entry + l["ATR"]*1.5, 2),
-                            "TARGET": round(entry + l["ATR"]*3 if "BUY" in signal else entry - l["ATR"]*3, 2)
-                        })
-
-            except:
+    for s in stocks:
+        try:
+            df_raw = data.get(s + ".NS")
+            if df_raw is None or df_raw.empty:
                 continue
 
-        if results:
-            df_live = pd.DataFrame(results)
+            df = add_indicators(df_raw.dropna())
+            l = df.iloc[-1]
 
-            st.success(f"Signals Found: {len(df_live)}")
-            st.dataframe(df_live, use_container_width=True)
+            dist = abs(l["Close"] - l["EMA20"]) / l["EMA20"]
 
-            # ✅ LIVE EXCEL DOWNLOAD FIX
-            st.download_button(
-                "📥 DOWNLOAD LIVE EXCEL",
-                data=to_excel(df_live),
-                file_name=f"LIVE_SCAN_{now.strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("No signals found")
+            # 🔥 LOOSER RANGE (IMPORTANT FIX)
+            if dist < 0.015:
 
-# =============================
-# TAB 2 - BACKTEST
-# =============================
-with tab2:
-    bt_date = st.date_input("Select Date", value=now.date() - timedelta(days=1))
+                signal = None
 
-    if st.button("RUN BACKTEST"):
-        logs = []
+                # BUY / SELL LOGIC
+                if l["Close"] > l["EMA20"] and l["Close"] > l["VWAP"]:
+                    signal = "BUY 🟢 PULLBACK"
+                elif l["Close"] < l["EMA20"] and l["Close"] < l["VWAP"]:
+                    signal = "SELL 🔴 PULLBACK"
 
-        for s in stocks:
-            try:
-                df_raw = data.get(s + ".NS")
-                if df_raw is None:
-                    continue
+                if signal:
 
-                df = add_indicators(df_raw.dropna())
-                df.index = df.index.tz_convert(IST)
+                    # 🔥 BIG PLAYER LOGIC (STRONG UPGRADE)
+                    big_player_score = (
+                        (l["VolumeSpike"] > 1.5) * 40 +
+                        (l["PriceMove"] > l["ATR"]) * 30 +
+                        (l["VolumeSpike"] > 2.0) * 30
+                    )
 
-                df_day = df[df.index.date == bt_date]
-                if df_day.empty:
-                    continue
+                    results.append({
+                        "TIME": df.index[-1].astimezone(IST).strftime("%H:%M"),
+                        "STOCK": s,
+                        "SIGNAL": signal,
+                        "ENTRY": round(l["Close"], 2),
+                        "BIG PLAYER SCORE": f"{big_player_score}/100",
+                        "VOLUME SPIKE": round(l["VolumeSpike"], 2),
+                        "SL": round(l["Close"] - l["ATR"]*1.5 if "BUY" in signal else l["Close"] + l["ATR"]*1.5, 2),
+                        "TARGET": round(l["Close"] + l["ATR"]*3 if "BUY" in signal else l["Close"] - l["ATR"]*3, 2)
+                    })
 
-                for i in range(20, len(df_day)):
-                    r = df_day.iloc[i]
-                    dist = abs(r["Close"] - r["EMA20"]) / r["EMA20"]
+        except:
+            continue
 
-                    if dist < 0.004:
-                        sig = None
+    if results:
+        df_live = pd.DataFrame(results)
 
-                        if r["Close"] > r["VWAP"] and r["Close"] > r["Open"]:
-                            sig = "BUY"
-                        elif r["Close"] < r["VWAP"] and r["Close"] < r["Open"]:
-                            sig = "SELL"
+        st.success(f"🔥 BIG PLAYER SIGNALS: {len(df_live)}")
+        st.dataframe(df_live, use_container_width=True)
 
-                        if sig:
-                            entry = round(r["Close"], 2)
-
-                            logs.append({
-                                "TIME": df_day.index[i].strftime("%H:%M"),
-                                "STOCK": s,
-                                "TYPE": sig,
-                                "ENTRY": entry,
-                                "SL": round(entry - r["ATR"]*1.5 if sig=="BUY" else entry + r["ATR"]*1.5, 2),
-                                "TARGET": round(entry + r["ATR"]*3 if sig=="BUY" else entry - r["ATR"]*3, 2),
-                                "BIG PLAYER": "🔥" if r["Volume"] > r["VolAvg"]*2.5 else "-"
-                            })
-
-            except:
-                continue
-
-        if logs:
-            df_bt = pd.DataFrame(logs)
-            st.dataframe(df_bt, use_container_width=True)
-
-            st.download_button(
-                "📥 DOWNLOAD BACKTEST EXCEL",
-                data=to_excel(df_bt),
-                file_name=f"BACKTEST_{bt_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("No backtest signals found")
+        st.download_button(
+            "📥 DOWNLOAD LIVE EXCEL",
+            data=to_excel(df_live),
+            file_name=f"BIG_PLAYER_LIVE_{now.strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.warning("No BIG PLAYER activity detected right now.")
