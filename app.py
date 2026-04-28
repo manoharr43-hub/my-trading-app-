@@ -5,35 +5,24 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from streamlit_autorefresh import st_autorefresh
-import io, os
+import io
 
 # =============================
 # CONFIG & UI SETUP
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V43.2", layout="wide")
-st_autorefresh(interval=180000, key="refresh")  # auto-refresh every 3 min
+st.set_page_config(page_title="🚀 NSE AI PRO V43.1", layout="wide")
+st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V43.2 - NSE 200 MASTER PULLBACK")
+st.title("🚀 NSE AI PRO V43.1 - NSE 200 MASTER PULLBACK")
 st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
-# SECTOR-WISE STOCK LIST
+# NSE 200 STOCK LIST
 # =============================
-sector_stocks = {
-    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK","PNB","BANKBARODA","CANBK","FEDERALBNK","IDFCFIRSTB"],
-    "IT": ["TCS","INFY","WIPRO","HCLTECH","TECHM","LTIM","MPHASIS","COFORGE","PERSISTENT"],
-    "Auto": ["MARUTI","M&M","TATAMOTORS","HEROMOTOCO","EICHERMOT","BAJAJ-AUTO","ASHOKLEY","TVSMOTOR"],
-    "Pharma": ["SUNPHARMA","CIPLA","DIVISLAB","DRREDDY","AUROPHARMA","LUPIN","TORNTPHARM","ZYDUSLIFE"],
-    "Metals": ["TATASTEEL","JSWSTEEL","HINDALCO","JINDALSTEL","NMDC","NATIONALUM","SAIL","VEDL"],
-    "FMCG": ["ITC","HINDUNILVR","NESTLEIND","BRITANNIA","DABUR","MARICO","COLPAL","GODREJCP"],
-    "Oil & Gas": ["RELIANCE","ONGC","BPCL","IOC","GAIL","PETRONET","GUJGASLTD","ATGL"],
-    "Infra": ["LT","DLF","SIEMENS","ABB","ADANIPORTS","ADANIENT","IRCTC","CONCOR"],
-    "Energy": ["NTPC","POWERGRID","JSWENERGY","TATAPOWER","NHPC"],
-    "Others": ["TITAN","ASIANPAINT","ULTRACEMCO","GRASIM","SHREECEM","TRENT","ZOMATO","ZEEL"]
-}
+stocks = [ "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK","LT","ITC","HINDUNILVR","ASIANPAINT","MARUTI","SUNPHARMA","ONGC","NTPC","POWERGRID","TATASTEEL","JSWSTEEL","BAJFINANCE","BAJAJFINSV","ADANIENT","ADANIPORTS","ULTRACEMCO","GRASIM","TECHM","WIPRO","HCLTECH","NESTLEIND","BRITANNIA","CIPLA","DIVISLAB","DRREDDY","BPCL","IOC","BHARTIARTL","TITAN","M&M","HEROMOTOCO","EICHERMOT","TATAMOTORS","COALINDIA","SHREECEM","HAVELLS","SIEMENS","TORNTPHARM","PIDILITIND","LTIM","BEL","DLF","INDUSINDBK","PNB","BANKBARODA","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO" ]
 
 # =============================
 # INDICATORS
@@ -55,12 +44,7 @@ def fetch_data(symbols, interval, period):
     return yf.download(tickers, period=period, interval=interval, group_by='ticker', progress=False)
 
 with st.spinner("🚀 Loading NSE 200 Data..."):
-    all_stocks = sum(sector_stocks.values(), [])
-    data_5m = fetch_data(all_stocks, "5m", "5d")
-
-def save_csv(df, filename):
-    os.makedirs("signals", exist_ok=True)
-    df.to_csv(os.path.join("signals", filename), index=False)
+    data_5m = fetch_data(stocks, "5m", "5d")
 
 def to_excel(df):
     output = io.BytesIO()
@@ -74,13 +58,12 @@ def to_excel(df):
 tab1, tab2 = st.tabs(["🔍 LIVE PULLBACK SCAN", "📊 BACKTEST & EXCEL"])
 
 # -----------------------------
-# TAB 1: LIVE SCANNER + AUTO CSV
+# TAB 1: LIVE SCANNER + EXCEL
 # -----------------------------
 with tab1:
-    sector = st.selectbox("Select Sector", list(sector_stocks.keys()))
-    if st.button("RUN LIVE SCAN"):
+    if st.button("RUN LIVE NSE 200 SCAN"):
         results = []
-        for s in sector_stocks[sector]:
+        for s in stocks:
             try:
                 df_raw = data_5m.get(s + ".NS")
                 if df_raw is None or df_raw.empty: continue
@@ -109,26 +92,22 @@ with tab1:
         if results:
             df_live = pd.DataFrame(results)
             st.table(df_live)
-            # Auto-save CSV every run
-            save_csv(df_live, f"LiveScan_{sector}_{now.strftime('%Y%m%d_%H%M')}.csv")
-            st.success(f"✅ Auto-saved CSV: signals/LiveScan_{sector}_{now.strftime('%Y%m%d_%H%M')}.csv")
             st.download_button(
                 "📥 Download Live Scan Excel",
                 data=to_excel(df_live),
-                file_name=f"LiveScan_{sector}_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+                file_name=f"LiveScan_{now.strftime('%Y%m%d_%H%M')}.xlsx"
             )
         else:
-            st.info("No pullback signals found in this sector right now.")
+            st.info("No pullback signals found in NSE 200 right now.")
 
 # -----------------------------
-# TAB 2: BACKTEST (Sector + Excel)
+# TAB 2: BACKTEST (PULLBACK + EXCEL)
 # -----------------------------
 with tab2:
-    sector_bt = st.selectbox("Select Sector for Backtest", list(sector_stocks.keys()))
     bt_date = st.date_input("Select History Date", value=now.date() - timedelta(days=1))
     if st.button("EXECUTE BACKTEST"):
         bt_logs = []
-        for s in sector_stocks[sector_bt]:
+        for s in stocks:
             try:
                 df_raw = data_5m.get(s + ".NS")
                 if df_raw is None: continue
@@ -157,4 +136,13 @@ with tab2:
                                     "STOCK": s, "TYPE": curr_sig, "PRICE": entry,
                                     "BIG PLAYER": "🔥" if row['Volume'] > row['VolAvg']*2.5 else "-",
                                     "SL": round(entry - (row['ATR']*1.5) if "BUY" in curr_sig else entry + (row['ATR']*1.5), 2),
-                                    "TGT": round(entry + (row['ATR']*3)
+                                    "TGT": round(entry + (row['ATR']*3) if "BUY" in curr_sig else entry - (row['ATR']*3), 2)
+                                })
+                                last_action, last_time = curr_sig, curr_time
+            except: continue
+        
+        if bt_logs:
+            bt_df = pd.DataFrame(bt_logs)
+            st.dataframe(bt_df, use_container_width=True)
+            st.download_button("📥 Download Excel Report", data=to_excel(bt_df), file_name=f"Backtest_{bt_date}.xlsx")
+        else: st.warning("No signals found for this date.")
