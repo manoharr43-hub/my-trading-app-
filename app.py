@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from streamlit_autorefresh import st_autorefresh
 import io
@@ -10,17 +10,17 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V47", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V48", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V47 - BIG PLAYER + AI SYSTEM")
+st.title("🚀 NSE AI PRO V48 - SMART MONEY AI SYSTEM")
 st.write(f"🕒 Market Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =============================
-# STOCKS (SIMPLE SAMPLE - YOU CAN EXTEND NSE200)
+# STOCK LIST
 # =============================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
@@ -28,7 +28,7 @@ stocks = [
 ]
 
 # =============================
-# FETCH DATA
+# DATA FETCH
 # =============================
 @st.cache_data(ttl=60)
 def fetch_data():
@@ -37,9 +37,9 @@ def fetch_data():
 
 data = fetch_data()
 
-def get_df(symbol):
+def get_df(sym):
     try:
-        df = data[symbol + ".NS"]
+        df = data[sym + ".NS"]
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(0)
         return df.dropna()
@@ -51,6 +51,7 @@ def get_df(symbol):
 # =============================
 def indicators(df):
     df = df.copy()
+
     df["EMA20"] = df["Close"].ewm(span=20).mean()
     df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / (df["Volume"].cumsum() + 1e-9)
 
@@ -70,31 +71,22 @@ def indicators(df):
 # SUPPORT / RESISTANCE
 # =============================
 def sr(df):
-    support = df["Low"].rolling(20).min().iloc[-1]
-    resistance = df["High"].rolling(20).max().iloc[-1]
-    return support, resistance
+    return df["Low"].rolling(20).min().iloc[-1], df["High"].rolling(20).max().iloc[-1]
 
 # =============================
 # AI SCORE
 # =============================
 def ai_score(r):
     score = 0
-
-    if r["Close"] > r["EMA20"]:
-        score += 25
-    if r["Close"] > r["VWAP"]:
-        score += 20
-    if r["Volume"] > r["VolAvg"] * 2:
-        score += 25
-    if r["Close"] > r["Open"]:
-        score += 15
-    if r["ATR"] > 0:
-        score += 10
-
+    if r["Close"] > r["EMA20"]: score += 25
+    if r["Close"] > r["VWAP"]: score += 20
+    if r["Volume"] > r["VolAvg"] * 2: score += 25
+    if r["Close"] > r["Open"]: score += 15
+    if r["ATR"] > 0: score += 10
     return min(100, max(0, score))
 
 # =============================
-# BIG PLAYER LOGIC
+# BIG PLAYER
 # =============================
 def big_player(r, df):
     support, resistance = sr(df)
@@ -105,8 +97,7 @@ def big_player(r, df):
         return "🔴 BIG SELL BREAKDOWN"
     elif r["Volume"] > r["VolAvg"] * 2:
         return "⚡ ACCUMULATION"
-    else:
-        return "-"
+    return "-"
 
 # =============================
 # EXCEL
@@ -134,15 +125,21 @@ if st.button("🚀 RUN LIVE SCAN"):
 
         support, resistance = sr(df)
 
-        if abs(l["Close"] - l["EMA20"]) / l["EMA20"] < 0.004:
+        dist = abs(l["Close"] - l["EMA20"]) / l["EMA20"]
+
+        if dist < 0.004:
 
             score = ai_score(l)
             big = big_player(l, df)
 
             signal = "BUY 🟢" if l["Close"] > l["VWAP"] else "SELL 🔴"
-            entry = l["Close"]
+            entry = float(l["Close"])
+
+            sl = entry - l["ATR"]*1.5 if "BUY" in signal else entry + l["ATR"]*1.5
+            tgt = entry + l["ATR"]*3 if "BUY" in signal else entry - l["ATR"]*3
 
             results.append({
+                "TIME": now.strftime("%H:%M"),
                 "STOCK": s,
                 "SIGNAL": signal,
                 "AI_SCORE": score,
@@ -150,25 +147,71 @@ if st.button("🚀 RUN LIVE SCAN"):
                 "SUPPORT": support,
                 "RESISTANCE": resistance,
                 "ENTRY": entry,
-                "SL": entry - l["ATR"]*1.5 if "BUY" in signal else entry + l["ATR"]*1.5,
-                "TARGET": entry + l["ATR"]*3 if "BUY" in signal else entry - l["ATR"]*3
+                "SL": sl,
+                "TARGET": tgt
             })
 
     if results:
         df_res = pd.DataFrame(results)
 
-        # TOP 10
         df_res = df_res.sort_values("AI_SCORE", ascending=False).head(10)
 
-        st.subheader("🏆 TOP 10 STRONG STOCKS")
+        st.subheader("🏆 TOP 10 STOCKS")
         st.dataframe(df_res, use_container_width=True)
 
         st.download_button(
-            "📥 DOWNLOAD EXCEL",
+            "📥 DOWNLOAD LIVE EXCEL",
             data=to_excel(df_res),
-            file_name=f"live_scan_{now.strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_name=f"live_{now.strftime('%Y%m%d_%H%M')}.xlsx"
         )
 
     else:
         st.warning("No signals found")
+
+# =============================
+# BACKTEST
+# =============================
+if st.button("📊 RUN BACKTEST"):
+
+    bt_date = now.date() - timedelta(days=1)
+    logs = []
+
+    for s in stocks:
+        df = get_df(s)
+        if df is None:
+            continue
+
+        df = indicators(df)
+
+        # FIXED DATE FILTER
+        df["DATE"] = pd.to_datetime(df.index).date
+        df_day = df[df["DATE"] == bt_date]
+
+        if df_day.empty:
+            continue
+
+        for i in range(20, len(df_day)):
+            row = df_day.iloc[i]
+
+            score = ai_score(row)
+
+            if score > 70:
+                logs.append({
+                    "TIME": df_day.index[i].strftime("%H:%M"),
+                    "STOCK": s,
+                    "AI_SCORE": score,
+                    "PRICE": row["Close"]
+                })
+
+    if logs:
+        df_logs = pd.DataFrame(logs)
+
+        st.dataframe(df_logs, use_container_width=True)
+
+        st.download_button(
+            "📥 DOWNLOAD BACKTEST",
+            data=to_excel(df_logs),
+            file_name=f"backtest_{bt_date}.xlsx"
+        )
+    else:
+        st.warning("No backtest data found")
