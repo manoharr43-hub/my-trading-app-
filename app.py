@@ -215,3 +215,9 @@ with tab2:
             st.success(f"✅ Signals: {len(df_bt)}")
         else:
             st.warning("No signals found")
+big_move = (
+    row['Volume'] > row['VolAvg']*2 and
+    abs(row['Close']-row['Open']) > row['ATR']*0.5 and
+    ((row['Close'] > row['VWAP'] and row['EMA20'] > row['EMA50']) or
+     (row['Close'] < row['VWAP'] and row['EMA20'] < row['EMA50']))
+)
