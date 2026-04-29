@@ -4,23 +4,29 @@ import pandas as pd
 from datetime import datetime, timedelta, time
 import pytz
 import io
+from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V67", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V68 ELITE PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V67 - FULL SYSTEM")
+st.title("🚀 NSE AI PRO V68 ELITE PRO")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+
+st_autorefresh(interval=60000, key="refresh")
 
 # ==========================================
 # SESSION
 # ==========================================
 if "live_logs" not in st.session_state:
     st.session_state.live_logs = []
+
+if "cooldown" not in st.session_state:
+    st.session_state.cooldown = {}
 
 # ==========================================
 # NSE 200 STOCKS
@@ -37,7 +43,19 @@ nse_200 = [
 "PAYTM","POLYCAB","DABUR","MARICO","COLPAL","GODREJCP","ADANIENT","ADANIGREEN",
 "AMBUJACEM","ACC","SIEMENS","ABB","HAVELLS","VEDL","NMDC","SAIL","PAGEIND","TRENT",
 "DMART","VBL","ICICIGI","HDFCAMC","SBICARD","LUPIN","ALKEM","BIOCON","INDIGO",
-"CONCOR","MPHASIS","LTIM","PERSISTENT","COFORGE","RECLTD","PFC","IRFC"
+"CONCOR","MPHASIS","LTIM","PERSISTENT","COFORGE","RECLTD","PFC","IRFC",
+"TATACHEM","CHOLAFIN","LICHSGFIN","MFSL","TORNTPHARM","GLENMARK","SUNTV","ZEEL",
+"TV18BRDCST","BHEL","NHPC","SJVN","NLCINDIA","ATGL","IGL","MGL","PETRONET",
+"JUBLFOOD","DEVYANI","TATAELXSI","KPITTECH","LTTS","HONAUT","3MINDIA","AARTIIND",
+"DEEPAKNTR","LALPATHLAB","METROPOLIS","RAIN","TATAPOWER","TORNTPOWER","ADANIENSOL",
+"ASTRAL","SUPREMEIND","FINCABLES","KEI","CROMPTON","VOLTAS","BLUESTARCO",
+"UNITDSPR","UBL","RADICO","EMAMILTD","PATANJALI","FORTIS","MAXHEALTH",
+"KIMS","MEDANTA","ROUTE","TANLA","AFFLE","INTELLECT","NEWGEN","CYIENT",
+"ZENSARTECH","SONATSOFTW","RAMCOCEM","JKCEMENT","HEIDELBERG","DALBHARAT",
+"OBEROIRLTY","PRESTIGE","BRIGADE","PHOENIXLTD","INDHOTEL","LEMONTREE",
+"EDELWEISS","IIFL","360ONE","CUB","KARURVYSYA","SOUTHBANK","UJJIVANSFB",
+"EQUITASBNK","CAMS","CDSL","MCX","BSE","ANGELONE","5PAISA",
+"NYKAA","FSN","POLICYBZR","EASEMYTRIP","IRCON","RVNL","NBCC","HUDCO"
 ]
 
 tickers = [s + ".NS" for s in nse_200]
@@ -47,16 +65,24 @@ tickers = [s + ".NS" for s in nse_200]
 # ==========================================
 @st.cache_data(ttl=300)
 def get_data():
-    return yf.download(tickers, period="7d", interval="5m", group_by="ticker")
+    return yf.download(tickers, period="30d", interval="5m", group_by="ticker")
 
 # ==========================================
 # INDICATORS
 # ==========================================
 def indicators(df):
-    df["EMA20"] = df["Close"].ewm(span=20, min_periods=20).mean()
-    df["SUPPORT"] = df["Low"].rolling(20, min_periods=20).min()
-    df["RESISTANCE"] = df["High"].rolling(20, min_periods=20).max()
-    df["VOLAVG"] = df["Volume"].rolling(20, min_periods=20).mean()
+    df["EMA20"] = df["Close"].ewm(span=20).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+    df["SUPPORT"] = df["Low"].rolling(20).min()
+    df["RESISTANCE"] = df["High"].rolling(20).max()
+    df["VOLAVG"] = df["Volume"].rolling(20).mean()
+
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = -delta.clip(upper=0).rolling(14).mean()
+    rs = gain / loss
+    df["RSI"] = 100 - (100 / (1 + rs))
+
     return df
 
 # ==========================================
@@ -65,54 +91,37 @@ def indicators(df):
 def big_player(row):
     return row["Volume"] > row["VOLAVG"] * 1.5 if pd.notna(row["VOLAVG"]) else False
 
-def pullback_signal(row, prev):
-    if pd.isna(row["EMA20"]): return None, None, None, None
-
-    if row["Close"] > row["EMA20"] and row["Low"] <= row["EMA20"]*1.002:
-        entry = row["Close"]
-        sl = row["EMA20"]*0.995
-        return "BUY", entry, sl, entry + (entry - sl)*2
-
-    if row["Close"] < row["EMA20"] and row["High"] >= row["EMA20"]*0.998:
-        entry = row["Close"]
-        sl = row["EMA20"]*1.005
-        return "SELL", entry, sl, entry - (sl - entry)*2
-
-    return None, None, None, None
-
 def signal_engine(row, prev):
     if pd.isna(row["EMA20"]): return None, None, None, None, None
 
-    sig, entry, sl, target = pullback_signal(row, prev)
-    if sig:
-        return sig, entry, sl, target, "PULLBACK"
-
-    entry = row["Close"]
-
-    if entry <= row["SUPPORT"]*1.002:
-        sl = row["SUPPORT"]*0.995
-        return "BUY", entry, sl, entry + (entry - sl)*2, "SUPPORT"
-
-    if entry >= row["RESISTANCE"]*0.998:
-        sl = row["RESISTANCE"]*1.002
-        return "SELL", entry, sl, entry - (sl - entry)*2, "RESISTANCE"
-
-    if prev["Close"] < prev["EMA20"] and entry > row["EMA20"]:
+    # Pullback
+    if row["Close"] > row["EMA20"] and row["Low"] <= row["EMA20"]*1.002:
+        sig = "BUY"
+        entry = row["Close"]
         sl = row["EMA20"]*0.995
-        return "BUY", entry, sl, entry + (entry - sl)*2, "EMA"
-
-    if prev["Close"] > prev["EMA20"] and entry < row["EMA20"]:
+        target = entry + (entry - sl)*2.5
+    elif row["Close"] < row["EMA20"] and row["High"] >= row["EMA20"]*0.998:
+        sig = "SELL"
+        entry = row["Close"]
         sl = row["EMA20"]*1.005
-        return "SELL", entry, sl, entry - (sl - entry)*2, "EMA"
+        target = entry - (sl - entry)*2.5
+    else:
+        return None, None, None, None, None
 
-    return None, None, None, None, None
+    # Filters
+    if sig == "BUY" and row["RSI"] > 60: return None, None, None, None, None
+    if sig == "SELL" and row["RSI"] < 40: return None, None, None, None, None
 
-def ai_score(row, prev):
+    if sig == "BUY" and row["EMA20"] < row["EMA50"]: return None, None, None, None, None
+    if sig == "SELL" and row["EMA20"] > row["EMA50"]: return None, None, None, None, None
+
+    return sig, entry, sl, target, "PULLBACK"
+
+def ai_score(row):
     score = 0
     if row["Close"] > row["EMA20"]: score += 2
     if big_player(row): score += 2
-    if abs(row["Close"]-row["SUPPORT"]) < row["Close"]*0.003: score += 2
-    if pullback_signal(row, prev)[0]: score += 3
+    if row["RSI"] > 50: score += 2
     return score
 
 def session_check(ts):
@@ -130,8 +139,11 @@ with tab1:
 
         for s in nse_200:
             try:
-                df = data[s + ".NS"].dropna()
-                if len(df) < 30: continue
+                if (s + ".NS") not in data.columns.levels[0]:
+                    continue
+
+                df = data[s + ".NS"].dropna().copy()
+                if len(df) < 50: continue
 
                 df = indicators(df)
                 row, prev = df.iloc[-1], df.iloc[-2]
@@ -139,10 +151,17 @@ with tab1:
 
                 if not session_check(ts): continue
 
-                score = ai_score(row, prev)
-                sig, entry, sl, target, typ = signal_engine(row, prev)
+                # Cooldown
+                if s in st.session_state.cooldown:
+                    if (ts - st.session_state.cooldown[s]).seconds < 1800:
+                        continue
 
-                if sig and score >= 7:
+                sig, entry, sl, target, typ = signal_engine(row, prev)
+                score = ai_score(row)
+
+                if sig and score >= 5:
+                    st.session_state.cooldown[s] = ts
+
                     st.session_state.live_logs.append({
                         "TIME": ts.strftime("%H:%M"),
                         "STOCK": s,
@@ -151,18 +170,17 @@ with tab1:
                         "SL": round(sl,2),
                         "TARGET": round(target,2),
                         "SCORE": score,
-                        "BIG PLAYER": "YES" if big_player(row) else "NO",
-                        "PULLBACK": "YES" if typ=="PULLBACK" else "NO",
                         "TYPE": typ
                     })
             except:
                 continue
 
     df_live = pd.DataFrame(st.session_state.live_logs)
+
     if not df_live.empty:
+        df_live = df_live.sort_values("SCORE", ascending=False)
         st.dataframe(df_live, use_container_width=True)
 
-        # Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df_live.to_excel(writer, index=False)
@@ -180,7 +198,10 @@ with tab2:
 
         for s in nse_200:
             try:
-                df = data[s + ".NS"].dropna()
+                if (s + ".NS") not in data.columns.levels[0]:
+                    continue
+
+                df = data[s + ".NS"].dropna().copy()
                 df.index = df.index.tz_convert(IST)
                 df = df[df.index.date == test_date]
 
@@ -192,10 +213,30 @@ with tab2:
 
                     if not session_check(ts): continue
 
-                    score = ai_score(row, prev)
                     sig, entry, sl, target, typ = signal_engine(row, prev)
 
-                    if sig and score >= 7:
+                    if sig:
+                        result = "OPEN"
+
+                        for j in range(i+1, len(df)):
+                            future = df.iloc[j]
+
+                            if sig == "BUY":
+                                if future["Low"] <= sl:
+                                    result = "LOSS"
+                                    break
+                                if future["High"] >= target:
+                                    result = "WIN"
+                                    break
+
+                            if sig == "SELL":
+                                if future["High"] >= sl:
+                                    result = "LOSS"
+                                    break
+                                if future["Low"] <= target:
+                                    result = "WIN"
+                                    break
+
                         logs.append({
                             "TIME": ts.strftime("%H:%M"),
                             "STOCK": s,
@@ -203,17 +244,22 @@ with tab2:
                             "ENTRY": round(entry,2),
                             "SL": round(sl,2),
                             "TARGET": round(target,2),
-                            "SCORE": score,
-                            "BIG PLAYER": "YES" if big_player(row) else "NO",
-                            "PULLBACK": "YES" if typ=="PULLBACK" else "NO",
+                            "RESULT": result,
                             "TYPE": typ
                         })
             except:
                 continue
 
         df_bt = pd.DataFrame(logs)
+
         if not df_bt.empty:
             st.dataframe(df_bt, use_container_width=True)
+
+            wins = df_bt[df_bt["RESULT"]=="WIN"].shape[0]
+            total = len(df_bt)
+            acc = (wins/total)*100 if total>0 else 0
+
+            st.success(f"🎯 Accuracy: {round(acc,2)}%")
 
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
