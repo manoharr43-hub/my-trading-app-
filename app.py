@@ -7,24 +7,18 @@ import pytz
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V57", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V58", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V57 - COMPLETE SYSTEM")
+st.title("🚀 NSE AI PRO V58 - SCREEN TIME FIXED SYSTEM")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ==========================================
-# NSE 200 STOCKS
+# NSE STOCKS (SHORT FOR SPEED)
 # ==========================================
-stocks = [
-"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","BHARTIARTL","ITC","KOTAKBANK","LT",
-"HINDUNILVR","ASIANPAINT","AXISBANK","MARUTI","SUNPHARMA","TITAN","ULTRACEMCO","WIPRO","NESTLEIND",
-"POWERGRID","NTPC","BAJFINANCE","BAJAJFINSV","ONGC","ADANIENT","ADANIPORTS","JSWSTEEL","TATASTEEL",
-"HCLTECH","TECHM","GRASIM","DIVISLAB","DRREDDY","CIPLA","BRITANNIA","EICHERMOT","HEROMOTOCO",
-"TATAMOTORS","M&M","COALINDIA","BPCL","IOC","SHREECEM","HAVELLS","SIEMENS","DLF","PIDILITIND"
-]
+stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","KOTAKBANK"]
 
 # ==========================================
 # INDICATORS
@@ -50,14 +44,14 @@ def add_indicators(df):
     return df
 
 # ==========================================
-# SCREEN TIME FILTER
+# SCREEN TIME (ONLY FLAG, NOT SKIP)
 # ==========================================
 def in_session(dt):
     t = dt.time()
     return time(9,15) <= t <= time(15,30)
 
 # ==========================================
-# BIG PLAYER (BONUS)
+# BIG PLAYER
 # ==========================================
 def big_player(row):
     return row['Volume'] > row['VolAvg'] * 2
@@ -68,21 +62,18 @@ def big_player(row):
 def get_signal(row, prev):
     dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
 
-    # SUPPORT BUY
     if row['Close'] <= row['Support'] * 1.01:
         return "BUY SUPPORT"
 
-    # RESISTANCE SELL
     if row['Close'] >= row['Resistance'] * 0.99:
         return "SELL RESISTANCE"
 
-    # PULLBACK
     if dist < 0.012:
         return "BUY" if row['Close'] > row['EMA20'] else "SELL"
 
-    # BREAKOUT
     if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']:
         return "BUY"
+
     if prev['Close'] > row['EMA20'] and row['Close'] < row['EMA20']:
         return "SELL"
 
@@ -101,7 +92,7 @@ data = get_data()
 # ==========================================
 # LIVE SCAN
 # ==========================================
-if st.button("🚀 SCAN NSE200"):
+if st.button("🚀 SCAN MARKET"):
     results = []
 
     for s in stocks:
@@ -115,9 +106,8 @@ if st.button("🚀 SCAN NSE200"):
             row = df.iloc[-1]
             prev = df.iloc[-2]
 
-            # SCREEN TIME
-            if not in_session(df.index[-1].tz_convert(IST)):
-                continue
+            # 🔥 SCREEN TIME FLAG (NOT SKIP)
+            session = "LIVE" if in_session(df.index[-1].tz_convert(IST)) else "OUTSIDE"
 
             signal = get_signal(row, prev)
             if not signal:
@@ -129,6 +119,7 @@ if st.button("🚀 SCAN NSE200"):
                 "ENTRY": round(row['Close'],2),
                 "SUPPORT": round(row['Support'],2),
                 "RESISTANCE": round(row['Resistance'],2),
+                "SESSION": session,
                 "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
             })
 
@@ -157,8 +148,7 @@ if st.button("RUN BACKTEST"):
                 row = df.iloc[i]
                 prev = df.iloc[i-1]
 
-                if not in_session(df.index[i]):
-                    continue
+                session = "LIVE" if in_session(df.index[i]) else "OUTSIDE"
 
                 signal = get_signal(row, prev)
                 if not signal:
@@ -170,6 +160,7 @@ if st.button("RUN BACKTEST"):
                     "SIGNAL": signal,
                     "SUPPORT": round(row['Support'],2),
                     "RESISTANCE": round(row['Resistance'],2),
+                    "SESSION": session,
                     "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
                 })
 
