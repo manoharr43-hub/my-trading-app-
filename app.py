@@ -1,17 +1,23 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
-import pytz, io
+from datetime import datetime, timedelta, time
+import pytz
 
-st.set_page_config(page_title="🚀 NSE AI PRO V52.1", layout="wide")
+# ==========================================
+# CONFIG
+# ==========================================
+st.set_page_config(page_title="🚀 NSE AI PRO V54", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V52.1 - FIXED SIGNAL SYSTEM")
+st.title("🚀 NSE AI PRO V54 - FULL NSE200 SYSTEM")
+st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
-# ✅ FULL NSE200
+# ==========================================
+# NSE 200 STOCKS
+# ==========================================
 stocks = [
 "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","BHARTIARTL","ITC","KOTAKBANK","LT",
 "HINDUNILVR","ASIANPAINT","AXISBANK","MARUTI","SUNPHARMA","TITAN","ULTRACEMCO","WIPRO","NESTLEIND",
@@ -41,11 +47,6 @@ def add_indicators(df):
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
 
-    df['Date'] = df.index.date
-    df['VWAP'] = df.groupby('Date').apply(
-        lambda x: (x['Close']*x['Volume']).cumsum() / x['Volume'].cumsum()
-    ).reset_index(level=0, drop=True)
-
     tr = pd.concat([
         df['High'] - df['Low'],
         abs(df['High'] - df['Close'].shift()),
@@ -58,16 +59,27 @@ def add_indicators(df):
     return df
 
 # ==========================================
-# SIGNAL LOGIC (LOOSE)
+# BIG PLAYER (BONUS)
+# ==========================================
+def big_player(row):
+    return row['Volume'] > row['VolAvg'] * 2.5
+
+# ==========================================
+# SESSION TIME FILTER
+# ==========================================
+def in_session(dt):
+    t = dt.time()
+    return time(9,15) <= t <= time(15,30)
+
+# ==========================================
+# SIGNAL ENGINE (FIXED + BALANCED)
 # ==========================================
 def get_signal(row, prev):
     dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
 
     # Pullback
-    if dist < 0.012 and row['Close'] > row['EMA20']:
-        return "BUY"
-    if dist < 0.012 and row['Close'] < row['EMA20']:
-        return "SELL"
+    if dist < 0.012:
+        return "BUY" if row['Close'] > row['EMA20'] else "SELL"
 
     # Breakout
     if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']:
@@ -88,9 +100,9 @@ def get_data():
 data = get_data()
 
 # ==========================================
-# LIVE
+# LIVE SCAN
 # ==========================================
-if st.button("🚀 SCAN LIVE"):
+if st.button("🚀 SCAN NSE200"):
     results = []
 
     for s in stocks:
@@ -104,6 +116,10 @@ if st.button("🚀 SCAN LIVE"):
             row = df.iloc[-1]
             prev = df.iloc[-2]
 
+            # session check
+            if not in_session(df.index[-1].tz_convert(IST)):
+                continue
+
             signal = get_signal(row, prev)
             if not signal:
                 continue
@@ -113,19 +129,20 @@ if st.button("🚀 SCAN LIVE"):
             results.append({
                 "STOCK": s,
                 "SIGNAL": signal,
-                "ENTRY": entry
+                "ENTRY": entry,
+                "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
             })
 
         except:
             continue
 
-    st.write(f"Signals Found: {len(results)}")
+    st.write(f"TOTAL SIGNALS: {len(results)}")
     st.dataframe(pd.DataFrame(results))
 
 # ==========================================
 # BACKTEST
 # ==========================================
-d = st.date_input("Backtest Date", now.date() - timedelta(days=1))
+d = st.date_input("Select Date", now.date() - timedelta(days=1))
 
 if st.button("RUN BACKTEST"):
     logs = []
@@ -141,6 +158,9 @@ if st.button("RUN BACKTEST"):
                 row = df.iloc[i]
                 prev = df.iloc[i-1]
 
+                if not in_session(df.index[i]):
+                    continue
+
                 signal = get_signal(row, prev)
                 if not signal:
                     continue
@@ -148,11 +168,12 @@ if st.button("RUN BACKTEST"):
                 logs.append({
                     "TIME": df.index[i].strftime('%H:%M'),
                     "STOCK": s,
-                    "SIGNAL": signal
+                    "SIGNAL": signal,
+                    "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
                 })
 
         except:
             continue
 
-    st.write(f"Backtest Signals: {len(logs)}")
+    st.write(f"BACKTEST SIGNALS: {len(logs)}")
     st.dataframe(pd.DataFrame(logs))
