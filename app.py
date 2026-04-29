@@ -7,12 +7,12 @@ import pytz
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V54", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V56", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V54 - FULL NSE200 SYSTEM")
+st.title("🚀 NSE AI PRO V56 - COMPLETE PRO SYSTEM")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ==========================================
@@ -24,18 +24,7 @@ stocks = [
 "POWERGRID","NTPC","BAJFINANCE","BAJAJFINSV","ONGC","ADANIENT","ADANIPORTS","JSWSTEEL","TATASTEEL",
 "HCLTECH","TECHM","GRASIM","DIVISLAB","DRREDDY","CIPLA","BRITANNIA","EICHERMOT","HEROMOTOCO",
 "TATAMOTORS","M&M","COALINDIA","BPCL","IOC","SHREECEM","HAVELLS","SIEMENS","DLF","PIDILITIND",
-"INDUSINDBK","BANKBARODA","PNB","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO",
-"BEL","LTIM","ABB","ABCAPITAL","ABFRL","ACC","ADANIGREEN","ADANITRANS","ALKEM","AMBUJACEM",
-"APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASTRAL","ATUL","AUROPHARMA","BAJAJHLDNG","BALKRISIND",
-"BANDHANBNK","BERGEPAINT","BIOCON","BOSCHLTD","CHOLAFIN","COLPAL","CONCOR","CROMPTON","DABUR",
-"DALBHARAT","DEEPAKNTR","DELHIVERY","ESCORTS","EXIDEIND","GAIL","GLENMARK","GMRINFRA",
-"GNFC","GODREJCP","GODREJPROP","HAL","HINDALCO","HINDCOPPER","ICICIGI","ICICIPRULI",
-"IGL","INDIGO","INDUSTOWER","IRCTC","JINDALSTEL","JSWENERGY","JUBLFOOD","LALPATHLAB",
-"LICHSGFIN","LUPIN","MARICO","MFSL","MGL","MPHASIS","MUTHOOTFIN","NAM-INDIA",
-"NAUKRI","NMDC","OBEROIRLTY","OFSS","PAGEIND","PEL","PETRONET","PIIND",
-"POLYCAB","PVRINOX","RAMCOCEM","RECLTD","SAIL","SBICARD","SBILIFE","SRF",
-"SUNTV","SYNGENE","TATACHEM","TATACOMM","TATAELXSI","TORNTPHARM","TORNTPOWER",
-"TRENT","TVSMOTOR","UBL","UNIONBANK","UPL","VEDL","VOLTAS","WHIRLPOOL","ZYDUSLIFE"
+"INDUSINDBK","BANKBARODA","PNB","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"
 ]
 
 # ==========================================
@@ -46,6 +35,9 @@ def add_indicators(df):
         df.columns = df.columns.get_level_values(0)
 
     df['EMA20'] = df['Close'].ewm(span=20).mean()
+
+    df['Support'] = df['Low'].rolling(20).min()
+    df['Resistance'] = df['High'].rolling(20).max()
 
     tr = pd.concat([
         df['High'] - df['Low'],
@@ -59,29 +51,37 @@ def add_indicators(df):
     return df
 
 # ==========================================
-# BIG PLAYER (BONUS)
-# ==========================================
-def big_player(row):
-    return row['Volume'] > row['VolAvg'] * 2.5
-
-# ==========================================
-# SESSION TIME FILTER
+# SCREEN TIME
 # ==========================================
 def in_session(dt):
     t = dt.time()
     return time(9,15) <= t <= time(15,30)
 
 # ==========================================
-# SIGNAL ENGINE (FIXED + BALANCED)
+# BIG PLAYER (OPTIONAL)
+# ==========================================
+def big_player(row):
+    return row['Volume'] > row['VolAvg'] * 2
+
+# ==========================================
+# SIGNAL ENGINE
 # ==========================================
 def get_signal(row, prev):
     dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
 
-    # Pullback
+    # SUPPORT BUY
+    if row['Close'] <= row['Support'] * 1.01:
+        return "BUY SUPPORT"
+
+    # RESISTANCE SELL
+    if row['Close'] >= row['Resistance'] * 0.99:
+        return "SELL RESISTANCE"
+
+    # PULLBACK
     if dist < 0.012:
         return "BUY" if row['Close'] > row['EMA20'] else "SELL"
 
-    # Breakout
+    # BREAKOUT
     if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']:
         return "BUY"
     if prev['Close'] > row['EMA20'] and row['Close'] < row['EMA20']:
@@ -116,7 +116,7 @@ if st.button("🚀 SCAN NSE200"):
             row = df.iloc[-1]
             prev = df.iloc[-2]
 
-            # session check
+            # SESSION FILTER
             if not in_session(df.index[-1].tz_convert(IST)):
                 continue
 
@@ -124,12 +124,12 @@ if st.button("🚀 SCAN NSE200"):
             if not signal:
                 continue
 
-            entry = round(row['Close'], 2)
-
             results.append({
                 "STOCK": s,
                 "SIGNAL": signal,
-                "ENTRY": entry,
+                "ENTRY": round(row['Close'],2),
+                "SUPPORT": round(row['Support'],2),
+                "RESISTANCE": round(row['Resistance'],2),
                 "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
             })
 
@@ -169,6 +169,8 @@ if st.button("RUN BACKTEST"):
                     "TIME": df.index[i].strftime('%H:%M'),
                     "STOCK": s,
                     "SIGNAL": signal,
+                    "SUPPORT": round(row['Support'],2),
+                    "RESISTANCE": round(row['Resistance'],2),
                     "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
                 })
 
