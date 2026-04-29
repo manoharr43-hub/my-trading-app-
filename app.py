@@ -8,25 +8,24 @@ import io
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V63", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V66", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V63 - HIGH PROBABILITY ENGINE")
+st.title("🚀 NSE AI PRO V66 - FULL AI SYSTEM")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ==========================================
-# NSE STOCKS
+# SESSION STORAGE
 # ==========================================
-nse_200 = [
-"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","KOTAKBANK",
-"BHARTIARTL","HINDUNILVR","BAJFINANCE","ASIANPAINT","MARUTI","TITAN","HCLTECH","SUNPHARMA",
-"ULTRACEMCO","NTPC","JSWSTEEL","POWERGRID","M&M","ONGC","HINDALCO","TATAMOTORS","ADANIPORTS",
-"COALINDIA","GRASIM","BAJAJFINSV","BRITANNIA","EICHERMOT","DIVISLAB","CIPLA","TECHM",
-"NESTLEIND","BPCL","INDUSINDBK","HDFCLIFE","APOLLOHOSP","DRREDDY","BAJAJ-AUTO","SBILIFE",
-"HEROMOTOCO","UPL","TATACONSUM","SHREECEM","IRCTC","HAL","BEL","DLF","GAIL","IOC"
-]
+if "live_logs" not in st.session_state:
+    st.session_state.live_logs = []
+
+# ==========================================
+# STOCK LIST
+# ==========================================
+nse_200 = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","KOTAKBANK"]
 
 tickers = [s + ".NS" for s in nse_200]
 
@@ -41,7 +40,6 @@ def get_data():
 # INDICATORS
 # ==========================================
 def indicators(df):
-    df = df.copy()
     df["EMA20"] = df["Close"].ewm(span=20, min_periods=20).mean()
     df["SUPPORT"] = df["Low"].rolling(20, min_periods=20).min()
     df["RESISTANCE"] = df["High"].rolling(20, min_periods=20).max()
@@ -52,200 +50,155 @@ def indicators(df):
 # LOGIC
 # ==========================================
 def big_player(row):
-    return row["Volume"] > (row["VOLAVG"] * 1.5) if pd.notna(row["VOLAVG"]) else False
+    return row["Volume"] > row["VOLAVG"] * 1.5 if pd.notna(row["VOLAVG"]) else False
 
-def session_check(ts):
-    t = ts.time()
-    return time(9,15) <= t <= time(15,30)
-
-# -------- PULLBACK SIGNAL --------
 def pullback_signal(row, prev):
-    if pd.isna(row["EMA20"]): return None, None, None, None
+    if pd.isna(row["EMA20"]):
+        return None, None, None, None
 
-    # BUY PULLBACK
-    if (
-        row["Close"] > row["EMA20"] and
-        prev["Close"] > prev["EMA20"] and
-        row["Low"] <= row["EMA20"] * 1.002 and
-        row["Close"] > row["EMA20"]
-    ):
+    if row["Close"] > row["EMA20"] and row["Low"] <= row["EMA20"] * 1.002:
         entry = row["Close"]
         sl = row["EMA20"] * 0.995
-        return "PULLBACK BUY", entry, sl, entry + (entry - sl) * 2
+        return "BUY", entry, sl, entry + (entry - sl) * 2
 
-    # SELL PULLBACK
-    if (
-        row["Close"] < row["EMA20"] and
-        prev["Close"] < prev["EMA20"] and
-        row["High"] >= row["EMA20"] * 0.998 and
-        row["Close"] < row["EMA20"]
-    ):
+    if row["Close"] < row["EMA20"] and row["High"] >= row["EMA20"] * 0.998:
         entry = row["Close"]
         sl = row["EMA20"] * 1.005
-        return "PULLBACK SELL", entry, sl, entry - (sl - entry) * 2
+        return "SELL", entry, sl, entry - (sl - entry) * 2
 
     return None, None, None, None
 
-# -------- MAIN SIGNAL ENGINE --------
 def signal_engine(row, prev):
+    if pd.isna(row["EMA20"]):
+        return None, None, None, None, None
 
-    if pd.isna(row["EMA20"]) or pd.isna(row["SUPPORT"]):
-        return None, None, None, None
-
-    # 🔥 PRIORITY: PULLBACK
     sig, entry, sl, target = pullback_signal(row, prev)
     if sig:
-        return sig, entry, sl, target
+        return sig, entry, sl, target, "PULLBACK"
 
     entry = row["Close"]
 
-    # BUY SUPPORT
     if entry <= row["SUPPORT"] * 1.002:
         sl = row["SUPPORT"] * 0.995
-        return "BUY SUPPORT", entry, sl, entry + (entry - sl) * 2
+        return "BUY", entry, sl, entry + (entry - sl) * 2, "SUPPORT"
 
-    # SELL RESISTANCE
     if entry >= row["RESISTANCE"] * 0.998:
         sl = row["RESISTANCE"] * 1.002
-        return "SELL RESISTANCE", entry, sl, entry - (sl - entry) * 2
+        return "SELL", entry, sl, entry - (sl - entry) * 2, "RESISTANCE"
 
-    # EMA BUY
     if prev["Close"] < prev["EMA20"] and entry > row["EMA20"]:
         sl = row["EMA20"] * 0.995
-        return "EMA BUY", entry, sl, entry + (entry - sl) * 2
+        return "BUY", entry, sl, entry + (entry - sl) * 2, "EMA"
 
-    # EMA SELL
     if prev["Close"] > prev["EMA20"] and entry < row["EMA20"]:
         sl = row["EMA20"] * 1.005
-        return "EMA SELL", entry, sl, entry - (sl - entry) * 2
+        return "SELL", entry, sl, entry - (sl - entry) * 2, "EMA"
 
-    return None, None, None, None
+    return None, None, None, None, None
+
+def ai_score(row, prev):
+    score = 0
+
+    if row["Close"] > row["EMA20"]:
+        score += 2
+
+    if big_player(row):
+        score += 2
+
+    if abs(row["Close"] - row["SUPPORT"]) < row["Close"] * 0.003:
+        score += 2
+
+    if pullback_signal(row, prev)[0]:
+        score += 3
+
+    return score
+
+def session_check(ts):
+    return time(9,15) <= ts.time() <= time(15,30)
 
 # ==========================================
 # UI
 # ==========================================
-tab1, tab2 = st.tabs(["🚀 LIVE SCAN", "📊 BACKTEST"])
+if st.button("🚀 RUN LIVE SCAN"):
+    data = get_data()
 
-# ================= LIVE =================
-with tab1:
-    if st.button("RUN LIVE SCAN"):
-        data = get_data()
-        results = []
-
-        for s in nse_200:
-            try:
-                df = data[s + ".NS"].dropna()
-
-                if len(df) < 30:
-                    continue
-
-                df = indicators(df)
-
-                row = df.iloc[-1]
-                prev = df.iloc[-2]
-                ts = df.index[-1].tz_convert(IST)
-
-                if not session_check(ts):
-                    continue
-
-                # 🔥 HIGH PROBABILITY FILTER
-                if row["Volume"] < row["VOLAVG"] * 1.5:
-                    continue
-
-                if abs(row["Close"] - row["EMA20"]) / row["EMA20"] > 0.01:
-                    continue
-
-                sig, entry, sl, target = signal_engine(row, prev)
-
-                if sig:
-                    results.append({
-                        "STOCK": s,
-                        "TIME": ts.strftime("%H:%M"),
-                        "SIGNAL": sig,
-                        "ENTRY": round(entry,2),
-                        "SL": round(sl,2),
-                        "TARGET": round(target,2),
-                        "BIG PLAYER": "🔥 YES" if big_player(row) else "NO",
-                        "PULLBACK": "YES" if "PULLBACK" in sig else "NO"
-                    })
-
-            except:
+    for s in nse_200:
+        try:
+            df = data[s + ".NS"].dropna()
+            if len(df) < 30:
                 continue
 
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
+            df = indicators(df)
 
-# ================= BACKTEST =================
-with tab2:
-    test_date = st.date_input("Select Date", now.date() - timedelta(days=1))
+            row = df.iloc[-1]
+            prev = df.iloc[-2]
+            ts = df.index[-1].tz_convert(IST)
 
-    if st.button("RUN BACKTEST"):
-        data = get_data()
-        logs = []
-
-        for s in nse_200:
-            try:
-                df = data[s + ".NS"].dropna()
-                df.index = pd.to_datetime(df.index).tz_convert(IST)
-
-                df = df[df.index.date == pd.Timestamp(test_date).date()]
-
-                if len(df) < 30:
-                    continue
-
-                df = indicators(df)
-
-                for i in range(1, len(df)):
-                    row = df.iloc[i]
-                    prev = df.iloc[i-1]
-                    ts = df.index[i]
-
-                    if not session_check(ts):
-                        continue
-
-                    # FILTER
-                    if row["Volume"] < row["VOLAVG"] * 1.5:
-                        continue
-
-                    sig, entry, sl, target = signal_engine(row, prev)
-
-                    if sig:
-                        logs.append({
-                            "TIME": ts.strftime("%H:%M"),
-                            "STOCK": s,
-                            "SIGNAL": sig,
-                            "ENTRY": round(entry,2),
-                            "SL": round(sl,2),
-                            "TARGET": round(target,2),
-                            "BIG PLAYER": "🔥 YES" if big_player(row) else "NO",
-                            "PULLBACK": "YES" if "PULLBACK" in sig else "NO"
-                        })
-
-            except:
+            if not session_check(ts):
                 continue
 
-        df_out = pd.DataFrame(logs)
+            score = ai_score(row, prev)
+            sig, entry, sl, target, typ = signal_engine(row, prev)
 
-        if not df_out.empty:
-            st.success(f"Total Signals: {len(df_out)}")
-            st.dataframe(df_out, use_container_width=True)
+            if sig and score >= 7:
+                record = {
+                    "TIME": ts.strftime("%H:%M"),
+                    "STOCK": s,
+                    "SIGNAL": sig,
+                    "ENTRY": round(entry,2),
+                    "SL": round(sl,2),
+                    "TARGET": round(target,2),
+                    "SCORE": score,
+                    "BIG PLAYER ENTRY": "YES" if big_player(row) else "NO",
+                    "PULLBACK": "YES" if typ == "PULLBACK" else "NO",
+                    "TYPE": typ
+                }
 
-            # EXCEL EXPORT PRO
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-                df_out.to_excel(writer, index=False, sheet_name="SIGNALS")
+                st.session_state.live_logs.append(record)
 
-                workbook = writer.book
-                worksheet = writer.sheets["SIGNALS"]
-                header_format = workbook.add_format({'bold': True})
-                worksheet.set_row(0, None, header_format)
+        except:
+            continue
 
-            buffer.seek(0)
+# ==========================================
+# DISPLAY DATA
+# ==========================================
+st.subheader("📊 FULL DAY SIGNALS")
 
-            st.download_button(
-                "⬇️ Download Excel",
-                data=buffer,
-                file_name="NSE_AI_V63.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("No signals found.")
+df_live = pd.DataFrame(st.session_state.live_logs)
+
+if not df_live.empty:
+    st.dataframe(df_live, use_container_width=True)
+
+# ==========================================
+# EXCEL DOWNLOAD
+# ==========================================
+if not df_live.empty:
+    buffer = io.BytesIO()
+
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        df_live.to_excel(writer, index=False, sheet_name="SIGNALS")
+
+        workbook = writer.book
+        worksheet = writer.sheets["SIGNALS"]
+
+        header_format = workbook.add_format({'bold': True})
+        worksheet.set_row(0, None, header_format)
+
+        for i, col in enumerate(df_live.columns):
+            width = max(df_live[col].astype(str).map(len).max(), len(col))
+            worksheet.set_column(i, i, width + 2)
+
+    buffer.seek(0)
+
+    st.download_button(
+        "⬇️ Download Excel",
+        data=buffer,
+        file_name=f"NSE_AI_V66_{now.strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# ==========================================
+# RESET
+# ==========================================
+if st.button("🔄 RESET DATA"):
+    st.session_state.live_logs = []
