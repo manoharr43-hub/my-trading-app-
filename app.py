@@ -7,165 +7,103 @@ import pytz
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V58", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V58 - 200 STOCKS", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V58 - SCREEN TIME FIXED SYSTEM")
-st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+st.title("🚀 NSE AI PRO V58 - SCREEN TIME FIXED")
+st.write(f"🕒 Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ==========================================
-# NSE STOCKS (SHORT FOR SPEED)
+# NSE 200 STOCKS LIST (Sample list expanded)
 # ==========================================
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","KOTAKBANK"]
+# నోట్: ఇక్కడ 200 స్టాక్స్ లిస్ట్ యాడ్ చేసుకోవచ్చు. ఉదాహరణకు కొన్ని ముఖ్యమైనవి ఇచ్చాను.
+nse_200 = [
+    "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "ITC", "LT", "AXISBANK", "KOTAKBANK",
+    "BHARTIARTL", "HINDUNILVR", "BAJFINANCE", "ASIANPAINT", "MARUTI", "TITAN", "HCLTECH", "ADANIENT", "SUNPHARMA", "TATASTEEL",
+    "WIPRO", "ULTRACEMCO", "NTPC", "JSWSTEEL", "POWERGRID", "M&M", "ONGC", "HINDALCO", "TATAMOTORS", "ADANIPORTS",
+    "COALINDIA", "GRASIM", "BAJAJFINSV", "BRITANNIA", "EICHERMOT", "DIVISLAB", "CIPLA", "TECHM", "NESTLEIND", "BPCL",
+    "INDUSINDBK", "HDFCLIFE", "APOLLOHOSP", "DRREDDY", "BAJAJ-AUTO", "SBILIFE", "HEROMOTOCO", "UPL", "TATACONSUM", "SHREECEM",
+    # ... మీరు ఇక్కడ మిగిలిన స్టాక్స్ పేర్లను ఇదే ఫార్మాట్ లో యాడ్ చేసుకోవచ్చు
+]
 
 # ==========================================
 # INDICATORS
 # ==========================================
 def add_indicators(df):
+    if df.empty: return df
+    df = df.copy()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-
+    
     df['EMA20'] = df['Close'].ewm(span=20).mean()
-
     df['Support'] = df['Low'].rolling(20).min()
     df['Resistance'] = df['High'].rolling(20).max()
-
-    tr = pd.concat([
-        df['High'] - df['Low'],
-        abs(df['High'] - df['Close'].shift()),
-        abs(df['Low'] - df['Close'].shift())
-    ], axis=1).max(axis=1)
-
-    df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
-
     return df
 
-# ==========================================
-# SCREEN TIME (ONLY FLAG, NOT SKIP)
-# ==========================================
 def in_session(dt):
     t = dt.time()
-    return time(9,15) <= t <= time(15,30)
+    return time(9, 15) <= t <= time(15, 30)
 
-# ==========================================
-# BIG PLAYER
-# ==========================================
 def big_player(row):
     return row['Volume'] > row['VolAvg'] * 2
 
-# ==========================================
-# SIGNAL ENGINE
-# ==========================================
 def get_signal(row, prev):
-    dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
-
-    if row['Close'] <= row['Support'] * 1.01:
-        return "BUY SUPPORT"
-
-    if row['Close'] >= row['Resistance'] * 0.99:
-        return "SELL RESISTANCE"
-
-    if dist < 0.012:
-        return "BUY" if row['Close'] > row['EMA20'] else "SELL"
-
-    if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']:
-        return "BUY"
-
-    if prev['Close'] > row['EMA20'] and row['Close'] < row['EMA20']:
-        return "SELL"
-
+    if row['Close'] <= row['Support'] * 1.005: return "BUY SUPPORT"
+    if row['Close'] >= row['Resistance'] * 0.995: return "SELL RESISTANCE"
+    if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']: return "BUY"
+    if prev['Close'] > row['EMA20'] and row['Close'] < row['EMA20']: return "SELL"
     return None
 
 # ==========================================
-# DATA
+# DATA LOADING
 # ==========================================
-@st.cache_data(ttl=120)
-def get_data():
-    return yf.download([s+".NS" for s in stocks],
-                       period="5d", interval="5m", group_by="ticker")
-
-data = get_data()
+@st.cache_data(ttl=300) # 5 నిమిషాల వరకు డేటా సేవ్ అవుతుంది
+def get_data(stock_list):
+    tickers = [s + ".NS" for s in stock_list]
+    return yf.download(tickers, period="2d", interval="5m", group_by="ticker", threads=True)
 
 # ==========================================
-# LIVE SCAN
+# LIVE SCAN ENGINE
 # ==========================================
-if st.button("🚀 SCAN MARKET"):
-    results = []
+if st.button("🚀 SCAN NSE 200 MARKET"):
+    with st.spinner("200 స్టాక్స్ విశ్లేషిస్తున్నాను... దయచేసి వేచి ఉండండి..."):
+        all_data = get_data(nse_200)
+        results = []
 
-    for s in stocks:
-        try:
-            df = data[s+".NS"].dropna()
-            df = add_indicators(df)
-
-            if len(df) < 30:
-                continue
-
-            row = df.iloc[-1]
-            prev = df.iloc[-2]
-
-            # 🔥 SCREEN TIME FLAG (NOT SKIP)
-            session = "LIVE" if in_session(df.index[-1].tz_convert(IST)) else "OUTSIDE"
-
-            signal = get_signal(row, prev)
-            if not signal:
-                continue
-
-            results.append({
-                "STOCK": s,
-                "SIGNAL": signal,
-                "ENTRY": round(row['Close'],2),
-                "SUPPORT": round(row['Support'],2),
-                "RESISTANCE": round(row['Resistance'],2),
-                "SESSION": session,
-                "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
-            })
-
-        except:
-            continue
-
-    st.write(f"TOTAL SIGNALS: {len(results)}")
-    st.dataframe(pd.DataFrame(results))
-
-# ==========================================
-# BACKTEST
-# ==========================================
-d = st.date_input("Select Date", now.date() - timedelta(days=1))
-
-if st.button("RUN BACKTEST"):
-    logs = []
-
-    for s in stocks:
-        try:
-            df_all = data[s+".NS"].dropna()
-            df_all.index = df_all.index.tz_convert(IST)
-
-            df = add_indicators(df_all[df_all.index.date == d])
-
-            for i in range(20, len(df)):
-                row = df.iloc[i]
-                prev = df.iloc[i-1]
-
-                session = "LIVE" if in_session(df.index[i]) else "OUTSIDE"
-
+        for s in nse_200:
+            try:
+                ticker_name = s + ".NS"
+                if ticker_name not in all_data.columns.get_level_values(0): continue
+                
+                df = all_data[ticker_name].dropna()
+                if len(df) < 20: continue
+                
+                df = add_indicators(df)
+                row = df.iloc[-1]
+                prev = df.iloc[-2]
+                
+                # టైమ్ కన్వర్షన్
+                last_time = df.index[-1].tz_convert(IST)
                 signal = get_signal(row, prev)
-                if not signal:
-                    continue
 
-                logs.append({
-                    "TIME": df.index[i].strftime('%H:%M'),
-                    "STOCK": s,
-                    "SIGNAL": signal,
-                    "SUPPORT": round(row['Support'],2),
-                    "RESISTANCE": round(row['Resistance'],2),
-                    "SESSION": session,
-                    "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
-                })
+                if signal:
+                    results.append({
+                        "STOCK": s,
+                        "SIGNAL TIME": last_time.strftime('%H:%M'), # కొత్త కాలమ్
+                        "SIGNAL": signal,
+                        "LTP": round(row['Close'], 2),
+                        "SESSION": "🟢 LIVE" if in_session(last_time) else "🔴 OUTSIDE",
+                        "BIG PLAYER": "🔥 YES" if big_player(row) else "NO"
+                    })
+            except Exception as e:
+                continue
 
-        except:
-            continue
-
-    st.write(f"BACKTEST SIGNALS: {len(logs)}")
-    st.dataframe(pd.DataFrame(logs))
+        if results:
+            df_res = pd.DataFrame(results)
+            st.success(f"మొత్తం {len(results)} సిగ్నల్స్ దొరికాయి!")
+            st.dataframe(df_res, use_container_width=True)
+        else:
+            st.warning("ప్రస్తుతానికి ఎటువంటి సిగ్నల్స్ లేవు.")
