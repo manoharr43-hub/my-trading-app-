@@ -8,30 +8,34 @@ from streamlit_autorefresh import st_autorefresh
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V49", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V49.1", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V49 - PRO PULLBACK SYSTEM")
+st.title("🚀 NSE AI PRO V49.1 - STABLE PULLBACK SYSTEM")
 st.markdown(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ==========================================
-# STOCK LIST (same as before)
+# STOCK LIST (SAMPLE - FULL LIST ADD CHEYYOCHU)
 # ==========================================
 stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT"]
 
-# (👉 full NSE200 list you can paste here same)
-
 # ==========================================
-# INDICATORS
+# SAFE INDICATORS
 # ==========================================
 def add_indicators(df):
+    df = df.copy()
+
+    # Fix multi-index
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-    # ✅ Correct VWAP (intraday reset)
+    # Safe VWAP
     df['Date'] = df.index.date
     df['VWAP'] = df.groupby('Date').apply(
         lambda x: (x['Close'] * x['Volume']).cumsum() / x['Volume'].cumsum()
@@ -43,74 +47,99 @@ def add_indicators(df):
         abs(df['High'] - df['Close'].shift()),
         abs(df['Low'] - df['Close'].shift())
     ], axis=1).max(axis=1)
-    df['ATR'] = tr.rolling(14).mean()
 
+    df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
 
     return df
 
 # ==========================================
-# MARKET TREND (NIFTY FILTER)
+# MARKET TREND (SAFE)
 # ==========================================
 @st.cache_data(ttl=60)
 def get_market_trend():
-    nifty = yf.download("^NSEI", period="1d", interval="5m")
-    nifty['EMA20'] = nifty['Close'].ewm(span=20).mean()
-    return "UP" if nifty['Close'].iloc[-1] > nifty['EMA20'].iloc[-1] else "DOWN"
+    try:
+        nifty = yf.download("^NSEI", period="1d", interval="5m")
+
+        if nifty.empty or len(nifty) < 20:
+            return "UNKNOWN"
+
+        if isinstance(nifty.columns, pd.MultiIndex):
+            nifty.columns = nifty.columns.get_level_values(0)
+
+        nifty['EMA20'] = nifty['Close'].ewm(span=20).mean()
+
+        close = float(nifty['Close'].iloc[-1])
+        ema = float(nifty['EMA20'].iloc[-1])
+
+        return "UP" if close > ema else "DOWN"
+
+    except:
+        return "UNKNOWN"
 
 # ==========================================
-# PULLBACK LOGIC (ADVANCED)
+# PULLBACK LOGIC
 # ==========================================
 def get_pullback(row, prev):
-    dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
+    try:
+        dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
 
-    # BUY
-    if (dist < 0.004 and
-        row['Close'] > row['EMA20'] and
-        row['Close'] > row['VWAP'] and
-        row['Low'] > prev['Low']):
-        return "SUPPORT BUY 🟢"
+        if (dist < 0.004 and row['Close'] > row['EMA20'] and
+            row['Close'] > row['VWAP'] and row['Low'] > prev['Low']):
+            return "SUPPORT BUY 🟢"
 
-    # SELL
-    if (dist < 0.004 and
-        row['Close'] < row['EMA20'] and
-        row['Close'] < row['VWAP'] and
-        row['High'] < prev['High']):
-        return "RESIST SELL 🔴"
+        if (dist < 0.004 and row['Close'] < row['EMA20'] and
+            row['Close'] < row['VWAP'] and row['High'] < prev['High']):
+            return "RESIST SELL 🔴"
 
-    # RECENT
-    if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']:
-        return "RECENT BUY 🔼"
-    if prev['Close'] > row['EMA20'] and row['Close'] < row['EMA20']:
-        return "RECENT SELL 🔽"
+        if prev['Close'] < row['EMA20'] and row['Close'] > row['EMA20']:
+            return "RECENT BUY 🔼"
+
+        if prev['Close'] > row['EMA20'] and row['Close'] < row['EMA20']:
+            return "RECENT SELL 🔽"
+
+    except:
+        return None
 
     return None
 
 # ==========================================
-# SCORING SYSTEM
+# SCORING
 # ==========================================
 def score_trade(row):
     score = 0
-    if row['Volume'] > row['VolAvg'] * 2:
-        score += 1
-    if abs(row['Close'] - row['EMA20']) < row['ATR']:
-        score += 1
-    if row['ATR'] > row['Close'] * 0.002:
-        score += 1
+    try:
+        if row['Volume'] > row['VolAvg'] * 2:
+            score += 1
+        if abs(row['Close'] - row['EMA20']) < row['ATR']:
+            score += 1
+        if row['ATR'] > row['Close'] * 0.002:
+            score += 1
+    except:
+        pass
     return score
 
 # ==========================================
 # BIG PLAYER
 # ==========================================
 def big_player(row):
-    return row['Volume'] > row['VolAvg'] * 3 and abs(row['Close'] - row['Open']) > row['ATR']
+    try:
+        return row['Volume'] > row['VolAvg'] * 3 and abs(row['Close'] - row['Open']) > row['ATR']
+    except:
+        return False
 
 # ==========================================
 # DATA
 # ==========================================
 @st.cache_data(ttl=60)
 def get_data():
-    return yf.download([s+".NS" for s in stocks], period="5d", interval="5m", group_by="ticker")
+    try:
+        data = yf.download([s+".NS" for s in stocks],
+                           period="5d", interval="5m", group_by="ticker")
+
+        return data
+    except:
+        return {}
 
 def to_excel(df):
     output = io.BytesIO()
@@ -131,35 +160,40 @@ market_trend = get_market_trend()
 with tab1:
     st.write(f"📊 Market Trend: {market_trend}")
 
-    if st.button("SCAN"):
+    if st.button("🔍 SCAN"):
         results = []
 
         for s in stocks:
             try:
-                df = data[s+".NS"].dropna()
-                if df.empty: continue
+                df = data.get(s+".NS")
+                if df is None or df.empty:
+                    continue
 
-                df = add_indicators(df)
+                df = add_indicators(df.dropna())
+
+                if len(df) < 30:
+                    continue
+
                 row, prev = df.iloc[-1], df.iloc[-2]
 
                 pull = get_pullback(row, prev)
-                if not pull: continue
+                if not pull:
+                    continue
 
                 sig = "BUY" if "BUY" in pull else "SELL"
 
-                # ✅ EMA50 filter
+                # EMA50 filter
                 if sig == "BUY" and row['Close'] < row['EMA50']:
                     continue
                 if sig == "SELL" and row['Close'] > row['EMA50']:
                     continue
 
-                # ✅ Market filter
+                # Market filter
                 if market_trend == "DOWN" and sig == "BUY":
                     continue
                 if market_trend == "UP" and sig == "SELL":
                     continue
 
-                # ✅ Score filter
                 if score_trade(row) < 2:
                     continue
 
@@ -183,22 +217,25 @@ with tab1:
         if results:
             df_out = pd.DataFrame(results)
             st.dataframe(df_out, use_container_width=True)
-            st.download_button("Download", to_excel(df_out), "signals.xlsx")
+            st.download_button("📥 Download", to_excel(df_out), "signals.xlsx")
         else:
-            st.warning("No trades")
+            st.warning("No trades found")
 
 # ==========================================
 # BACKTEST
 # ==========================================
 with tab2:
-    d = st.date_input("Date", now.date() - timedelta(days=1))
+    d = st.date_input("Select Date", now.date() - timedelta(days=1))
 
-    if st.button("RUN"):
+    if st.button("🔄 RUN BACKTEST"):
         logs = []
 
         for s in stocks:
             try:
-                df_all = data[s+".NS"].dropna()
+                df_all = data.get(s+".NS")
+                if df_all is None:
+                    continue
+
                 df_all.index = df_all.index.tz_convert(IST)
                 df = add_indicators(df_all[df_all.index.date == d])
 
@@ -206,7 +243,8 @@ with tab2:
                     row, prev = df.iloc[i], df.iloc[i-1]
                     pull = get_pullback(row, prev)
 
-                    if not pull: continue
+                    if not pull:
+                        continue
 
                     sig = "BUY" if "BUY" in pull else "SELL"
 
@@ -233,6 +271,6 @@ with tab2:
         if logs:
             df_log = pd.DataFrame(logs)
             st.dataframe(df_log, use_container_width=True)
-            st.download_button("Download", to_excel(df_log), "backtest.xlsx")
+            st.download_button("📥 Download", to_excel(df_log), "backtest.xlsx")
         else:
-            st.info("No signals")
+            st.info("No signals found")
