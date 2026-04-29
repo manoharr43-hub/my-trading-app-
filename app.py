@@ -7,12 +7,12 @@ import pytz
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V56", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V57", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V56 - COMPLETE PRO SYSTEM")
+st.title("🚀 NSE AI PRO V57 - COMPLETE SYSTEM")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ==========================================
@@ -23,8 +23,7 @@ stocks = [
 "HINDUNILVR","ASIANPAINT","AXISBANK","MARUTI","SUNPHARMA","TITAN","ULTRACEMCO","WIPRO","NESTLEIND",
 "POWERGRID","NTPC","BAJFINANCE","BAJAJFINSV","ONGC","ADANIENT","ADANIPORTS","JSWSTEEL","TATASTEEL",
 "HCLTECH","TECHM","GRASIM","DIVISLAB","DRREDDY","CIPLA","BRITANNIA","EICHERMOT","HEROMOTOCO",
-"TATAMOTORS","M&M","COALINDIA","BPCL","IOC","SHREECEM","HAVELLS","SIEMENS","DLF","PIDILITIND",
-"INDUSINDBK","BANKBARODA","PNB","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO"
+"TATAMOTORS","M&M","COALINDIA","BPCL","IOC","SHREECEM","HAVELLS","SIEMENS","DLF","PIDILITIND"
 ]
 
 # ==========================================
@@ -51,14 +50,14 @@ def add_indicators(df):
     return df
 
 # ==========================================
-# SCREEN TIME
+# SCREEN TIME FILTER
 # ==========================================
 def in_session(dt):
     t = dt.time()
     return time(9,15) <= t <= time(15,30)
 
 # ==========================================
-# BIG PLAYER (OPTIONAL)
+# BIG PLAYER (BONUS)
 # ==========================================
 def big_player(row):
     return row['Volume'] > row['VolAvg'] * 2
@@ -116,7 +115,7 @@ if st.button("🚀 SCAN NSE200"):
             row = df.iloc[-1]
             prev = df.iloc[-2]
 
-            # SESSION FILTER
+            # SCREEN TIME
             if not in_session(df.index[-1].tz_convert(IST)):
                 continue
 
