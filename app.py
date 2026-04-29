@@ -3,19 +3,17 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 import pytz, io
-from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
-# 1. CONFIGURATION (సెటప్)
+# 1. CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V48", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
+st.set_page_config(page_title="🚀 NSE AI PRO V48 - STABLE", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V48 - ADVANCED PULLBACK SYSTEM")
-st.markdown(f"**🕒 Current Market Time (IST):** `{now.strftime('%Y-%m-%d %H:%M:%S')}`")
+st.title("🚀 NSE AI PRO V48 - ULTIMATE STABLE")
+st.markdown(f"**🕒 IST Time:** `{now.strftime('%Y-%m-%d %H:%M:%S')}`")
 
 # ==========================================
 # 2. NSE 200 STOCKS LIST
@@ -41,10 +39,11 @@ stocks = [
 ]
 
 # ==========================================
-# 3. INDICATORS
+# 3. INDICATORS LOGIC
 # ==========================================
 def add_indicators(df):
-    if df.empty: return df
+    if df is None or df.empty: return None
+    df = df.copy()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
     
@@ -58,20 +57,13 @@ def add_indicators(df):
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     return df
 
-# ==========================================
-# 4. LOGIC
-# ==========================================
 def get_pullback(close, ema20, vwap, prev_close):
     dist = abs(close - ema20) / ema20
     if dist < 0.004:
-        if close > ema20 and close > vwap:
-            return "SUPPORT BUY 🟢"
-        elif close < ema20 and close < vwap:
-            return "RESIST SELL 🔴"
-    if prev_close < ema20 and close > ema20:
-        return "RECENT BUY 🔼"
-    elif prev_close > ema20 and close < ema20:
-        return "RECENT SELL 🔽"
+        if close > ema20 and close > vwap: return "SUPPORT BUY 🟢"
+        elif close < ema20 and close < vwap: return "RESIST SELL 🔴"
+    if prev_close < ema20 and close > ema20: return "RECENT BUY 🔼"
+    elif prev_close > ema20 and close < ema20: return "RECENT SELL 🔽"
     return None
 
 def best_trade(row):
@@ -80,56 +72,58 @@ def best_trade(row):
     return body > rng * 0.5 and row['Volume'] > row['VolAvg'] * 2 and row['ATR'] > row['Close'] * 0.002
 
 # ==========================================
-# 5. FETCH DATA (FIXED FOR RUNTIME ERROR)
+# 4. SAFE FETCH (DITCHING MULTI-THREADING)
 # ==========================================
-@st.cache_data(ttl=60)
-def get_data():
-    # threads=False added to prevent threading errors in Streamlit Cloud
-    return yf.download(
-        [s+".NS" for s in stocks], 
-        period="5d", 
-        interval="5m", 
-        group_by="ticker", 
-        threads=False,
-        progress=False
-    )
+@st.cache_data(ttl=300) # 5 mins cache
+def get_safe_data():
+    all_data = {}
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i, s in enumerate(stocks):
+        symbol = s + ".NS"
+        status_text.text(f"Fetching {symbol}...")
+        try:
+            # Single ticker download is 100% safe from threading errors
+            d = yf.download(symbol, period="5d", interval="5m", progress=False, threads=False)
+            if not d.empty:
+                all_data[symbol] = d
+        except:
+            continue
+        progress_bar.progress((i + 1) / len(stocks))
+    
+    status_text.empty()
+    progress_bar.empty()
+    return all_data
 
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
-    return output.getvalue()
+def to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
 
 # ==========================================
-# 6. UI & TABS
+# 5. UI TABS
 # ==========================================
-tab1, tab2 = st.tabs(["📊 LIVE TRADES", "🕒 HISTORICAL BACKTEST"])
+tab1, tab2 = st.tabs(["📊 LIVE SIGNALS", "🕒 BACKTEST"])
 
-try:
-    data = get_data()
-except Exception as e:
-    st.error(f"Error fetching data: {e}")
-    st.stop()
-
-# --- LIVE TAB ---
+# --- LIVE ---
 with tab1:
-    if st.button("🔍 SCAN LIVE NSE200"):
+    if st.button("🚀 START REAL-TIME SCAN"):
+        data_dict = get_safe_data()
         out = []
+        
         for s in stocks:
-            try:
-                ticker_df = data[s+".NS"].dropna()
-                if len(ticker_df) < 20: continue
+            symbol = s + ".NS"
+            if symbol in data_dict:
+                df = add_indicators(data_dict[symbol])
+                if df is None or len(df) < 20: continue
                 
-                df = add_indicators(ticker_df)
                 l, prev = df.iloc[-1], df.iloc[-2]
-
                 pull = get_pullback(l['Close'], l['EMA20'], l['VWAP'], prev['Close'])
 
                 if pull and best_trade(l):
                     sig = "BUY" if "BUY" in pull else "SELL"
-                    entry = round(l['Close'], 2)
+                    entry = round(float(l['Close']), 2)
                     out.append({
-                        "TIME": df.index[-1].tz_convert(IST).strftime('%H:%M'),
+                        "TIME": df.index[-1].astimezone(IST).strftime('%H:%M'),
                         "STOCK": s,
                         "SIGNAL": sig,
                         "TYPE": pull,
@@ -138,29 +132,32 @@ with tab1:
                         "TGT": round(entry + l['ATR']*3 if sig=="BUY" else entry - l['ATR']*3, 2),
                         "BIG MOVE": "🔥" if l['Volume'] > l['VolAvg']*2.5 else "NO"
                     })
-            except: continue
 
         if out:
-            df_out = pd.DataFrame(out)
-            st.success(f"Found {len(df_out)} Signals")
-            st.dataframe(df_out, use_container_width=True)
-            st.download_button("📥 Download Excel", to_excel(df_out), "NSE200_LIVE.xlsx")
+            res_df = pd.DataFrame(out)
+            st.success(f"Scanned {len(stocks)} stocks. Found {len(res_df)} trades.")
+            st.dataframe(res_df, use_container_width=True)
+            st.download_button("📥 Download Results", to_csv(res_df), "NSE_LIVE.csv", "text/csv")
         else:
-            st.warning("No Pullback Trades Found.")
+            st.warning("No signals found right now.")
 
-# --- BACKTEST TAB ---
+# --- BACKTEST ---
 with tab2:
-    date_pick = st.date_input("Select Date", now.date() - timedelta(days=1))
+    date_pick = st.date_input("Backtest Date", now.date() - timedelta(days=1))
     if st.button("🔄 RUN BACKTEST"):
+        data_dict = get_safe_data()
         logs = []
+        
         for s in stocks:
-            try:
-                df_all = data[s+".NS"].dropna()
+            symbol = s + ".NS"
+            if symbol in data_dict:
+                df_all = data_dict[symbol]
                 df_all.index = df_all.index.tz_convert(IST)
                 day_df = df_all[df_all.index.date == date_pick]
-                if len(day_df) < 20: continue
                 
+                if len(day_df) < 20: continue
                 df = add_indicators(day_df)
+                if df is None: continue
 
                 for i in range(20, len(df)):
                     row, prev = df.iloc[i], df.iloc[i-1]
@@ -168,7 +165,7 @@ with tab2:
 
                     if pull and best_trade(row):
                         sig = "BUY" if "BUY" in pull else "SELL"
-                        entry = round(row['Close'], 2)
+                        entry = round(float(row['Close']), 2)
                         logs.append({
                             "TIME": df.index[i].strftime('%H:%M'),
                             "STOCK": s,
@@ -179,11 +176,10 @@ with tab2:
                             "TGT": round(entry + row['ATR']*3 if sig=="BUY" else entry - row['ATR']*3, 2),
                             "BIG MOVE": "🔥" if row['Volume'] > row['VolAvg']*2.5 else "NO"
                         })
-            except: continue
 
         if logs:
-            df_log = pd.DataFrame(logs)
-            st.dataframe(df_log, use_container_width=True)
-            st.download_button("📥 Download Report", to_excel(df_log), f"Backtest_{date_pick}.xlsx")
+            back_df = pd.DataFrame(logs)
+            st.dataframe(back_df, use_container_width=True)
+            st.download_button("📥 Download Report", to_csv(back_df), f"Backtest_{date_pick}.csv", "text/csv")
         else:
-            st.info("No Historical Signals found.")
+            st.info("No signals for this date.")
