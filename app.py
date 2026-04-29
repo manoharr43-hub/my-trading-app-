@@ -1,23 +1,44 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz, io
 from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V50", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V50.1", layout="wide")
 st_autorefresh(interval=60000, key="refresh")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V50 - ADAPTIVE SYSTEM")
+st.title("🚀 NSE AI PRO V50.1 - NSE200 ADAPTIVE SCANNER")
 st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
-stocks = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT"]
+# ==========================================
+# NSE 200 STOCK LIST
+# ==========================================
+stocks = [
+"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","BHARTIARTL","ITC","KOTAKBANK","LT",
+"HINDUNILVR","ASIANPAINT","AXISBANK","MARUTI","SUNPHARMA","TITAN","ULTRACEMCO","WIPRO","NESTLEIND",
+"POWERGRID","NTPC","BAJFINANCE","BAJAJFINSV","ONGC","ADANIENT","ADANIPORTS","JSWSTEEL","TATASTEEL",
+"HCLTECH","TECHM","GRASIM","DIVISLAB","DRREDDY","CIPLA","BRITANNIA","EICHERMOT","HEROMOTOCO",
+"TATAMOTORS","M&M","COALINDIA","BPCL","IOC","SHREECEM","HAVELLS","SIEMENS","DLF","PIDILITIND",
+"INDUSINDBK","BANKBARODA","PNB","CANBK","FEDERALBNK","IDFCFIRSTB","YESBANK","ZEEL","ZOMATO",
+"BEL","LTIM","ABB","ABCAPITAL","ABFRL","ACC","ADANIGREEN","ADANITRANS","ALKEM","AMBUJACEM",
+"APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASTRAL","ATUL","AUROPHARMA","BAJAJHLDNG","BALKRISIND",
+"BANDHANBNK","BERGEPAINT","BIOCON","BOSCHLTD","CHOLAFIN","COLPAL","CONCOR","CROMPTON","DABUR",
+"DALBHARAT","DEEPAKNTR","DELHIVERY","ESCORTS","EXIDEIND","GAIL","GLENMARK","GMRINFRA",
+"GNFC","GODREJCP","GODREJPROP","HAL","HINDALCO","HINDCOPPER","ICICIGI","ICICIPRULI",
+"IGL","INDIGO","INDUSTOWER","IRCTC","JINDALSTEL","JSWENERGY","JUBLFOOD","LALPATHLAB",
+"LICHSGFIN","LUPIN","MARICO","MFSL","MGL","MPHASIS","MUTHOOTFIN","NAM-INDIA",
+"NAUKRI","NMDC","OBEROIRLTY","OFSS","PAGEIND","PEL","PETRONET","PIIND",
+"POLYCAB","PVRINOX","RAMCOCEM","RECLTD","SAIL","SBICARD","SBILIFE","SRF",
+"SUNTV","SYNGENE","TATACHEM","TATACOMM","TATAELXSI","TORNTPHARM","TORNTPOWER",
+"TRENT","TVSMOTOR","UBL","UNIONBANK","UPL","VEDL","VOLTAS","WHIRLPOOL","ZYDUSLIFE"
+]
 
 # ==========================================
 # INDICATORS
@@ -46,7 +67,7 @@ def add_indicators(df):
     return df
 
 # ==========================================
-# MARKET MODE (Adaptive)
+# MARKET MODE
 # ==========================================
 @st.cache_data(ttl=60)
 def get_market_mode():
@@ -59,32 +80,26 @@ def get_market_mode():
         if len(nifty) < 20:
             return "SLOW"
 
-        nifty['EMA20'] = nifty['Close'].ewm(span=20).mean()
-
         move = abs(nifty['Close'].iloc[-1] - nifty['Close'].iloc[-5])
 
         if move > nifty['Close'].iloc[-1] * 0.005:
             return "TRENDING"
         else:
             return "SLOW"
-
     except:
         return "SLOW"
 
 # ==========================================
-# PULLBACK
+# SIGNAL LOGIC
 # ==========================================
-def get_pullback(row, prev, mode):
+def get_signal(row, mode):
     dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
-
     limit = 0.004 if mode == "TRENDING" else 0.01
 
-    if (dist < limit and row['Close'] > row['EMA20'] and
-        row['Close'] > row['VWAP']):
+    if dist < limit and row['Close'] > row['EMA20'] and row['Close'] > row['VWAP']:
         return "BUY"
 
-    if (dist < limit and row['Close'] < row['EMA20'] and
-        row['Close'] < row['VWAP']):
+    if dist < limit and row['Close'] < row['EMA20'] and row['Close'] < row['VWAP']:
         return "SELL"
 
     return None
@@ -92,27 +107,25 @@ def get_pullback(row, prev, mode):
 # ==========================================
 # SCORE
 # ==========================================
-def score_trade(row, mode):
+def valid_trade(row, mode):
     score = 0
-
     if row['Volume'] > row['VolAvg'] * 2:
         score += 1
-
     if row['ATR'] > row['Close'] * 0.002:
         score += 1
 
-    if mode == "TRENDING":
-        return score >= 2
-    else:
-        return score >= 1
+    return score >= (2 if mode=="TRENDING" else 1)
 
 # ==========================================
-# DATA
+# DATA FETCH (OPTIMIZED)
 # ==========================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def get_data():
-    return yf.download([s+".NS" for s in stocks],
-                       period="5d", interval="5m", group_by="ticker")
+    try:
+        return yf.download([s+".NS" for s in stocks],
+                           period="5d", interval="5m", group_by="ticker", threads=True)
+    except:
+        return {}
 
 def to_excel(df):
     buf = io.BytesIO()
@@ -127,22 +140,26 @@ st.write(f"📊 Market Mode: {mode}")
 
 data = get_data()
 
-if st.button("🚀 SCAN MARKET"):
+if st.button("🚀 SCAN NSE200"):
     results = []
 
     for s in stocks:
         try:
-            df = data[s+".NS"].dropna()
-            df = add_indicators(df)
+            df = data.get(s+".NS")
+            if df is None or df.empty:
+                continue
+
+            df = add_indicators(df.dropna())
+            if len(df) < 30:
+                continue
 
             row = df.iloc[-1]
-            prev = df.iloc[-2]
+            signal = get_signal(row, mode)
 
-            signal = get_pullback(row, prev, mode)
             if not signal:
                 continue
 
-            if not score_trade(row, mode):
+            if not valid_trade(row, mode):
                 continue
 
             entry = round(row['Close'], 2)
@@ -162,7 +179,8 @@ if st.button("🚀 SCAN MARKET"):
 
     if results:
         df_out = pd.DataFrame(results)
+        st.success(f"Found {len(df_out)} signals")
         st.dataframe(df_out, use_container_width=True)
-        st.download_button("📥 Download", to_excel(df_out), "signals_v50.xlsx")
+        st.download_button("📥 Download", to_excel(df_out), "NSE200_signals.xlsx")
     else:
-        st.warning("No signals (market slow or strict filters)")
+        st.warning("No signals (market condition)")
