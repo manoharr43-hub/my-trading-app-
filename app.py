@@ -1,281 +1,185 @@
+# ==========================================
+# 🚀 NSE AI PRO V72 - ULTRA AI (FULL SYSTEM)
+# ==========================================
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta, time
+import numpy as np
+from datetime import datetime
 import pytz
+from concurrent.futures import ThreadPoolExecutor
 
 # ==========================================
 # CONFIG
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V71", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI PRO V72 ULTRA", layout="wide")
+st.title("🚀 NSE AI PRO V72 - ULTRA AI SYSTEM")
 
 IST = pytz.timezone("Asia/Kolkata")
-now = datetime.now(IST)
-
-st.title("🚀 NSE AI PRO V71 – STABLE PRO VERSION")
-st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+st.write("🕒", datetime.now(IST))
 
 # ==========================================
-# NSE STOCKS (you can paste full 200)
+# NSE 200 STOCK LIST (AUTO EXPAND)
 # ==========================================
-stocks = [
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
-    "SBIN","ITC","LT","AXISBANK","KOTAKBANK"
-]
-
-tickers = [s + ".NS" for s in stocks]
-
-# ==========================================
-# DATA
-# ==========================================
-@st.cache_data(ttl=300)
-def load_data():
-    return yf.download(
-        tickers,
-        period="15d",
-        interval="5m",
-        group_by="ticker",
-        threads=True
-    )
+stocks = list(set([
+"RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS","ICICIBANK.NS","SBIN.NS","LT.NS","ITC.NS",
+"KOTAKBANK.NS","AXISBANK.NS","HINDUNILVR.NS","ASIANPAINT.NS","MARUTI.NS","SUNPHARMA.NS",
+"TITAN.NS","ULTRACEMCO.NS","NESTLEIND.NS","BAJFINANCE.NS","BAJAJFINSV.NS","WIPRO.NS",
+"HCLTECH.NS","POWERGRID.NS","NTPC.NS","ONGC.NS","TATAMOTORS.NS","COALINDIA.NS",
+"JSWSTEEL.NS","TATASTEEL.NS","INDUSINDBK.NS","ADANIENT.NS","ADANIPORTS.NS",
+"DMART.NS","ZOMATO.NS","NYKAA.NS","PAYTM.NS","IRCTC.NS","HAL.NS","BEL.NS","BHEL.NS",
+"IOC.NS","BPCL.NS","HPCL.NS","GAIL.NS","PNB.NS","BANKBARODA.NS","CANBK.NS","IDFCFIRSTB.NS",
+"DLF.NS","LODHA.NS","GODREJPROP.NS","OBEROIRLTY.NS","COLPAL.NS","DABUR.NS","MARICO.NS",
+"BRITANNIA.NS","PIDILITIND.NS","SRF.NS","DEEPAKNTR.NS","BERGEPAINT.NS",
+"APOLLOHOSP.NS","MAXHEALTH.NS","FORTIS.NS","LALPATHLAB.NS","METROPOLIS.NS",
+"DIVISLAB.NS","DRREDDY.NS","CIPLA.NS","AUROPHARMA.NS",
+"SIEMENS.NS","ABB.NS","HAVELLS.NS","POLYCAB.NS","VOLTAS.NS","DIXON.NS",
+"TATAPOWER.NS","ADANIGREEN.NS","ADANIPOWER.NS","NHPC.NS",
+"AMBUJACEM.NS","ACC.NS","RAMCOCEM.NS",
+"TORNTPHARM.NS","LUPIN.NS",
+"INDIGO.NS","ESCORTS.NS","EICHERMOT.NS","HEROMOTOCO.NS",
+"TVSMOTOR.NS","ASHOKLEY.NS",
+"PAGEIND.NS","TRENT.NS","ABFRL.NS",
+"GLAND.NS","BIOCON.NS",
+"MFSL.NS","CHOLAFIN.NS","MUTHOOTFIN.NS",
+"LICHSGFIN.NS","PFC.NS","RECLTD.NS",
+"IRFC.NS","RVNL.NS","NBCC.NS"
+]))
 
 # ==========================================
 # INDICATORS
 # ==========================================
-def add_indicators(df):
-    df = df.copy()
-
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
-    df["VOLAVG"] = df["Volume"].rolling(20).mean()
-
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = -delta.clip(upper=0).rolling(period).mean()
     rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-    df["RSI"] = 100 - (100 / (1 + rs))
-
-    return df
-
-# ==========================================
-# SIGNAL ENGINE
-# ==========================================
-def signal_engine(row):
-    sig, entry, sl, tgt, typ = None, None, None, None, None
-
-    # Pullback Buy
-    if row["Close"] > row["EMA20"] and row["Low"] <= row["EMA20"]:
-        if row["EMA20"] > row["EMA50"]:
-            sig = "BUY"
-            typ = "PULLBACK"
-            entry = row["Close"]
-            sl = row["EMA20"] * 0.995
-            tgt = entry + (entry - sl) * 2
-
-    # Pullback Sell
-    elif row["Close"] < row["EMA20"] and row["High"] >= row["EMA20"]:
-        if row["EMA20"] < row["EMA50"]:
-            sig = "SELL"
-            typ = "PULLBACK"
-            entry = row["Close"]
-            sl = row["EMA20"] * 1.005
-            tgt = entry - (sl - entry) * 2
-
-    # Big Player
-    if row["Volume"] > row["VOLAVG"] * 2:
-        if row["Close"] > row["EMA20"]:
-            sig = "BUY"
-            typ = "BIG PLAYER"
-            entry = row["Close"]
-            sl = row["Low"]
-            tgt = entry + (entry - sl) * 2.5
-
-        elif row["Close"] < row["EMA20"]:
-            sig = "SELL"
-            typ = "BIG PLAYER"
-            entry = row["Close"]
-            sl = row["High"]
-            tgt = entry - (sl - entry) * 2.5
-
-    return sig, entry, sl, tgt, typ
+def compute_atr(df, period=14):
+    tr = pd.concat([
+        df['High'] - df['Low'],
+        abs(df['High'] - df['Close'].shift()),
+        abs(df['Low'] - df['Close'].shift())
+    ], axis=1).max(axis=1)
+    return tr.rolling(period).mean()
 
 # ==========================================
-# SCORE
+# ULTRA AI LOGIC
 # ==========================================
-def calc_score(row):
-    score = 0
+def ultra_ai(df):
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['EMA200'] = df['Close'].ewm(span=200).mean()
+    df['RSI'] = compute_rsi(df['Close'])
+    df['ATR'] = compute_atr(df)
+    df['VOL_AVG'] = df['Volume'].rolling(20).mean()
 
-    if row["Close"] > row["EMA20"]:
-        score += 2
+    signals = []
 
-    if row["Volume"] > row["VOLAVG"]:
-        score += 2
+    for i in range(50, len(df)):
+        score = 0
 
-    if 40 < row["RSI"] < 60:
-        score += 2
+        trend_up = df['EMA50'][i] > df['EMA200'][i]
+        trend_down = df['EMA50'][i] < df['EMA200'][i]
 
-    return score
+        vol_spike = df['Volume'][i] > 1.5 * df['VOL_AVG'][i]
+        pullback = df['Close'][i] <= df['EMA20'][i]
+        rsi_buy = df['RSI'][i] > 55
+        rsi_sell = df['RSI'][i] < 45
+        atr_high = df['ATR'][i] > df['ATR'].rolling(20).mean()[i]
 
-# ==========================================
-# MARKET TIME
-# ==========================================
-def is_market_open(ts):
-    return time(9, 15) <= ts.time() <= time(15, 30)
+        # SCORE
+        if trend_up: score += 20
+        if trend_down: score += 20
+        if vol_spike: score += 20
+        if pullback: score += 15
+        if atr_high: score += 15
 
-# ==========================================
-# UI
-# ==========================================
-tab1, tab2 = st.tabs(["🚀 LIVE SCANNER", "📊 BACKTEST"])
+        signal = "NO TRADE"
 
-# ==========================================
-# LIVE SCANNER
-# ==========================================
-with tab1:
-    if st.button("RUN LIVE SCAN"):
-        data = load_data()
-        results = []
+        # DECISION
+        if trend_up and rsi_buy and score >= 75:
+            signal = "STRONG BUY"
+        elif trend_up and score >= 65:
+            signal = "BUY"
+        elif trend_down and rsi_sell and score >= 75:
+            signal = "STRONG SELL"
+        elif trend_down and score >= 65:
+            signal = "SELL"
 
-        for s in stocks:
-            t = s + ".NS"
+        entry = df['Close'][i]
 
-            if t not in data.columns.levels[0]:
-                continue
-
-            df = data[t].dropna()
-            if len(df) < 50:
-                continue
-
-            df = add_indicators(df)
-
-            row = df.iloc[-1]
-            ts = df.index[-1].tz_convert(IST)
-
-            if not is_market_open(ts):
-                continue
-
-            sig, entry, sl, tgt, typ = signal_engine(row)
-            score = calc_score(row)
-
-            if sig and score >= 4:
-                results.append({
-                    "TIME": ts.strftime("%H:%M"),
-                    "STOCK": s,
-                    "TYPE": typ,
-                    "SIGNAL": sig,
-                    "ENTRY": round(entry,2),
-                    "SL": round(sl,2),
-                    "TARGET": round(tgt,2),
-                    "SCORE": score
-                })
-
-        if results:
-            df_live = pd.DataFrame(results)
-            st.dataframe(df_live, use_container_width=True)
-
-            csv = df_live.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Live", csv, "live_signals.csv")
-
+        if "BUY" in signal:
+            sl = df['Low'][i-3:i].min()
+            target = entry + 2*(entry - sl)
+        elif "SELL" in signal:
+            sl = df['High'][i-3:i].max()
+            target = entry - 2*(sl - entry)
         else:
-            st.warning("No signals found")
+            sl, target = 0, 0
+
+        signals.append({
+            "Time": df.index[i],
+            "Signal": signal,
+            "Score": score,
+            "Entry": round(entry,2),
+            "SL": round(sl,2),
+            "Target": round(target,2)
+        })
+
+    return pd.DataFrame(signals)
 
 # ==========================================
-# BACKTEST
+# PROCESS FUNCTION (FAST)
 # ==========================================
-with tab2:
-    test_date = st.date_input("Select Backtest Date", now.date() - timedelta(days=1))
+def process_stock(stock):
+    try:
+        df = yf.download(stock, period="3mo", interval="15m", progress=False)
 
-    if st.button("RUN BACKTEST"):
-        data = load_data()
-        results = []
+        if df.empty:
+            return None
 
-        for s in stocks:
-            t = s + ".NS"
+        signals = ultra_ai(df)
 
-            if t not in data.columns.levels[0]:
-                continue
+        if signals.empty:
+            return None
 
-            df = data[t].dropna()
-            df.index = df.index.tz_convert(IST)
+        latest = signals.iloc[-1]
+        latest["Stock"] = stock
 
-            df = df[df.index.date == test_date]
+        return latest
+    except:
+        return None
 
-            if len(df) < 30:
-                continue
+# ==========================================
+# SCANNER
+# ==========================================
+final_results = []
 
-            df = add_indicators(df)
+if st.button("🚀 RUN SCANNER"):
 
-            for i in range(1, len(df)-1):
-                row = df.iloc[i]
-                ts = df.index[i]
+    with st.spinner("Scanning NSE 200..."):
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            results = executor.map(process_stock, stocks)
 
-                sig, entry, sl, tgt, typ = signal_engine(row)
-                score = calc_score(row)
+        for r in results:
+            if r is not None:
+                final_results.append(r)
 
-                if not sig or score < 4:
-                    continue
+    if final_results:
+        df = pd.DataFrame(final_results)
 
-                result = "OPEN"
-                exit_price = None
+        # FILTER BEST
+        df = df[df["Score"] >= 65]
+        df = df.sort_values(by="Score", ascending=False)
 
-                for j in range(i+1, len(df)):
-                    future = df.iloc[j]
+        st.success(f"Found {len(df)} high-quality trades 🔥")
+        st.dataframe(df, use_container_width=True)
 
-                    if sig == "BUY":
-                        if future["Low"] <= sl:
-                            result = "LOSS"
-                            exit_price = sl
-                            break
-                        if future["High"] >= tgt:
-                            result = "WIN"
-                            exit_price = tgt
-                            break
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "nse_signals.csv")
 
-                    elif sig == "SELL":
-                        if future["High"] >= sl:
-                            result = "LOSS"
-                            exit_price = sl
-                            break
-                        if future["Low"] <= tgt:
-                            result = "WIN"
-                            exit_price = tgt
-                            break
-
-                if result == "OPEN":
-                    exit_price = df.iloc[-1]["Close"]
-
-                rr = abs((exit_price - entry) / (entry - sl)) if (entry - sl) != 0 else 0
-
-                results.append({
-                    "TIME": ts.strftime("%H:%M"),
-                    "STOCK": s,
-                    "TYPE": typ,
-                    "SIGNAL": sig,
-                    "ENTRY": round(entry,2),
-                    "EXIT": round(exit_price,2),
-                    "RESULT": result,
-                    "R:R": round(rr,2),
-                    "SCORE": score
-                })
-
-        if results:
-            df_bt = pd.DataFrame(results)
-            st.dataframe(df_bt, use_container_width=True)
-
-            wins = len(df_bt[df_bt.RESULT=="WIN"])
-            losses = len(df_bt[df_bt.RESULT=="LOSS"])
-            total = len(df_bt)
-
-            acc = (wins/(wins+losses))*100 if (wins+losses)>0 else 0
-            avg_rr = df_bt["R:R"].mean()
-
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Trades", total)
-            c2.metric("Wins ✅", wins)
-            c3.metric("Accuracy 🎯", f"{round(acc,2)}%")
-            c4.metric("Avg R:R", round(avg_rr,2))
-
-            csv = df_bt.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Backtest", csv, "backtest.csv")
-
-        else:
-            st.warning("No trades found")
+    else:
+        st.warning("No strong signals found")
