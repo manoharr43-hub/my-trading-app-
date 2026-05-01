@@ -1,101 +1,281 @@
 import streamlit as st
-import pandas as pd
 import yfinance as yf
-import pandas_ta as ta
-from datetime import datetime, timedelta
+import pandas as pd
+from datetime import datetime, timedelta, time
+import pytz
 
-# Page Config
-st.set_page_config(page_title="NSE AI PRO V69 - ELITE", layout="wide")
+# ==========================================
+# CONFIG
+# ==========================================
+st.set_page_config(page_title="🚀 NSE AI PRO V71", layout="wide")
 
-# --- HEADER ---
-st.title("🚀 NSE AI PRO V69 - ELITE PRO")
-st.subheader("Live Scanner & Backtesting Dashboard")
+IST = pytz.timezone("Asia/Kolkata")
+now = datetime.now(IST)
 
-# --- SIDEBAR SETTINGS ---
-st.sidebar.header("Configuration")
-tickers_input = st.sidebar.text_area("Enter Stock Symbols (NSE)", "LICHSGFIN.NS, TATACHEM.NS, BIOCON.NS, SAIL.NS")
-tickers = [t.strip() for t in tickers_input.split(",")]
+st.title("🚀 NSE AI PRO V71 – STABLE PRO VERSION")
+st.write(f"🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
-period = st.sidebar.selectbox("Backtest Period", ["1mo", "3mo", "6mo", "1y"])
-interval = st.sidebar.selectbox("Interval", ["15m", "30m", "1h", "1d"])
+# ==========================================
+# NSE STOCKS (you can paste full 200)
+# ==========================================
+stocks = [
+    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
+    "SBIN","ITC","LT","AXISBANK","KOTAKBANK"
+]
 
-# --- FUNCTIONS ---
-def get_data(symbol, period, interval):
-    try:
-        df = yf.download(symbol, period=period, interval=interval)
-        if df.empty: return None
-        # Technical Indicators
-        df['EMA_9'] = ta.ema(df['Close'], length=9)
-        df['EMA_21'] = ta.ema(df['Close'], length=21)
-        df['RSI'] = ta.rsi(df['Close'], length=14)
-        df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
-        return df
-    except:
-        return None
+tickers = [s + ".NS" for s in stocks]
 
-def run_backtest(df):
-    # Strategy: Buy when EMA 9 crosses above EMA 21
-    df['Signal'] = 0
-    df.loc[df['EMA_9'] > df['EMA_21'], 'Signal'] = 1
-    df['Position'] = df['Signal'].diff()
-    
-    trades = []
-    buy_price = 0
-    
-    for i in range(len(df)):
-        if df['Position'].iloc[i] == 1: # Buy
-            buy_price = df['Close'].iloc[i]
-        elif df['Position'].iloc[i] == -1 and buy_price != 0: # Sell
-            sell_price = df['Close'].iloc[i]
-            profit = sell_price - buy_price
-            trades.append(profit)
-            buy_price = 0
-            
-    total_trades = len(trades)
-    win_trades = len([p for p in trades if p > 0])
-    win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
-    total_pnl = sum(trades)
-    
-    return total_trades, win_rate, total_pnl
+# ==========================================
+# DATA
+# ==========================================
+@st.cache_data(ttl=300)
+def load_data():
+    return yf.download(
+        tickers,
+        period="15d",
+        interval="5m",
+        group_by="ticker",
+        threads=True
+    )
 
-# --- MAIN TABBS ---
-tab1, tab2 = st.tabs(["🔍 Live Scanner", "📊 Backtest Report"])
+# ==========================================
+# INDICATORS
+# ==========================================
+def add_indicators(df):
+    df = df.copy()
 
+    df["EMA20"] = df["Close"].ewm(span=20).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+    df["VOLAVG"] = df["Volume"].rolling(20).mean()
+
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = -delta.clip(upper=0).rolling(14).mean()
+    rs = gain / loss
+
+    df["RSI"] = 100 - (100 / (1 + rs))
+
+    return df
+
+# ==========================================
+# SIGNAL ENGINE
+# ==========================================
+def signal_engine(row):
+    sig, entry, sl, tgt, typ = None, None, None, None, None
+
+    # Pullback Buy
+    if row["Close"] > row["EMA20"] and row["Low"] <= row["EMA20"]:
+        if row["EMA20"] > row["EMA50"]:
+            sig = "BUY"
+            typ = "PULLBACK"
+            entry = row["Close"]
+            sl = row["EMA20"] * 0.995
+            tgt = entry + (entry - sl) * 2
+
+    # Pullback Sell
+    elif row["Close"] < row["EMA20"] and row["High"] >= row["EMA20"]:
+        if row["EMA20"] < row["EMA50"]:
+            sig = "SELL"
+            typ = "PULLBACK"
+            entry = row["Close"]
+            sl = row["EMA20"] * 1.005
+            tgt = entry - (sl - entry) * 2
+
+    # Big Player
+    if row["Volume"] > row["VOLAVG"] * 2:
+        if row["Close"] > row["EMA20"]:
+            sig = "BUY"
+            typ = "BIG PLAYER"
+            entry = row["Close"]
+            sl = row["Low"]
+            tgt = entry + (entry - sl) * 2.5
+
+        elif row["Close"] < row["EMA20"]:
+            sig = "SELL"
+            typ = "BIG PLAYER"
+            entry = row["Close"]
+            sl = row["High"]
+            tgt = entry - (sl - entry) * 2.5
+
+    return sig, entry, sl, tgt, typ
+
+# ==========================================
+# SCORE
+# ==========================================
+def calc_score(row):
+    score = 0
+
+    if row["Close"] > row["EMA20"]:
+        score += 2
+
+    if row["Volume"] > row["VOLAVG"]:
+        score += 2
+
+    if 40 < row["RSI"] < 60:
+        score += 2
+
+    return score
+
+# ==========================================
+# MARKET TIME
+# ==========================================
+def is_market_open(ts):
+    return time(9, 15) <= ts.time() <= time(15, 30)
+
+# ==========================================
+# UI
+# ==========================================
+tab1, tab2 = st.tabs(["🚀 LIVE SCANNER", "📊 BACKTEST"])
+
+# ==========================================
+# LIVE SCANNER
+# ==========================================
 with tab1:
     if st.button("RUN LIVE SCAN"):
+        data = load_data()
         results = []
-        for stock in tickers:
-            df = get_data(stock, "5d", interval)
-            if df is not None:
-                last_row = df.iloc[-1]
-                signal = "BUY" if last_row['EMA_9'] > last_row['EMA_21'] else "WAIT"
+
+        for s in stocks:
+            t = s + ".NS"
+
+            if t not in data.columns.levels[0]:
+                continue
+
+            df = data[t].dropna()
+            if len(df) < 50:
+                continue
+
+            df = add_indicators(df)
+
+            row = df.iloc[-1]
+            ts = df.index[-1].tz_convert(IST)
+
+            if not is_market_open(ts):
+                continue
+
+            sig, entry, sl, tgt, typ = signal_engine(row)
+            score = calc_score(row)
+
+            if sig and score >= 4:
                 results.append({
-                    "STOCK": stock.replace(".NS", ""),
-                    "TIME": datetime.now().strftime("%H:%M"),
-                    "SIGNAL": signal,
-                    "ENTRY": round(last_row['Close'], 2),
-                    "SL": round(last_row['EMA_21'], 2),
-                    "RSI": round(last_row['RSI'], 2)
+                    "TIME": ts.strftime("%H:%M"),
+                    "STOCK": s,
+                    "TYPE": typ,
+                    "SIGNAL": sig,
+                    "ENTRY": round(entry,2),
+                    "SL": round(sl,2),
+                    "TARGET": round(tgt,2),
+                    "SCORE": score
                 })
-        
-        st.table(pd.DataFrame(results))
 
+        if results:
+            df_live = pd.DataFrame(results)
+            st.dataframe(df_live, use_container_width=True)
+
+            csv = df_live.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Live", csv, "live_signals.csv")
+
+        else:
+            st.warning("No signals found")
+
+# ==========================================
+# BACKTEST
+# ==========================================
 with tab2:
-    st.write("### Strategy Performance (Last 30 Days)")
-    bt_results = []
-    for stock in tickers:
-        df = get_data(stock, period, interval)
-        if df is not None:
-            trades, win_rate, pnl = run_backtest(df)
-            bt_results.append({
-                "Stock": stock.replace(".NS", ""),
-                "Total Trades": trades,
-                "Win Rate %": f"{win_rate:.2f}%",
-                "Total PnL": round(pnl, 2)
-            })
-    
-    st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
+    test_date = st.date_input("Select Backtest Date", now.date() - timedelta(days=1))
 
-# --- FOOTER ---
-st.markdown("---")
-st.caption("Developed by Manohar | Variety Motors Tech")
+    if st.button("RUN BACKTEST"):
+        data = load_data()
+        results = []
+
+        for s in stocks:
+            t = s + ".NS"
+
+            if t not in data.columns.levels[0]:
+                continue
+
+            df = data[t].dropna()
+            df.index = df.index.tz_convert(IST)
+
+            df = df[df.index.date == test_date]
+
+            if len(df) < 30:
+                continue
+
+            df = add_indicators(df)
+
+            for i in range(1, len(df)-1):
+                row = df.iloc[i]
+                ts = df.index[i]
+
+                sig, entry, sl, tgt, typ = signal_engine(row)
+                score = calc_score(row)
+
+                if not sig or score < 4:
+                    continue
+
+                result = "OPEN"
+                exit_price = None
+
+                for j in range(i+1, len(df)):
+                    future = df.iloc[j]
+
+                    if sig == "BUY":
+                        if future["Low"] <= sl:
+                            result = "LOSS"
+                            exit_price = sl
+                            break
+                        if future["High"] >= tgt:
+                            result = "WIN"
+                            exit_price = tgt
+                            break
+
+                    elif sig == "SELL":
+                        if future["High"] >= sl:
+                            result = "LOSS"
+                            exit_price = sl
+                            break
+                        if future["Low"] <= tgt:
+                            result = "WIN"
+                            exit_price = tgt
+                            break
+
+                if result == "OPEN":
+                    exit_price = df.iloc[-1]["Close"]
+
+                rr = abs((exit_price - entry) / (entry - sl)) if (entry - sl) != 0 else 0
+
+                results.append({
+                    "TIME": ts.strftime("%H:%M"),
+                    "STOCK": s,
+                    "TYPE": typ,
+                    "SIGNAL": sig,
+                    "ENTRY": round(entry,2),
+                    "EXIT": round(exit_price,2),
+                    "RESULT": result,
+                    "R:R": round(rr,2),
+                    "SCORE": score
+                })
+
+        if results:
+            df_bt = pd.DataFrame(results)
+            st.dataframe(df_bt, use_container_width=True)
+
+            wins = len(df_bt[df_bt.RESULT=="WIN"])
+            losses = len(df_bt[df_bt.RESULT=="LOSS"])
+            total = len(df_bt)
+
+            acc = (wins/(wins+losses))*100 if (wins+losses)>0 else 0
+            avg_rr = df_bt["R:R"].mean()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Trades", total)
+            c2.metric("Wins ✅", wins)
+            c3.metric("Accuracy 🎯", f"{round(acc,2)}%")
+            c4.metric("Avg R:R", round(avg_rr,2))
+
+            csv = df_bt.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download Backtest", csv, "backtest.csv")
+
+        else:
+            st.warning("No trades found")
