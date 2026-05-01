@@ -1,10 +1,7 @@
-🚀 NSE AI PRO - Requirements File
-
-streamlit>=1.30.0
-yfinance>=0.2.40
-pandas>=2.0.0
-numpy>=1.24.0
-pytz>=2023.3
-streamlit-autorefresh>=0.0.1
-xlsxwriter>=3.1.0
-pandas_ta>=0.3.14b0
+streamlit
+yfinance
+pandas
+numpy
+pytz
+streamlit-autorefresh
+xlsxwriter
