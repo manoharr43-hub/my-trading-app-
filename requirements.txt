@@ -6,3 +6,4 @@ pytz
 streamlit-autorefresh
 xlsxwriter
 timedelta
+pandas_ta
