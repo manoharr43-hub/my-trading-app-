@@ -1,202 +1,101 @@
-# ==========================================
-# 🚀 NSE AI PRO V74 - ULTRA AI FULL SYSTEM
-# ==========================================
-
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import numpy as np
-import requests
-from io import StringIO
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-import pytz
+import yfinance as yf
+import pandas_ta as ta
+from datetime import datetime, timedelta
 
-# ==========================================
-# CONFIG
-# ==========================================
-st.set_page_config(page_title="🚀 NSE AI PRO V74", layout="wide")
-st.title("🚀 NSE AI PRO V74 - ULTRA AI + BACKTEST")
+# Page Config
+st.set_page_config(page_title="NSE AI PRO V69 - ELITE", layout="wide")
 
-IST = pytz.timezone("Asia/Kolkata")
-st.write("🕒", datetime.now(IST))
+# --- HEADER ---
+st.title("🚀 NSE AI PRO V69 - ELITE PRO")
+st.subheader("Live Scanner & Backtesting Dashboard")
 
-# ==========================================
-# NSE 200 AUTO FETCH
-# ==========================================
-@st.cache_data
-def get_nse200():
-    url = "https://archives.nseindia.com/content/indices/ind_nifty200list.csv"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    res = requests.get(url, headers=headers)
-    df = pd.read_csv(StringIO(res.text))
-    return [s + ".NS" for s in df['Symbol'].tolist()]
+# --- SIDEBAR SETTINGS ---
+st.sidebar.header("Configuration")
+tickers_input = st.sidebar.text_area("Enter Stock Symbols (NSE)", "LICHSGFIN.NS, TATACHEM.NS, BIOCON.NS, SAIL.NS")
+tickers = [t.strip() for t in tickers_input.split(",")]
 
-stocks = get_nse200()
+period = st.sidebar.selectbox("Backtest Period", ["1mo", "3mo", "6mo", "1y"])
+interval = st.sidebar.selectbox("Interval", ["15m", "30m", "1h", "1d"])
 
-# ==========================================
-# INDICATORS
-# ==========================================
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-def atr(df, period=14):
-    tr = pd.concat([
-        df['High'] - df['Low'],
-        abs(df['High'] - df['Close'].shift()),
-        abs(df['Low'] - df['Close'].shift())
-    ], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
-
-# ==========================================
-# SIGNAL ENGINE
-# ==========================================
-def generate_trades(df):
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['EMA50'] = df['Close'].ewm(span=50).mean()
-    df['EMA200'] = df['Close'].ewm(span=200).mean()
-    df['RSI'] = rsi(df['Close'])
-    df['ATR'] = atr(df)
-    df['VOL_AVG'] = df['Volume'].rolling(20).mean()
-
-    trades = []
-
-    for i in range(50, len(df)):
-        score = 0
-
-        trend = df['EMA50'][i] > df['EMA200'][i]
-        volume = df['Volume'][i] > 1.5 * df['VOL_AVG'][i]
-        pullback = df['Close'][i] <= df['EMA20'][i]
-        momentum = df['RSI'][i] > 55
-        volatility = df['ATR'][i] > df['ATR'].rolling(20).mean()[i]
-
-        if trend: score += 25
-        if volume: score += 20
-        if pullback: score += 20
-        if momentum: score += 15
-        if volatility: score += 20
-
-        if score >= 55:
-            entry = df['Close'][i]
-            sl = df['Low'][i-3:i].min()
-            target = entry + 2*(entry - sl)
-
-            trades.append({
-                "Time": df.index[i],
-                "Entry": entry,
-                "SL": sl,
-                "Target": target,
-                "Score": score
-            })
-
-    return pd.DataFrame(trades)
-
-# ==========================================
-# REAL BACKTEST
-# ==========================================
-def backtest(df, trades):
-    results = []
-
-    for _, t in trades.iterrows():
-        entry, sl, target = t['Entry'], t['SL'], t['Target']
-        outcome = "OPEN"
-        pnl = 0
-
-        for i in range(len(df)):
-            if df['High'].iloc[i] >= target:
-                outcome = "WIN"
-                pnl = target - entry
-                break
-            elif df['Low'].iloc[i] <= sl:
-                outcome = "LOSS"
-                pnl = entry - sl
-                break
-
-        results.append({
-            "Time": t['Time'],
-            "Entry": round(entry,2),
-            "SL": round(sl,2),
-            "Target": round(target,2),
-            "Score": t['Score'],
-            "Result": outcome,
-            "PnL": round(pnl,2)
-        })
-
-    return pd.DataFrame(results)
-
-# ==========================================
-# PROCESS STOCK
-# ==========================================
-def process_stock(stock):
+# --- FUNCTIONS ---
+def get_data(symbol, period, interval):
     try:
-        df = yf.download(stock, period="3mo", interval="15m", progress=False)
-
-        if df.empty:
-            return None
-
-        trades = generate_trades(df)
-
-        if trades.empty:
-            return None
-
-        bt = backtest(df, trades)
-        bt["Stock"] = stock
-
-        return bt
-
+        df = yf.download(symbol, period=period, interval=interval)
+        if df.empty: return None
+        # Technical Indicators
+        df['EMA_9'] = ta.ema(df['Close'], length=9)
+        df['EMA_21'] = ta.ema(df['Close'], length=21)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+        return df
     except:
         return None
 
-# ==========================================
-# RUN BUTTON
-# ==========================================
-if st.button("🚀 RUN NSE 200 ULTRA SYSTEM"):
+def run_backtest(df):
+    # Strategy: Buy when EMA 9 crosses above EMA 21
+    df['Signal'] = 0
+    df.loc[df['EMA_9'] > df['EMA_21'], 'Signal'] = 1
+    df['Position'] = df['Signal'].diff()
+    
+    trades = []
+    buy_price = 0
+    
+    for i in range(len(df)):
+        if df['Position'].iloc[i] == 1: # Buy
+            buy_price = df['Close'].iloc[i]
+        elif df['Position'].iloc[i] == -1 and buy_price != 0: # Sell
+            sell_price = df['Close'].iloc[i]
+            profit = sell_price - buy_price
+            trades.append(profit)
+            buy_price = 0
+            
+    total_trades = len(trades)
+    win_trades = len([p for p in trades if p > 0])
+    win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
+    total_pnl = sum(trades)
+    
+    return total_trades, win_rate, total_pnl
 
-    all_data = []
+# --- MAIN TABBS ---
+tab1, tab2 = st.tabs(["🔍 Live Scanner", "📊 Backtest Report"])
 
-    with st.spinner("Scanning NSE 200 + Backtesting..."):
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            results = executor.map(process_stock, stocks)
+with tab1:
+    if st.button("RUN LIVE SCAN"):
+        results = []
+        for stock in tickers:
+            df = get_data(stock, "5d", interval)
+            if df is not None:
+                last_row = df.iloc[-1]
+                signal = "BUY" if last_row['EMA_9'] > last_row['EMA_21'] else "WAIT"
+                results.append({
+                    "STOCK": stock.replace(".NS", ""),
+                    "TIME": datetime.now().strftime("%H:%M"),
+                    "SIGNAL": signal,
+                    "ENTRY": round(last_row['Close'], 2),
+                    "SL": round(last_row['EMA_21'], 2),
+                    "RSI": round(last_row['RSI'], 2)
+                })
+        
+        st.table(pd.DataFrame(results))
 
-        for r in results:
-            if r is not None:
-                all_data.append(r)
+with tab2:
+    st.write("### Strategy Performance (Last 30 Days)")
+    bt_results = []
+    for stock in tickers:
+        df = get_data(stock, period, interval)
+        if df is not None:
+            trades, win_rate, pnl = run_backtest(df)
+            bt_results.append({
+                "Stock": stock.replace(".NS", ""),
+                "Total Trades": trades,
+                "Win Rate %": f"{win_rate:.2f}%",
+                "Total PnL": round(pnl, 2)
+            })
+    
+    st.dataframe(pd.DataFrame(bt_results), use_container_width=True)
 
-    if all_data:
-        final_df = pd.concat(all_data)
-
-        # FILTER
-        final_df = final_df[final_df["Score"] >= 55]
-
-        # METRICS
-        total = len(final_df)
-        wins = len(final_df[final_df["Result"] == "WIN"])
-        losses = len(final_df[final_df["Result"] == "LOSS"])
-        pnl = final_df["PnL"].sum()
-        win_rate = (wins / total) * 100 if total else 0
-
-        st.subheader("📊 PERFORMANCE")
-        st.write(f"Trades: {total}")
-        st.write(f"Wins: {wins} | Losses: {losses}")
-        st.write(f"Win Rate: {round(win_rate,2)}%")
-        st.write(f"Total PnL: ₹ {round(pnl,2)}")
-
-        # STRONG SIGNALS
-        strong = final_df[final_df["Score"] >= 70]
-        st.subheader("🔥 STRONG TRADES")
-        st.dataframe(strong, use_container_width=True)
-
-        # ALL DATA
-        st.subheader("📋 ALL TRADES")
-        st.dataframe(final_df, use_container_width=True)
-
-        # DOWNLOAD
-        csv = final_df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Report", csv, "nse200_report.csv")
-
-    else:
-        st.warning("No trades found")
+# --- FOOTER ---
+st.markdown("---")
+st.caption("Developed by Manohar | Variety Motors Tech")
