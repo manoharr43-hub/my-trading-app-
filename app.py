@@ -10,7 +10,7 @@ import io
 # ==========================================
 # 1. CONFIG & TIMEZONE SETUP
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V3.0", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V4.1", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -27,7 +27,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 NSE AI QUANT PRO - V3.0")
+st.title("🚀 NSE AI QUANT PRO - V4.1")
 st.subheader(f"📅 {now.strftime('%d-%b-%Y')} | 🕒 {now.strftime('%H:%M:%S')} IST")
 
 # ==========================================
@@ -61,32 +61,26 @@ def add_indicators(df):
     df = df.copy()
     if df.empty: return df
     
-    # Trend & Momentum
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
     
-    # VWAP (Intraday)
     df['Date_Only'] = df.index.date
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
     
-    # Volatility (ATR)
     tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
     
-    # Volume Analysis
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
     
-    # Consolidation Logic (20-period range width)
     df['High20'] = df['High'].rolling(window=20).max()
     df['Low20'] = df['Low'].rolling(window=20).min()
     df['Range_Width'] = (df['High20'] - df['Low20']) / df['Low20'] * 100
     
-    # Levels
     df['S_Level'] = df['Low'].rolling(window=30).min()
     df['R_Level'] = df['High'].rolling(window=30).max()
     return df
@@ -103,10 +97,15 @@ data_5m = fetch_all_data("5m")
 data_15m = fetch_all_data("15m")
 
 # ==========================================
-# 5. SCANNER LOGIC (With Consolidation)
+# 5. SCANNER LOGIC
 # ==========================================
 def scan_stock(s):
     try:
+        nifty_df = data_5m["^NSEI"].dropna()
+        n_close = nifty_df.iloc[-1]['Close']
+        n_prev = nifty_df.iloc[-2]['Close']
+        nifty_trend = "UP" if n_close > n_prev else "DOWN"
+        
         ticker = s + ".NS"
         df5 = add_indicators(data_5m[ticker].dropna())
         df15 = add_indicators(data_15m[ticker].dropna())
@@ -119,24 +118,25 @@ def scan_stock(s):
         
         signal = None
         reason = ""
+        is_cons = df5.iloc[-2]['Range_Width'] < 0.8
         
-        # Consolidation Check
-        is_consolidating = df5.iloc[-2]['Range_Width'] < 0.8  # Price within 0.8% range
-        
-        # Strategy Logic
-        if last['Close'] > last['VWAP'] and last['RSI'] > 55 and trend_15m == "UP":
-            if is_consolidating and last['Close'] > df5.iloc[-2]['High20'] and last['RVOL'] > 1.5:
+        # --- BUY Logic (Nifty must be UP) ---
+        if nifty_trend == "UP" and last['Close'] > last['VWAP'] and last['RSI'] > 55 and trend_15m == "UP":
+            if is_cons and last['Close'] > df5.iloc[-2]['High20'] and last['RVOL'] > 1.5:
                 signal, reason = "BUY", "Consolidation Breakout 🚀"
             elif last['RVOL'] > 2.0:
                 signal, reason = "BUY", "Big Player Entry ⚡"
             elif last['Low'] <= last['EMA20'] * 1.002 and last['Close'] > last['EMA20']:
                 signal, reason = "BUY", "Pullback Entry 🟢"
-            
-        elif last['Close'] < last['VWAP'] and last['RSI'] < 45 and trend_15m == "DOWN":
-            if last['RVOL'] > 2.0:
-                signal, reason = "SELL", "Big Exit 📉"
+        
+        # --- SELL Logic (Nifty must be DOWN) ---
+        elif nifty_trend == "DOWN" and last['Close'] < last['VWAP'] and last['RSI'] < 45 and trend_15m == "DOWN":
+            if is_cons and last['Close'] < df5.iloc[-2]['Low20'] and last['RVOL'] > 1.5:
+                signal, reason = "SELL", "Consolidation Breakdown 📉"
+            elif last['RVOL'] > 2.0:
+                signal, reason = "SELL", "Big Exit/Short 🔴"
             elif last['Close'] < prev['S_Level'] and last['RVOL'] > 1.3:
-                signal, reason = "SELL", "Breakdown 🔴"
+                signal, reason = "SELL", "Support Breakdown 🔨"
                 
         if not signal: return None
         
@@ -163,29 +163,30 @@ with tab1:
         n_df = data_5m["^NSEI"].dropna()
         n_last, n_prev = n_df.iloc[-1]['Close'], n_df.iloc[-2]['Close']
         n_chg = round(((n_last - n_prev)/n_prev)*100, 2)
-        st.metric("NIFTY 50", f"{round(n_last, 2)}", f"{n_chg}%")
+        col1, col2 = st.columns(2)
+        col1.metric("NIFTY 50", f"{round(n_last, 2)}", f"{n_chg}%")
+        status_msg = "🟢 Market Bullish: Looking for BUYs" if n_chg >= 0 else "🔴 Market Bearish: Looking for SELLs"
+        col2.subheader(status_msg)
     except: st.info("Updating Nifty...")
 
     if st.button("🚀 START SCANNING"):
-        with st.spinner("Scanning 150+ Stocks for Breakouts..."):
+        with st.spinner("Scanning 150+ Stocks..."):
             with ThreadPoolExecutor(max_workers=20) as executor:
                 res = [r for r in list(executor.map(scan_stock, stocks)) if r]
             if res:
                 df_res = pd.DataFrame(res)
-                st.dataframe(df_res.style.map(lambda x: 'color: #2ecc71; font-weight: bold' if x == 'BUY' else 'color: #e74c3c; font-weight: bold', subset=['SIGNAL']), use_container_width=True)
-                
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df_res.to_excel(writer, index=False, sheet_name='Live_Signals')
-                st.download_button(label="📥 Download Excel", data=output.getvalue(), file_name=f"Signals_{now.strftime('%H%M')}.xlsx")
+                st.dataframe(df_res.style.map(
+                    lambda x: 'color: #2ecc71; font-weight: bold' if x == 'BUY' else 'color: #e74c3c; font-weight: bold', 
+                    subset=['SIGNAL']
+                ), use_container_width=True)
             else:
-                st.info("ప్రస్తుతానికి బలమైన సిగ్నల్స్ ఏవీ లేవు.")
+                st.info("ప్రస్తుతానికి నిఫ్టీ ట్రెండ్‌కు తగిన బలమైన BUY/SELL సిగ్నల్స్ లేవు.")
 
 with tab2:
-    st.header("📈 Backtest Analysis (Last 5 Days)")
-    if st.button("📊 RUN DETAILED BACKTEST"):
+    st.header("📈 Historical Backtest (5 Days)")
+    if st.button("📊 RUN BACKTEST"):
         all_bt = []
-        with st.spinner("హిస్టారికల్ డేటాను చెక్ చేస్తున్నాను..."):
+        with st.spinner("డేటాను అనలైజ్ చేస్తున్నాను..."):
             for s in stocks:
                 try:
                     df = add_indicators(data_5m[s+".NS"].dropna())
@@ -193,47 +194,55 @@ with tab2:
 
                     for i in range(30, len(df)-20):
                         row = df.iloc[i]
-                        # Backtest Strategy (Consolidation Logic included)
-                        is_cons = df.iloc[i-1]['Range_Width'] < 0.8
+                        current_time = row.name.astimezone(IST)
+                        if current_time.hour == 15 and current_time.minute >= 15: continue
+
+                        # Strategy Check
+                        signal_type = None
                         if row['RVOL'] > 1.5 and row['RSI'] > 55 and row['Close'] > row['VWAP']:
+                            signal_type = "BUY"
+                        elif row['RVOL'] > 1.5 and row['RSI'] < 45 and row['Close'] < row['VWAP']:
+                            signal_type = "SELL"
+
+                        if signal_type:
                             entry_p = row['Close']
-                            sl_v = row['Close'] - (row['ATR'] * 1.5)
-                            tp_v = row['Close'] + (row['ATR'] * 2.5)
+                            sl_pts = row['ATR'] * 1.5
+                            sl_v = entry_p - sl_pts if signal_type == "BUY" else entry_p + sl_pts
+                            tp_v = entry_p + (sl_pts * 2.5) if signal_type == "BUY" else entry_p - (sl_pts * 2.5)
                             
                             status, exit_time = "OPEN", None
                             for j in range(i+1, min(i+60, len(df))):
                                 check_row = df.iloc[j]
-                                if check_row['Low'] <= sl_v:
-                                    status, exit_time = "LOSS", check_row.name; break
-                                if check_row['High'] >= tp_v:
-                                    status, exit_time = "PROFIT", check_row.name; break
+                                check_time = check_row.name.astimezone(IST)
+                                
+                                # Exit Conditions
+                                if signal_type == "BUY":
+                                    if check_row['Low'] <= sl_v: status, exit_time = "LOSS", check_row.name; break
+                                    if check_row['High'] >= tp_v: status, exit_time = "PROFIT", check_row.name; break
+                                else: # SELL
+                                    if check_row['High'] >= sl_v: status, exit_time = "LOSS", check_row.name; break
+                                    if check_row['Low'] <= tp_v: status, exit_time = "PROFIT", check_row.name; break
+                                
+                                # Auto Square-off
+                                if check_time.hour == 15 and check_time.minute >= 15:
+                                    if signal_type == "BUY":
+                                        status = "PROFIT" if check_row['Close'] > entry_p else "LOSS"
+                                    else:
+                                        status = "PROFIT" if check_row['Close'] < entry_p else "LOSS"
+                                    exit_time = check_row.name; break
                             
                             if status != "OPEN":
                                 e_dt = row.name.astimezone(IST)
-                                ex_dt = exit_time.astimezone(IST)
                                 all_bt.append({
                                     "Stock": s, "Date": e_dt.strftime('%Y-%m-%d'),
-                                    "Entry Time": e_dt.strftime('%H:%M:%S'),
-                                    "Exit Time": ex_dt.strftime('%H:%M:%S'),
-                                    "Entry Price": round(entry_p, 2),
-                                    "Result": status,
-                                    "Duration (Min)": int((exit_time - row.name).total_seconds() / 60)
+                                    "Signal": signal_type, "Time": e_dt.strftime('%H:%M:%S'),
+                                    "Entry": round(entry_p, 2), "Result": status,
+                                    "Duration": int((exit_time - row.name).total_seconds() / 60)
                                 })
                 except: continue
 
         if all_bt:
             bt_df = pd.DataFrame(all_bt)
-            wins = len(bt_df[bt_df['Result']=='PROFIT'])
-            wr = round((wins/len(bt_df))*100, 2)
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Trades", len(bt_df))
-            c2.metric("Win Rate %", f"{wr}%")
-            c3.metric("Profit Trades", wins)
-            
-            bt_out = io.BytesIO()
-            with pd.ExcelWriter(bt_out, engine='xlsxwriter') as writer:
-                bt_df.to_excel(writer, index=False, sheet_name='Backtest_Report')
-            st.download_button(label="📥 Download Backtest Report", data=bt_out.getvalue(), file_name="Detailed_Backtest.xlsx")
             st.dataframe(bt_df, use_container_width=True)
         else:
             st.warning("ట్రేడ్స్ ఏవీ దొరకలేదు.")
