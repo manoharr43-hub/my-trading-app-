@@ -10,48 +10,26 @@ import io
 # =============================
 # CONFIG
 # =============================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V3 NSE200", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V4 STABLE", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 
-st.title("🚀 NSE AI QUANT PRO V3 - NSE 200 + BACKTEST")
+st.title("🚀 NSE AI QUANT PRO V4 - STABLE NSE200")
 
 # =============================
-# NSE 200 STOCK LIST
+# NSE STOCK LIST (Lite for stability)
 # =============================
 stocks = [
-"ABB","ACC","AUBANK","ADANIENT","ADANIGREEN","ADANIPORTS","ADANIPOWER","ATGL","AMBUJACEM",
-"APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASIANPAINT","ASTRAL","AUROPHARMA","AXISBANK",
-"BAJAJ-AUTO","BAJFINANCE","BAJAJFINSV","BALKRISIND","BANDHANBNK","BANKBARODA","BEL",
-"BERGEPAINT","BHARATFORG","BHEL","BPCL","BHARTIARTL","BIOCON","BOSCHLTD","BRITANNIA",
-"CANBK","CGPOWER","CHOLAFIN","CIPLA","COALINDIA","COFORGE","COLPAL","CONCOR",
-"CROMPTON","CUMMINSIND","DABUR","DALBHARAT","DEEPAKNTR","DELHIVERY","DIVISLAB",
-"DIXON","DLF","DRREDDY","EICHERMOT","ESCORTS","EXIDEIND","FEDERALBNK","FORTIS",
-"GAIL","GLENMARK","GMRINFRA","GODREJCP","GODREJPROP","GRASIM","GUJGASLTD",
-"HAL","HAVELLS","HCLTECH","HDFCBANK","HDFCLIFE","HEROMOTOCO","HINDALCO",
-"HINDCOPPER","HINDPETRO","HINDUNILVR","ICICIBANK","ICICIGI","ICICIPRULI",
-"IDFCFIRSTB","IEX","IGL","INDHOTEL","INDIGO","INDUSINDBK","INDUSTOWER",
-"INFY","IOC","IRCTC","IRFC","ITC","JINDALSTEL","JSWENERGY","JSWSTEEL",
-"JUBLFOOD","KOTAKBANK","KPITTECH","L&TFH","LT","LTIM","LTTS","LICHSGFIN",
-"LICI","LUPIN","M&M","M&MFIN","MANAPPURAM","MARICO","MARUTI","MAXHEALTH",
-"METROPOLIS","MFSL","MGL","MPHASIS","MRF","MUTHOOTFIN","NATIONALUM",
-"NESTLEIND","NMDC","NTPC","OBEROIRLTY","ONGC","PAYTM","PEL","PERSISTENT",
-"PETRONET","PFC","PIDILITIND","PIIND","PNB","POLYCAB","POONAWALLA",
-"POWERGRID","PRESTIGE","PVRINOX","RECLTD","RELIANCE","SAIL","SBICARD",
-"SBILIFE","SBIN","SHREECEM","SHRIRAMFIN","SIEMENS","SRF","SUNPHARMA",
-"SUNTV","SYNGENE","TATACOMM","TATACONSUM","TATAELXSI","TATAMOTORS",
-"TATAPOWER","TATASTEEL","TCS","TECHM","TITAN","TORNTPHARM","TRENT",
-"TVSMOTOR","ULTRACEMCO","UBL","UPL","VBL","VEDL","VOLTAS","WIPRO",
-"YESBANK","ZEEL","ZOMATO",
-"AARTIIND","ALKEM","BALRAMCHIN","BATAINDIA","BDL","BEML","CENTRALBK",
-"COCHINSHIP","CREDITACC","EIDPARRY","ENGINERSIN","FSL","HATSUN",
-"HFCL","IBULHSGFIN","INDIAMART","IRB","ISEC","JBCHEPHARM",
-"KALYANKJIL","KEC","LALPATHLAB","MAHABANK","MAZDOCK","NBCC",
-"NLCINDIA","OIL","PAGEIND","RBLBANK","ROUTE","RVNL","SCI",
-"SUZLON","TANLA","TRIDENT","UJJIVANSFB","UNIONBANK"
+"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","KOTAKBANK",
+"BAJFINANCE","ASIANPAINT","MARUTI","TITAN","SUNPHARMA","WIPRO","ULTRACEMCO",
+"POWERGRID","NTPC","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","COALINDIA",
+"DRREDDY","CIPLA","DIVISLAB","EICHERMOT","HEROMOTOCO","M&M","BAJAJ-AUTO",
+"BPCL","IOC","ADANIPORTS","ADANIENT","DLF","GAIL","VEDL","PEL","HAL",
+"BEL","SIEMENS","ABB","BHEL","HAVELLS","DABUR","MARICO","COLPAL","NESTLEIND",
+"BRITANNIA","PIDILITIND","GODREJCP","TATACONSUM","INDIGO","IRCTC"
 ]
 
 # =============================
-# INDICATORS
+# INDICATORS (VWAP FIXED)
 # =============================
 def add_indicators(df):
     df = df.copy()
@@ -65,9 +43,12 @@ def add_indicators(df):
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + gain / (loss + 1e-9)))
 
+    # ✅ VWAP FIX
     df['Date'] = df.index.date
     df['PV'] = df['Close'] * df['Volume']
-    df['VWAP'] = df.groupby('Date')['PV'].cumsum() / df.groupby('Date')['Volume'].cumsum()
+    df['CumPV'] = df.groupby('Date')['PV'].transform('cumsum')
+    df['CumVol'] = df.groupby('Date')['Volume'].transform('cumsum')
+    df['VWAP'] = df['CumPV'] / (df['CumVol'] + 1e-9)
 
     tr = pd.concat([
         df['High'] - df['Low'],
@@ -83,7 +64,7 @@ def add_indicators(df):
     return df
 
 # =============================
-# DATA FETCH
+# DATA FETCH SAFE
 # =============================
 @st.cache_data(ttl=60)
 def fetch_data():
@@ -104,6 +85,9 @@ data = fetch_data()
 # =============================
 def scan_stock(s):
     try:
+        if s not in data:
+            return None
+
         df = add_indicators(data[s].dropna())
         if len(df) < 50:
             return None
@@ -190,24 +174,25 @@ def run_backtest():
 tab1, tab2 = st.tabs(["🔴 LIVE SCANNER", "📊 BACKTEST"])
 
 with tab1:
-    if st.button("🚀 SCAN NSE 200"):
+    if st.button("🚀 SCAN"):
         with st.spinner("Scanning..."):
-            with ThreadPoolExecutor(max_workers=30) as executor:
+            with ThreadPoolExecutor(max_workers=15) as executor:
                 res = [r for r in executor.map(scan_stock, stocks) if r]
 
         if res:
             st.dataframe(pd.DataFrame(res), use_container_width=True)
         else:
-            st.warning("No signals found")
+            st.warning("No signals")
 
 with tab2:
     if st.button("📊 RUN BACKTEST"):
-        with st.spinner("Running..."):
+        with st.spinner("Running backtest..."):
             df_bt = run_backtest()
 
         if not df_bt.empty:
             wins = len(df_bt[df_bt['Result']=="PROFIT"])
             total = len(df_bt)
+
             st.metric("Win Rate %", round((wins/total)*100,2))
 
             st.dataframe(df_bt, use_container_width=True)
@@ -216,6 +201,6 @@ with tab2:
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_bt.to_excel(writer, index=False)
 
-            st.download_button("📥 Download Report", data=output.getvalue(), file_name="NSE200_Backtest.xlsx")
+            st.download_button("📥 Download Report", data=output.getvalue(), file_name="Backtest_V4.xlsx")
         else:
             st.warning("No trades found")
