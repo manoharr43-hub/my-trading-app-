@@ -4,23 +4,28 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
-from streamlit_autorefresh import st_autorefresh
+from concurrent.futures import ThreadPoolExecutor
 import io
 
 # =============================
-# CONFIG & UI SETUP
+# CONFIG & THEME
 # =============================
-st.set_page_config(page_title="🚀 NSE AI PRO V46.0", layout="wide")
-st_autorefresh(interval=60000, key="refresh")
+st.set_page_config(page_title="🚀 NSE AI PRO V100 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI PRO V46.0 - SMART SCANNER")
-st.write(f"🕒 **Market Time:** {now.strftime('%Y-%m-%d %H:%M:%S')}")
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stMetric { background-color: #1f2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🚀 NSE AI PRO V100 - QUANT PRO SYSTEM")
 
 # =============================
-# NSE 200 COMPLETE STOCK LIST
+# NSE 200 STOCKS
 # =============================
 stocks = [
     "ABB","ACC","ADANIENSOL","ADANIENT","ADANIGREEN","ADANIPORTS","ADANIPOWER","ATGL","ABCAPITAL","ABFRL",
@@ -44,160 +49,140 @@ stocks = [
 ]
 
 # =============================
-# CORE INDICATORS LOGIC
+# INDICATORS ENGINE
 # =============================
 def add_indicators(df):
     df = df.copy()
-    if len(df) < 30: return df
-    
-    # EMA 20
+    if df.empty: return df
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    
-    # VWAP
-    df['Date_Only'] = df.index.date
+    df['Date'] = df.index.date
     df['PV'] = df['Close'] * df['Volume']
-    df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
-    
-    # ATR (14)
-    high_low = df['High'] - df['Low']
-    tr = pd.concat([high_low, abs(df['High'] - df['Close'].shift()), abs(df['Low'] - df['Close'].shift())], axis=1).max(axis=1)
+    df['VWAP'] = df.groupby('Date')['PV'].cumsum() / df.groupby('Date')['Volume'].cumsum()
+    tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
-    
-    # RSI (14)
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # Volume Avg
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
     df['VolAvg'] = df['Volume'].rolling(20).mean()
-    
+    df['RVOL'] = df['Volume'] / df['VolAvg']
     return df
 
+# =============================
+# DATA FETCHING
+# =============================
 @st.cache_data(ttl=60)
-def fetch_data(symbols, interval, period):
-    tickers = [s + ".NS" for s in symbols]
-    return yf.download(tickers, period=period, interval=interval, group_by='ticker', progress=False)
+def fetch_data(interval):
+    tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
+    return yf.download(tickers, period="5d", interval=interval, group_by="ticker", progress=False)
 
-# Nifty 50 Trend Check
-def get_nifty_status():
+data_5m = fetch_data("5m")
+data_15m = fetch_data("15m")
+
+# =============================
+# SIGNALS
+# =============================
+def get_signal_logic(row, trend_val):
+    if row['Close'] > row['VWAP'] and row['RSI'] > 55 and trend_val == "UP" and row['RVOL'] > 1.1:
+        return "BUY"
+    elif row['Close'] < row['VWAP'] and row['RSI'] < 45 and trend_val == "DOWN" and row['RVOL'] > 1.1:
+        return "SELL"
+    return None
+
+def scan_stock(s):
     try:
-        nifty = yf.download("^NSEI", period="2d", interval="5m", progress=False)
-        change = ((nifty['Close'].iloc[-1] - nifty['Close'].iloc[0]) / nifty['Close'].iloc[0]) * 100
-        return round(float(change), 2)
-    except: return 0.0
+        ticker = s + ".NS"
+        df5 = add_indicators(data_5m[ticker].dropna())
+        df15 = add_indicators(data_15m[ticker].dropna())
+        if len(df5) < 30 or len(df15) < 30: return None
+        
+        trend_15m = "UP" if df15.iloc[-1]['Close'] > df15.iloc[-1]['EMA20'] else "DOWN"
+        last5 = df5.iloc[-1]
+        signal = get_signal_logic(last5, trend_15m)
+        
+        if not signal: return None
+        
+        sl_val = last5['ATR'] * 1.5
+        return {
+            "STOCK": s, "SIGNAL": signal, "PRICE": round(last5['Close'],2),
+            "RVOL": round(last5['RVOL'],2), "QTY": int(1000/sl_val) if sl_val>0 else 0,
+            "SL": round(last5['Close']-sl_val if signal=="BUY" else last5['Close']+sl_val, 2),
+            "TGT": round(last5['Close']+(sl_val*2) if signal=="BUY" else last5['Close']-(sl_val*2), 2),
+            "TIME": df5.index[-1].strftime('%H:%M')
+        }
+    except: return None
 
 # =============================
-# MAIN EXECUTION
+# BACKTEST ENGINE
 # =============================
-nifty_pc = get_nifty_status()
-nifty_color = "green" if nifty_pc >= 0 else "red"
-st.markdown(f"### Market Trend (Nifty 50): <span style='color:{nifty_color}'>{nifty_pc}%</span>", unsafe_allow_html=True)
+def run_backtest(target_date):
+    logs = []
+    for s in stocks:
+        try:
+            ticker = s + ".NS"
+            df = add_indicators(data_5m[ticker].dropna())
+            df.index = df.index.tz_convert(IST)
+            day_data = df[df.index.date == target_date]
+            
+            if len(day_data) < 20: continue
 
-with st.spinner("🚀 Scanning NSE 200 Stocks..."):
-    data_5m = fetch_data(stocks, "5m", "5d")
+            for i in range(15, len(day_data) - 10):
+                row = day_data.iloc[i]
+                trend = "UP" if row['Close'] > row['EMA20'] else "DOWN"
+                signal = get_signal_logic(row, trend)
+                
+                if signal:
+                    entry = row['Close']
+                    sl = entry - row['ATR']*1.5 if signal=="BUY" else entry + row['ATR']*1.5
+                    tgt = entry + row['ATR']*3 if signal=="BUY" else entry - row['ATR']*3
+                    
+                    # Check outcome in next candles
+                    future = day_data.iloc[i+1 : i+30]
+                    result = "OPEN"
+                    pnl_points = 0
+                    
+                    for _, f in future.iterrows():
+                        if signal == "BUY":
+                            if f['Low'] <= sl: result="SL"; pnl_points = sl - entry; break
+                            if f['High'] >= tgt: result="TGT"; pnl_points = tgt - entry; break
+                        else:
+                            if f['High'] >= sl: result="SL"; pnl_points = entry - sl; break
+                            if f['Low'] <= tgt: result="TGT"; pnl_points = entry - tgt; break
+                    
+                    if result != "OPEN":
+                        logs.append({"STOCK": s, "SIGNAL": signal, "RESULT": result, "PNL": round(pnl_points, 2)})
+                        break # Only one trade per stock per day for clarity
+        except: continue
+    return pd.DataFrame(logs)
 
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Report')
-    return output.getvalue()
-
-tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST"])
+# =============================
+# UI TABS
+# =============================
+tab1, tab2 = st.tabs(["🔴 LIVE PRO SCANNER", "📊 SMART BACKTEST"])
 
 with tab1:
-    if st.button("RUN LIVE SCAN"):
-        results = []
-        for s in stocks:
-            try:
-                ticker = s + ".NS"
-                if ticker not in data_5m.columns.levels[0]: continue
-                df_raw = data_5m[ticker].dropna()
-                if len(df_raw) < 20: continue
-                
-                df = add_indicators(df_raw)
-                l = df.iloc[-1]
-                
-                dist = abs(l['Close'] - l['EMA20']) / l['EMA20']
-                
-                if dist < 0.004:
-                    signal = "None"
-                    # Buy: Price > VWAP + RSI > 50
-                    if l['Close'] > l['VWAP'] and l['Close'] > l['Open'] and l['RSI'] > 50:
-                        signal = "BUY 🟢"
-                    # Sell: Price < VWAP + RSI < 50
-                    elif l['Close'] < l['VWAP'] and l['Close'] < l['Open'] and l['RSI'] < 50:
-                        signal = "SELL 🔴"
-                    
-                    if signal != "None":
-                        entry = round(l['Close'], 2)
-                        results.append({
-                            "TIME": df.index[-1].astimezone(IST).strftime('%H:%M'),
-                            "STOCK": s, "ACTION": signal, "RSI": round(l['RSI'],1),
-                            "VOL": "🔥" if l['Volume'] > l['VolAvg']*2.5 else "Norm",
-                            "PRICE": entry,
-                            "SL": round(entry - (l['ATR']*1.5) if "BUY" in signal else entry + (l['ATR']*1.5), 2),
-                            "TGT": round(entry + (l['ATR']*3) if "BUY" in signal else entry - (l['ATR']*3), 2)
-                        })
-            except Exception: continue
-        
-        if results:
-            df_res = pd.DataFrame(results)
-            st.table(df_res) # Table used for cleaner UI
-            st.download_button("📥 Excel", data=to_excel(df_res), file_name="Live_Scan.xlsx")
-        else:
-            st.info("No pullback signals found.")
+    if st.button("🚀 RUN LIVE SCAN"):
+        with ThreadPoolExecutor(max_workers=15) as ex:
+            res = [r for r in list(ex.map(scan_stock, stocks)) if r]
+        if res:
+            df = pd.DataFrame(res)
+            st.dataframe(df.style.applymap(lambda x: 'color: #2ecc71' if x=='BUY' else 'color: #e74c3c', subset=['SIGNAL']))
+        else: st.warning("No signals.")
 
 with tab2:
-    bt_date = st.date_input("History Date", value=now.date() - timedelta(days=1))
-    if st.button("RUN BACKTEST"):
-        bt_logs = []
-        for s in stocks:
-            try:
-                ticker = s + ".NS"
-                if ticker not in data_5m.columns.levels[0]: continue
-                df_raw = data_5m[ticker].dropna()
-                df_raw.index = df_raw.index.tz_convert(IST)
-                df_day = add_indicators(df_raw)
-                df_day = df_day[df_day.index.date == bt_date]
+    d = st.date_input("Select Date", now.date() - timedelta(days=1))
+    if st.button("📈 RUN BACKTEST REPORT"):
+        with st.spinner("Calculating..."):
+            bt_df = run_backtest(d)
+            if not bt_df.empty:
+                total = len(bt_df)
+                wins = len(bt_df[bt_df['RESULT'] == "TGT"])
+                accuracy = (wins/total)*100
                 
-                if df_day.empty: continue
-                last_time = None
-
-                for i in range(15, len(df_day)):
-                    row = df_day.iloc[i]
-                    if last_time and (df_day.index[i] - last_time) < timedelta(minutes=45): continue
-                        
-                    dist = abs(row['Close'] - row['EMA20']) / row['EMA20']
-                    if dist < 0.004:
-                        sig = "None"
-                        if row['Close'] > row['VWAP'] and row['RSI'] > 50: sig = "BUY 🟢"
-                        elif row['Close'] < row['VWAP'] and row['RSI'] < 50: sig = "SELL 🔴"
-                        
-                        if sig != "None":
-                            entry = row['Close']
-                            sl = entry - (row['ATR']*1.5) if "BUY" in sig else entry + (row['ATR']*1.5)
-                            tgt = entry + (row['ATR']*3) if "BUY" in sig else entry - (row['ATR']*3)
-                            
-                            outcome = "OPEN"
-                            future = df_day.iloc[i+1 : i+30]
-                            for _, f in future.iterrows():
-                                if "BUY" in sig:
-                                    if f['High'] >= tgt: outcome = "🎯 TGT"; break
-                                    if f['Low'] <= sl: outcome = "🛑 SL"; break
-                                else:
-                                    if f['Low'] <= tgt: outcome = "🎯 TGT"; break
-                                    if f['High'] >= sl: outcome = "🛑 SL"; break
-
-                            bt_logs.append({
-                                "TIME": df_day.index[i].strftime('%H:%M'),
-                                "STOCK": s, "TYPE": sig, "RESULT": outcome
-                            })
-                            last_time = df_day.index[i]
-            except: continue
-        
-        if bt_logs:
-            st.dataframe(pd.DataFrame(bt_logs), use_container_width=True)
-        else:
-            st.warning("No signals found.")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Trades", total)
+                c2.metric("Win Rate", f"{round(accuracy, 1)}%")
+                c3.metric("Net Points", round(bt_df['PNL'].sum(), 2))
+                
+                st.dataframe(bt_df)
+            else: st.info("No trades found for this date.")
