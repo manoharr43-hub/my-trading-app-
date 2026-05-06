@@ -10,7 +10,7 @@ import io
 # ==========================================
 # 1. CONFIG & TIMEZONE SETUP
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V2.0", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V2.1", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -27,7 +27,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 NSE AI QUANT PRO - V2.0")
+st.title("🚀 NSE AI QUANT PRO - V2.1")
 st.subheader(f"📅 {now.strftime('%d-%b-%Y')} | 🕒 {now.strftime('%H:%M:%S')} IST")
 
 # ==========================================
@@ -68,20 +68,20 @@ def add_indicators(df):
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
     
-    # VWAP Calculation
+    # VWAP Calculation (Intraday Reset)
     df['Date_Only'] = df.index.date
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
     
-    # ATR
+    # ATR (Volatility)
     tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
     
-    # Volume
+    # Volume Analysis
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
     
-    # Levels
+    # Support & Resistance
     df['S_Level'] = df['Low'].rolling(window=30).min()
     df['R_Level'] = df['High'].rolling(window=30).max()
     return df
@@ -115,7 +115,6 @@ def scan_stock(s):
         signal = None
         reason = ""
         
-        # Pullback & Breakout Logic
         is_pullback = last['Low'] <= last['EMA20'] * 1.002 and last['Close'] > last['EMA20']
         is_big_player = last['RVOL'] > 2.0
         is_breakout = last['Close'] > prev['R_Level']
@@ -141,7 +140,8 @@ def scan_stock(s):
         
         return {
             "STOCK": s, "SIGNAL": signal, "PRICE": entry, "REASON": reason, "QTY": qty,
-            "SL": sl, "TGT": tgt, "RVOL": round(last['RVOL'], 2), "TIME": last.name.astimezone(IST).strftime('%H:%M')
+            "SL": sl, "TGT": tgt, "RVOL": round(last['RVOL'], 2), 
+            "TIME": last.name.astimezone(IST).strftime('%H:%M')
         }
     except: return None
 
@@ -164,68 +164,73 @@ with tab1:
                 res = [r for r in list(executor.map(scan_stock, stocks)) if r]
             if res:
                 df_res = pd.DataFrame(res)
+                st.dataframe(df_res.style.map(lambda x: 'color: #2ecc71; font-weight: bold' if x == 'BUY' else 'color: #e74c3c; font-weight: bold', subset=['SIGNAL']), use_container_width=True)
+                
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_res.to_excel(writer, index=False, sheet_name='Live_Signals')
                 st.download_button(label="📥 Download Signals (Excel)", data=output.getvalue(), file_name=f"Signals_{now.strftime('%H%M')}.xlsx")
-                st.dataframe(df_res.style.map(lambda x: 'color: #2ecc71; font-weight: bold' if x == 'BUY' else 'color: #e74c3c; font-weight: bold', subset=['SIGNAL']), use_container_width=True)
             else:
-                st.info("ప్రస్తుతానికి హై-ప్రాబబిలిటీ సిగ్నల్స్ లేవు.")
+                st.info("ప్రస్తుతానికి సిగ్నల్స్ లేవు.")
 
 with tab2:
-    st.header("📈 Historical Strategy Analysis")
-    if st.button("📊 RUN BACKTEST (5 DAYS)"):
+    st.header("📈 Historical Analysis (Last 5 Days)")
+    if st.button("📊 RUN BACKTEST"):
         all_bt = []
-        with st.spinner("గత 5 రోజుల డేటాను లెక్కిస్తున్నాను..."):
+        with st.spinner("డేటాను అనలైజ్ చేస్తున్నాను..."):
             for s in stocks:
                 try:
                     df = add_indicators(data_5m[s+".NS"].dropna())
                     if len(df) < 50: continue
 
-                    for i in range(30, len(df)-15):
+                    for i in range(30, len(df)-20):
                         row = df.iloc[i]
-                        # Backtest Strategy Logic
+                        # Backtest Condition (Same as Live Scanner)
                         if row['RVOL'] > 1.5 and row['RSI'] > 55 and row['Close'] > row['VWAP']:
-                            entry_price = row['Close']
-                            sl = row['Close'] - (row['ATR'] * 1.5)
-                            tp = row['Close'] + (row['ATR'] * 2.5)
+                            entry_p = row['Close']
+                            sl_val = row['Close'] - (row['ATR'] * 1.5)
+                            tp_val = row['Close'] + (row['ATR'] * 2.5)
                             
-                            res_bt, exit_t = "OPEN", None
-                            for j in range(i+1, min(i+50, len(df))):
-                                next_row = df.iloc[j]
-                                if next_row['Low'] <= sl:
-                                    res_bt, exit_t = "LOSS", next_row.name; break
-                                if next_row['High'] >= tp:
-                                    res_bt, exit_t = "PROFIT", next_row.name; break
+                            status, exit_time = "OPEN", None
+                            for j in range(i+1, min(i+60, len(df))):
+                                check_row = df.iloc[j]
+                                if check_row['Low'] <= sl_val:
+                                    status, exit_time = "LOSS", check_row.name; break
+                                if check_row['High'] >= tp_val:
+                                    status, exit_time = "PROFIT", check_row.name; break
                             
-                            if res_bt != "OPEN":
-                                ist_entry = row.name.astimezone(IST)
-                                ist_exit = exit_t.astimezone(IST)
+                            if status != "OPEN":
+                                entry_dt = row.name.astimezone(IST)
+                                exit_dt = exit_time.astimezone(IST)
+                                duration = int((exit_time - row.name).total_seconds() / 60)
+                                
                                 all_bt.append({
                                     "Stock": s,
-                                    "Date": ist_entry.strftime('%Y-%m-%d'),
-                                    "Entry Time": ist_entry.strftime('%H:%M'),
-                                    "Exit Time": ist_exit.strftime('%H:%M'),
-                                    "Type": "BUY",
-                                    "Entry": round(entry_price, 2),
-                                    "Result": res_bt,
-                                    "Duration (Min)": int((exit_t - row.name).total_seconds() / 60)
+                                    "Date": entry_dt.strftime('%Y-%m-%d'),
+                                    "Entry Time": entry_dt.strftime('%H:%M:%S'),
+                                    "Exit Time": exit_dt.strftime('%H:%M:%S'),
+                                    "Entry Price": round(entry_p, 2),
+                                    "Result": status,
+                                    "Duration (Min)": duration
                                 })
                 except: continue
-        
+
         if all_bt:
             bt_df = pd.DataFrame(all_bt)
             wins = len(bt_df[bt_df['Result']=='PROFIT'])
             wr = round((wins/len(bt_df))*100, 2)
+            
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Trades", len(bt_df))
             c2.metric("Win Rate %", f"{wr}%")
-            c3.metric("Total Wins", wins)
+            c3.metric("Profit Trades", wins)
             
+            # Excel Download for Backtest
             bt_out = io.BytesIO()
             with pd.ExcelWriter(bt_out, engine='xlsxwriter') as writer:
                 bt_df.to_excel(writer, index=False, sheet_name='Backtest_Report')
             st.download_button(label="📥 Download Backtest Report", data=bt_out.getvalue(), file_name="Detailed_Backtest.xlsx")
+            
             st.dataframe(bt_df, use_container_width=True)
         else:
-            st.warning("No trades found.")
+            st.warning("ఏ ట్రేడ్స్ దొరకలేదు.")
