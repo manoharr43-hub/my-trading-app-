@@ -10,18 +10,31 @@ import io
 # =========================================================
 # PAGE CONFIG
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V20", layout="wide")
+st.set_page_config(
+    page_title="🚀 NSE AI QUANT PRO V21",
+    layout="wide"
+)
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
 st.markdown(
-    '<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V20</h1>',
+    """
+    <h1 style='text-align:center;color:#22c55e;'>
+    🚀 NSE AI QUANT PRO V21
+    </h1>
+    """,
     unsafe_allow_html=True
 )
 
 st.markdown(
-    f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | REAL BACKTEST + SCORE ENGINE</h4>',
+    f"""
+    <h4 style='text-align:center;'>
+    🕒 IST TIME : {now.strftime("%Y-%m-%d %H:%M:%S")}
+    <br>
+    EMA + VWAP + RSI + BB + REAL BACKTEST
+    </h4>
+    """,
     unsafe_allow_html=True
 )
 
@@ -29,14 +42,16 @@ st.markdown(
 # NSE STOCKS
 # =========================================================
 stocks = [
-    "ABB","ACC","AUBANK","ADANIENSOL","ADANIENT","ADANIGREEN","ADANIPORTS",
-    "ADANIPOWER","ATGL","ABCAPITAL","ABFRL","ALKEM","AMBUJACEM","APOLLOHOSP",
-    "APOLLOTYRE","ASHOKLEY","ASIANPAINT","AXISBANK","BAJAJ-AUTO","BAJFINANCE",
-    "BAJAJFINSV","BEL","BHEL","BPCL","BHARTIARTL","CANBK","CIPLA","COALINDIA",
-    "DLF","DRREDDY","GAIL","HDFCBANK","HCLTECH","HINDALCO","ICICIBANK",
-    "INFY","ITC","JSWSTEEL","KOTAKBANK","LT","M&M","MARUTI","NTPC","ONGC",
-    "RELIANCE","SBIN","SUNPHARMA","TATASTEEL","TCS","TECHM","TITAN","WIPRO",
-    "ZOMATO"
+    "ABB","ACC","AUBANK","ADANIENSOL","ADANIENT","ADANIGREEN",
+    "ADANIPORTS","ADANIPOWER","ATGL","ABCAPITAL","ABFRL",
+    "ALKEM","AMBUJACEM","APOLLOHOSP","APOLLOTYRE","ASHOKLEY",
+    "ASIANPAINT","AXISBANK","BAJAJ-AUTO","BAJFINANCE",
+    "BAJAJFINSV","BEL","BHEL","BPCL","BHARTIARTL","CANBK",
+    "CIPLA","COALINDIA","DLF","DRREDDY","GAIL","HDFCBANK",
+    "HCLTECH","HINDALCO","ICICIBANK","INFY","ITC",
+    "JSWSTEEL","KOTAKBANK","LT","M&M","MARUTI","NTPC",
+    "ONGC","RELIANCE","SBIN","SUNPHARMA","TATASTEEL",
+    "TCS","TECHM","TITAN","WIPRO","ZOMATO"
 ]
 
 # =========================================================
@@ -52,7 +67,7 @@ def fetch_data():
         period="10d",
         interval="15m",
         auto_adjust=True,
-        group_by='ticker',
+        group_by="ticker",
         progress=False,
         threads=True
     )
@@ -60,27 +75,6 @@ def fetch_data():
     return data
 
 data_pool = fetch_data()
-
-# =========================================================
-# NIFTY MARKET FILTER
-# =========================================================
-@st.cache_data(ttl=300)
-def get_market_trend():
-
-    nifty = yf.download(
-        "^NSEI",
-        period="2d",
-        interval="15m",
-        progress=False
-    )
-
-    nifty['EMA20'] = nifty['Close'].ewm(span=20).mean()
-
-    bullish = nifty['Close'].iloc[-1] > nifty['EMA20'].iloc[-1]
-
-    return bullish
-
-market_bullish = get_market_trend()
 
 # =========================================================
 # INDICATORS
@@ -93,53 +87,92 @@ def get_indicators(df):
         return pd.DataFrame()
 
     # EMA
-    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
+    df['EMA9'] = df['Close'].ewm(
+        span=9,
+        adjust=False
+    ).mean()
+
+    df['EMA21'] = df['Close'].ewm(
+        span=21,
+        adjust=False
+    ).mean()
 
     # VWAP
     df['PV'] = df['Close'] * df['Volume']
 
     df['VWAP'] = (
         df.groupby(df.index.date)['PV'].cumsum() /
-        (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9)
+        (
+            df.groupby(df.index.date)['Volume'].cumsum()
+            + 1e-9
+        )
     )
 
     # Bollinger Bands
     df['BB_MID'] = df['Close'].rolling(20).mean()
+
     df['BB_STD'] = df['Close'].rolling(20).std()
 
-    df['BB_UPPER'] = df['BB_MID'] + (df['BB_STD'] * 2)
-    df['BB_LOWER'] = df['BB_MID'] - (df['BB_STD'] * 2)
+    df['BB_UPPER'] = (
+        df['BB_MID'] + (df['BB_STD'] * 2)
+    )
 
-    # True Range
+    df['BB_LOWER'] = (
+        df['BB_MID'] - (df['BB_STD'] * 2)
+    )
+
+    # TRUE RANGE
     tr1 = df['High'] - df['Low']
-    tr2 = abs(df['High'] - df['Close'].shift(1))
-    tr3 = abs(df['Low'] - df['Close'].shift(1))
 
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    tr2 = abs(
+        df['High'] - df['Close'].shift(1)
+    )
+
+    tr3 = abs(
+        df['Low'] - df['Close'].shift(1)
+    )
+
+    tr = pd.concat(
+        [tr1, tr2, tr3],
+        axis=1
+    ).max(axis=1)
 
     # ATR
     df['ATR'] = tr.rolling(14).mean()
 
     # ADX
     plus_dm = df['High'].diff().clip(lower=0)
-    minus_dm = df['Low'].diff().clip(upper=0).abs()
+
+    minus_dm = (
+        df['Low'].diff()
+        .clip(upper=0)
+        .abs()
+    )
 
     tr_smooth = tr.rolling(14).mean()
 
-    plus_di = 100 * (
-        plus_dm.rolling(14).mean() /
-        (tr_smooth + 1e-9)
+    plus_di = (
+        100 *
+        (
+            plus_dm.rolling(14).mean() /
+            (tr_smooth + 1e-9)
+        )
     )
 
-    minus_di = 100 * (
-        minus_dm.rolling(14).mean() /
-        (tr_smooth + 1e-9)
+    minus_di = (
+        100 *
+        (
+            minus_dm.rolling(14).mean() /
+            (tr_smooth + 1e-9)
+        )
     )
 
-    dx = 100 * (
-        abs(plus_di - minus_di) /
-        (plus_di + minus_di + 1e-9)
+    dx = (
+        100 *
+        (
+            abs(plus_di - minus_di) /
+            (plus_di + minus_di + 1e-9)
+        )
     )
 
     df['ADX'] = dx.rolling(14).mean()
@@ -147,17 +180,33 @@ def get_indicators(df):
     # RSI
     delta = df['Close'].diff()
 
-    gain = delta.where(delta > 0, 0).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    gain = (
+        delta.where(delta > 0, 0)
+        .rolling(14)
+        .mean()
+    )
+
+    loss = (
+        (-delta.where(delta < 0, 0))
+        .rolling(14)
+        .mean()
+    )
 
     rs = gain / (loss + 1e-9)
 
-    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = (
+        100 - (100 / (1 + rs))
+    )
 
     # RVOL
     df['RVOL'] = (
         df['Volume'] /
-        (df['Volume'].rolling(20).mean() + 1e-9)
+        (
+            df['Volume']
+            .rolling(20)
+            .mean()
+            + 1e-9
+        )
     )
 
     return df
@@ -169,22 +218,22 @@ def calculate_score(row):
 
     score = 0
 
-    if row['ADX'] > 35:
+    if row['ADX'] > 25:
         score += 25
 
-    if row['RVOL'] > 2:
+    if row['RVOL'] > 1.2:
         score += 25
 
-    if 58 <= row['RSI'] <= 65:
+    if 50 <= row['RSI'] <= 75:
         score += 25
 
-    if abs(row['EMA9'] - row['EMA21']) > 1:
+    if abs(row['EMA9'] - row['EMA21']) > 0.2:
         score += 25
 
     return score
 
 # =========================================================
-# SCANNER ENGINE
+# SCANNER
 # =========================================================
 def scan(stock, mode="TODAY"):
 
@@ -205,13 +254,17 @@ def scan(stock, mode="TODAY"):
         if df.empty:
             return []
 
+        # Timezone fix
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
 
         df.index = df.index.tz_convert(IST)
 
+        # TODAY / BACKTEST
         if mode == "TODAY":
-            scan_df = df[df.index.date == now.date()]
+            scan_df = df[
+                df.index.date == now.date()
+            ]
         else:
             scan_df = df.copy()
 
@@ -222,83 +275,108 @@ def scan(stock, mode="TODAY"):
             row = scan_df.iloc[i]
             prev = scan_df.iloc[i-1]
 
+            # TIME FILTER
             valid_time = (
-                time(9, 45) <= row.name.time() <= time(14, 45)
+                time(9, 30)
+                <= row.name.time()
+                <= time(15, 0)
             )
 
-            strong_trend = row['ADX'] > 30
+            # TREND FILTER
+            strong_trend = row['ADX'] > 22
 
-            bb_buy_safety = row['Close'] < row['BB_UPPER']
-            bb_sell_safety = row['Close'] > row['BB_LOWER']
+            # BB SAFETY
+            bb_buy_safety = (
+                row['Close'] < row['BB_UPPER']
+            )
 
+            bb_sell_safety = (
+                row['Close'] > row['BB_LOWER']
+            )
+
+            # PULLBACK
             pb_buy = (
-                prev['Low'] <= prev['EMA21'] and
+                prev['Low'] <= prev['EMA21']
+                and
                 row['Close'] > row['EMA21']
             )
 
             pb_sell = (
-                prev['High'] >= prev['EMA21'] and
+                prev['High'] >= prev['EMA21']
+                and
                 row['Close'] < row['EMA21']
             )
 
-            vol_ok = row['RVOL'] > 1.5
+            # VOLUME
+            vol_ok = row['RVOL'] > 1.1
 
-            trend_filter = (
-                abs(row['EMA9'] - row['EMA21']) > 0.3
-            )
-
-            candle_strength = (
-                abs(row['Close'] - row['Open']) >
-                (row['ATR'] * 0.3)
-            )
-
+            # BUY SIGNAL
             buy_sig = (
-                row['EMA9'] > row['EMA21'] and
-                row['Close'] > row['VWAP'] and
-                (pb_buy or vol_ok) and
-                55 < row['RSI'] < 68 and
-                strong_trend and
-                valid_time and
-                bb_buy_safety and
-                trend_filter and
-                candle_strength and
-                market_bullish
+                row['EMA9'] > row['EMA21']
+                and
+                row['Close'] > row['VWAP']
+                and
+                (pb_buy or vol_ok)
+                and
+                50 < row['RSI'] < 75
+                and
+                strong_trend
+                and
+                valid_time
+                and
+                bb_buy_safety
             )
 
+            # SELL SIGNAL
             sell_sig = (
-                row['EMA9'] < row['EMA21'] and
-                row['Close'] < row['VWAP'] and
-                (pb_sell or vol_ok) and
-                32 < row['RSI'] < 45 and
-                strong_trend and
-                valid_time and
-                bb_sell_safety and
-                trend_filter and
-                candle_strength and
-                not market_bullish
+                row['EMA9'] < row['EMA21']
+                and
+                row['Close'] < row['VWAP']
+                and
+                (pb_sell or vol_ok)
+                and
+                25 < row['RSI'] < 50
+                and
+                strong_trend
+                and
+                valid_time
+                and
+                bb_sell_safety
             )
 
+            # SIGNAL FOUND
             if buy_sig or sell_sig:
 
-                signal = "BUY" if buy_sig else "SELL"
+                signal = (
+                    "BUY"
+                    if buy_sig
+                    else "SELL"
+                )
 
-                entry = round(row['Close'], 2)
+                entry = round(
+                    row['Close'],
+                    2
+                )
 
                 risk = row['ATR'] * 1.5
 
                 sl = (
                     round(entry - risk, 2)
-                    if buy_sig else
+                    if buy_sig
+                    else
                     round(entry + risk, 2)
                 )
 
-                tgt = (
+                target = (
                     round(entry + (risk * 2), 2)
-                    if buy_sig else
+                    if buy_sig
+                    else
                     round(entry - (risk * 2), 2)
                 )
 
+                # =================================================
                 # REAL BACKTEST
+                # =================================================
                 future_df = scan_df.iloc[i+1:i+10]
 
                 status = "⏳ RUNNING"
@@ -307,7 +385,7 @@ def scan(stock, mode="TODAY"):
 
                     if buy_sig:
 
-                        if frow['High'] >= tgt:
+                        if frow['High'] >= target:
                             status = "✅ TGT HIT"
                             break
 
@@ -317,7 +395,7 @@ def scan(stock, mode="TODAY"):
 
                     else:
 
-                        if frow['Low'] <= tgt:
+                        if frow['Low'] <= target:
                             status = "✅ TGT HIT"
                             break
 
@@ -325,21 +403,42 @@ def scan(stock, mode="TODAY"):
                             status = "❌ SL HIT"
                             break
 
+                # LIVE LTP
+                ltp = round(
+                    scan_df.iloc[-1]['Close'],
+                    2
+                )
+
                 score = calculate_score(row)
 
                 results.append({
+
                     "DATE": row.name.strftime("%Y-%m-%d"),
+
                     "TIME": row.name.strftime("%H:%M"),
+
                     "STOCK": stock,
+
                     "SIGNAL": signal,
+
                     "ENTRY": entry,
+
+                    "LTP": ltp,
+
                     "SL": sl,
-                    "TARGET": tgt,
+
+                    "TARGET": target,
+
                     "STATUS": status,
+
                     "ADX": round(row['ADX'], 1),
+
                     "RSI": round(row['RSI'], 1),
+
                     "RVOL": round(row['RVOL'], 2),
+
                     "SCORE": score
+
                 })
 
         return results
@@ -357,30 +456,46 @@ def to_excel(df):
 
     output = io.BytesIO()
 
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
+    with pd.ExcelWriter(
+        output,
+        engine='xlsxwriter'
+    ) as writer:
+
+        df.to_excel(
+            writer,
+            index=False
+        )
 
     return output.getvalue()
 
 # =========================================================
-# STATUS STYLE
+# STYLE
 # =========================================================
 def style_status(val):
 
     if "TGT" in str(val):
-        return 'color: #22c55e; font-weight: bold'
+        return (
+            'color:#22c55e;'
+            'font-weight:bold'
+        )
 
     if "SL" in str(val):
-        return 'color: #ef4444; font-weight: bold'
+        return (
+            'color:#ef4444;'
+            'font-weight:bold'
+        )
 
-    return 'color: #facc15; font-weight: bold'
+    return (
+        'color:#facc15;'
+        'font-weight:bold'
+    )
 
 # =========================================================
 # TABS
 # =========================================================
 tab1, tab2 = st.tabs([
     "🔍 LIVE SCANNER",
-    "📊 BACKTEST REPORT"
+    "📊 BACKTEST"
 ])
 
 # =========================================================
@@ -394,7 +509,9 @@ with tab1:
 
         with st.spinner("Scanning NSE Stocks..."):
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(
+                max_workers=10
+            ) as executor:
 
                 results = executor.map(
                     lambda s: scan(s, "TODAY"),
@@ -407,7 +524,7 @@ with tab1:
                 for item in sublist
             ]
 
-        if res:
+        if len(res) > 0:
 
             df = pd.DataFrame(res)
 
@@ -416,7 +533,9 @@ with tab1:
                 ascending=[False, False]
             )
 
-            st.success(f"{len(df)} Signals Found")
+            st.success(
+                f"{len(df)} Signals Found"
+            )
 
             st.dataframe(
                 df.style.map(
@@ -428,25 +547,30 @@ with tab1:
 
             st.download_button(
                 "📥 Download Scanner Excel",
-                to_excel(df),
-                file_name=f"Scanner_V20_{now.date()}.xlsx"
+                data=to_excel(df),
+                file_name=f"Scanner_V21_{now.date()}.xlsx"
             )
 
         else:
-            st.warning("No Strong Signals Found")
+
+            st.warning(
+                "⚠️ No Signals Found"
+            )
 
 # =========================================================
 # BACKTEST
 # =========================================================
 with tab2:
 
-    st.subheader("📊 REAL BACKTEST ENGINE")
+    st.subheader("📊 REAL BACKTEST REPORT")
 
     if st.button("📊 RUN BACKTEST"):
 
         with st.spinner("Running Backtest..."):
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(
+                max_workers=10
+            ) as executor:
 
                 results_bt = executor.map(
                     lambda s: scan(s, "BACKTEST"),
@@ -459,7 +583,7 @@ with tab2:
                 for item in sublist
             ]
 
-        if res_bt:
+        if len(res_bt) > 0:
 
             df_bt = pd.DataFrame(res_bt)
 
@@ -469,25 +593,43 @@ with tab2:
             )
 
             wins = len(
-                df_bt[df_bt['STATUS'].str.contains("TGT")]
+                df_bt[
+                    df_bt['STATUS']
+                    .str.contains("TGT")
+                ]
             )
 
-            loss = len(
-                df_bt[df_bt['STATUS'].str.contains("SL")]
+            losses = len(
+                df_bt[
+                    df_bt['STATUS']
+                    .str.contains("SL")
+                ]
             )
 
-            total = wins + loss
+            total = wins + losses
 
             accuracy = (
                 round((wins / total) * 100, 2)
-                if total > 0 else 0
+                if total > 0
+                else 0
             )
 
             c1, c2, c3 = st.columns(3)
 
-            c1.metric("🎯 Accuracy", f"{accuracy}%")
-            c2.metric("✅ Wins", wins)
-            c3.metric("❌ Loss", loss)
+            c1.metric(
+                "🎯 Accuracy",
+                f"{accuracy}%"
+            )
+
+            c2.metric(
+                "✅ Wins",
+                wins
+            )
+
+            c3.metric(
+                "❌ Losses",
+                losses
+            )
 
             st.dataframe(
                 df_bt.style.map(
@@ -499,9 +641,12 @@ with tab2:
 
             st.download_button(
                 "📥 Download Backtest Excel",
-                to_excel(df_bt),
-                file_name="Backtest_V20.xlsx"
+                data=to_excel(df_bt),
+                file_name="Backtest_V21.xlsx"
             )
 
         else:
-            st.warning("No Backtest Signals Found")
+
+            st.warning(
+                "⚠️ No Backtest Signals Found"
+            )
