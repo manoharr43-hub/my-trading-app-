@@ -10,11 +10,11 @@ import io
 # ==========================================
 # 1. CONFIG & TIMEZONE SETUP
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.9", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.8", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-# UI Styling
+# UI Styling for Top Box
 st.markdown("""
     <style>
     .nifty-box { padding: 25px; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
@@ -23,8 +23,29 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. NSE 200 LIST
-stocks = ["ABB", "ACC", "AUBANK", "ADANIENT", "ADANIPORTS", "AXISBANK", "BAJFINANCE", "BHARTIARTL", "BPCL", "CIPLA", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "LT", "M&M", "RELIANCE", "SBIN", "TCS", "TATAMOTORS", "TITAN", "WIPRO", "ZOMATO", "HAL", "TRENT"] # (Add all NSE 200 stocks here)
+# ==========================================
+# 2. COMPLETE NSE 200 STOCKS LIST
+# ==========================================
+stocks = [
+    "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", "ABCAPITAL", 
+    "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUROPHARMA", 
+    "AXISBANK", "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BAJAJHLDNG", "BALKRISIND", "BANDHANBNK", "BANKBARODA", 
+    "BANKINDIA", "BATAINDIA", "BEL", "BERGEPAINT", "BHARATFORG", "BHEL", "BPCL", "BHARTIARTL", "BIOCON", 
+    "BOSCHLTD", "BRITANNIA", "CANBK", "CGPOWER", "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", "COLPAL", 
+    "CONCOR", "COROMANDEL", "CROMPTON", "CUMMINSIND", "CYIENT", "DABUR", "DALBHARAT", "DEEPAKNTR", "DELHIVERY", 
+    "DIVISLAB", "DIXON", "DLF", "DRREDDY", "EICHERMOT", "ESCORTS", "EXIDEIND", "FEDERALBNK", "FORTIS", "GAIL", 
+    "GLENMARK", "GMRINFRA", "GODREJCP", "GODREJPROP", "GRASIM", "GUJGASLTD", "HAL", "HAVELLS", "HCLTECH", 
+    "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "ICICIBANK", 
+    "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "IOC", "IRCTC", 
+    "IRFC", "ITC", "JINDALSTEL", "JSWENERGY", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "KPITTECH", "LT", "LTIM", 
+    "LTTS", "LICI", "LUPIN", "M&M", "M&MFIN", "MARICO", "MARUTI", "MAXHEALTH", "METROPOLIS", "MFSL", "MGL", 
+    "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NESTLEIND", "NMDC", "NTPC", "OBEROIRLTY", "ONGC", "PAYTM", 
+    "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", "PNB", "POLYCAB", "POONAWALLA", "POWERGRID", 
+    "PRESTIGE", "PVRINOX", "RECLTD", "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN", "SIEMENS", "SRF", 
+    "SUNPHARMA", "SUNTV", "SYNGENE", "TATACOMM", "TATACONSUM", "TATAELXSI", "TATAMOTORS", "TATAPOWER", 
+    "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", "TVSMOTOR", "ULTRACEMCO", "UPL", "VBL", 
+    "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZEEL", "ZOMATO"
+]
 
 # 3. INDICATORS ENGINE
 def add_indicators(df):
@@ -32,6 +53,7 @@ def add_indicators(df):
     if df.empty: return df
     df['Date_Only'] = df.index.date
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
@@ -45,6 +67,7 @@ def add_indicators(df):
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
+    df['Range_Width'] = (df['High'].rolling(15).max() - df['Low'].rolling(15).min()) / df['Low'].rolling(15).min() * 100
     return df
 
 @st.cache_data(ttl=60)
@@ -54,83 +77,53 @@ def fetch_data():
     d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
     return d5, d1h
 
-# 4. TRADE ANALYSIS LOGIC
-def analyze_trade(df, nifty_5m, i, s, n_trend_1h):
-    row = df.iloc[i]
-    prev = df.iloc[i-1]
-    n_row_5m = nifty_5m.reindex(df.index, method='ffill').iloc[i]
-    
-    cross_up = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
-    cross_down = (prev['EMA9'] > prev['VWAP']) and (row['EMA9'] < row['VWAP'])
-    
-    is_healthy = abs((row['Close'] - row['EMA20']) / row['EMA20'] * 100) < 0.85
+# 4. SCAN LOGIC
+def scan_stock(s, d5, n_5m, n_trend_1h):
+    try:
+        df = add_indicators(d5[s + ".NS"].dropna())
+        res = []
+        for i in range(25, len(df)):
+            row = df.iloc[i]
+            prev = df.iloc[i-1]
+            n_row_5m = n_5m.reindex(df.index, method='ffill').iloc[i]
+            
+            ema_dist = (row['Close'] - row['EMA20']) / row['EMA20'] * 100
+            is_healthy = abs(ema_dist) < 0.85 and (row['High'] - row['Low']) < (row['ATR'] * 1.9)
 
-    if n_trend_1h == "POSITIVE" and n_row_5m['Close'] > n_row_5m['EMA20']:
-        if (cross_up or row['EMA9'] > row['VWAP']) and row['RSI'] > 50 and is_healthy:
-            if row['RVOL'] > 1.2 and row['Close'] > prev['High']:
-                return {"TIME": row.name, "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "ATR": row['ATR']}
+            if n_trend_1h == "POSITIVE" and n_row_5m['Close'] > n_row_5m['EMA20']:
+                if row['Close'] > row['VWAP'] and row['EMA9'] > row['EMA21'] and row['RSI'] > 50 and is_healthy:
+                    if (prev['Range_Width'] < 0.45 and row['Close'] > prev['High']) or row['RVOL'] > 2.2:
+                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
 
-    elif n_trend_1h == "NEGATIVE" and n_row_5m['Close'] < n_row_5m['EMA20']:
-        if (cross_down or row['EMA9'] < row['VWAP']) and row['RSI'] < 45 and is_healthy:
-            if row['RVOL'] > 1.2 and row['Close'] < prev['Low']:
-                return {"TIME": row.name, "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "ATR": row['ATR']}
-    return None
+            elif n_trend_1h == "NEGATIVE" and n_row_5m['Close'] < n_row_5m['EMA20']:
+                if row['Close'] < row['VWAP'] and row['EMA9'] < row['EMA21'] and row['RSI'] < 45 and is_healthy:
+                    if (prev['Range_Width'] < 0.45 and row['Close'] < prev['Low']) or row['RVOL'] > 2.2:
+                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
+        return res
+    except: return []
 
 # 5. UI EXECUTION
 d5, d1h = fetch_data()
-n_ema_1h = d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
-n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > n_ema_1h else "NEGATIVE"
 nifty_5m = add_indicators(d5["^NSEI"].dropna())
+n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mean().iloc[-1] else "NEGATIVE"
 
 box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
-st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h} {"📈" if n_trend_1h == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 BACKTEST REPORT"])
-
-with tab1:
-    if st.button("🚀 START SCAN"):
-        res = []
-        for s in stocks:
-            try:
-                df = add_indicators(d5[s + ".NS"].dropna())
-                for i in range(25, len(df)):
-                    sig = analyze_trade(df, nifty_5m, i, s, n_trend_1h)
-                    if sig:
-                        sig['TIME'] = sig['TIME'].astimezone(IST).strftime('%H:%M')
-                        res.append(sig)
-            except: continue
-        if res:
-            df_res = pd.DataFrame(res).sort_values(by="TIME", ascending=False)
-            st.dataframe(df_res.drop(columns=['ATR']), use_container_width=True)
-            # EXCEL DOWNLOAD FOR LIVE
-            live_out = io.BytesIO()
-            df_res.to_excel(live_out, index=False)
-            st.download_button("📥 Download Live Signals (Excel)", live_out.getvalue(), f"Live_Signals_{now.strftime('%d%m')}.xlsx")
-        else: st.info("No signals found.")
-
-with tab2:
-    if st.button("📊 RUN BACKTEST"):
-        bt_list = []
-        for s in stocks:
-            try:
-                df = add_indicators(d5[s + ".NS"].dropna())
-                for i in range(25, len(df)-12):
-                    sig = analyze_trade(df, nifty_5m, i, s, n_trend_1h)
-                    if sig:
-                        entry = sig['PRICE']
-                        sl = entry - (sig['ATR']*1.5) if sig['SIGNAL']=="BUY" else entry + (sig['ATR']*1.5)
-                        tp = entry + (sig['ATR']*2.5) if sig['SIGNAL']=="BUY" else entry - (sig['ATR']*2.5)
-                        for j in range(i+1, min(i+40, len(df))):
-                            nxt = df.iloc[j]
-                            if (sig['SIGNAL']=="BUY" and nxt['Low']<=sl) or (sig['SIGNAL']=="SELL" and nxt['High']>=sl):
-                                bt_list.append({"Date": sig['TIME'].strftime('%d-%b'), "Stock": s, "Signal": sig['SIGNAL'], "Result": "LOSS"}); break
-                            if (sig['SIGNAL']=="BUY" and nxt['High']>=tp) or (sig['SIGNAL']=="SELL" and nxt['Low']<=tp):
-                                bt_list.append({"Date": sig['TIME'].strftime('%d-%b'), "Stock": s, "Signal": sig['SIGNAL'], "Result": "PROFIT"}); break
-            except: continue
-        if bt_list:
-            df_bt = pd.DataFrame(bt_list)
-            st.dataframe(df_bt, use_container_width=True)
-            # EXCEL DOWNLOAD FOR BACKTEST
-            bt_out = io.BytesIO()
-            df_bt.to_excel(bt_out, index=False)
-            st.download_button("📥 Download Backtest (Excel)", bt_out.getvalue(), "Backtest_V6_9.xlsx")
+if st.button("🚀 START FULL SCAN (NSE 200)"):
+    with st.spinner("Analyzing 200 stocks..."):
+        with ThreadPoolExecutor(max_workers=25) as executor:
+            all_signals = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
+        
+        flat_signals = [item for sublist in all_signals for item in sublist]
+        if flat_signals:
+            df_res = pd.DataFrame(flat_signals).sort_values(by="TIME", ascending=False)
+            st.dataframe(df_res, use_container_width=True)
+            
+            # Excel Download
+            excel_out = io.BytesIO()
+            with pd.ExcelWriter(excel_out, engine='xlsxwriter') as writer:
+                df_res.to_excel(writer, index=False, sheet_name='Today_Signals')
+            st.download_button("📥 Download Excel Report", excel_out.getvalue(), f"NSE200_Signals_{now.strftime('%d%m')}.xlsx")
+        else:
+            st.info("No high-probability signals found for the current trend.")
