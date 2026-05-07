@@ -10,7 +10,7 @@ import io
 # ==========================================
 # 1. CONFIG & TIMEZONE SETUP
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V5.0", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.0", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
@@ -23,7 +23,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 NSE AI QUANT PRO - V5.0 (NSE 200)")
+st.title("🚀 NSE AI QUANT PRO - V6.0 (Advanced Filtering)")
 st.subheader(f"📅 {now.strftime('%d-%b-%Y')} | 🕒 {now.strftime('%H:%M:%S')} IST")
 
 # ==========================================
@@ -41,50 +41,61 @@ stocks = [
     "ENGINERSIN", "ESCORTS", "EXIDEIND", "FEDERALBNK", "FORTIS", "GAIL", "GLENMARK", "GMRINFRA", "GODREJCP", "GODREJPROP", 
     "GRANULES", "GRASIM", "GUJGASLTD", "GNFC", "GSFC", "HAL", "HAPPSTMNDS", "HAVELLS", "HCLTECH", "HDFCBANK", "HDFCLIFE", 
     "HDFCAMC", "HEG", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "HINDZINC", "HUDCO", "ICICIBANK", 
-    "ICICIGI", "ICICIPRULI", "IDBI", "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIACEM", "INDIAMART", "INDIANB", 
-    "ISEC", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "INTELLECT", "IOC", "IRCTC", "IRFC", "ITC", "ITI", 
-    "JBCHEPHARM", "JKCEMENT", "JKLAKSHMI", "JINDALSTEL", "JSL", "JSWENERGY", "JSWSTEEL", "JUBLFOOD", "KALYANKJIL", "KEI", 
-    "KEC", "KOTAKBANK", "KPITTECH", "KPRMILL", "KRBL", "KSB", "L&TFH", "LT", "LTIM", "LTTS", "LICHSGFIN", "LICI", 
-    "LINDEINDIA", "LUPIN", "M&M", "M&MFIN", "MANAPPURAM", "MARICO", "MARUTI", "MAXHEALTH", "MAZDOCK", "METROPOLIS", 
-    "MFSL", "MGL", "MOTILALOFS", "MPHASIS", "MRF", "MUTHOOTFIN", "NATCOPHARM", "NATIONALUM", "NAVINFLUOR", "NESTLEIND", 
-    "NMDC", "NTPC", "NHPC", "OBEROIRLTY", "ONGC", "OIL", "PAYTM", "OFSS", "PAGEIND", "PEL", "PERSISTENT", "PETRONET", 
-    "PFC", "PIDILITIND", "PIIND", "PNB", "POLYCAB", "POONAWALLA", "POWERGRID", "PRAJIND", "PRESTIGE", "PVRINOX", 
-    "RAMCOCEM", "RATNAMANI", "RBLBANK", "RECLTD", "RELIANCE", "RVNL", "SAIL", "SBICARD", "SBILIFE", "SBIN", 
-    "SHREECEM", "SHRIRAMFIN", "SIEMENS", "SRF", "SUNPHARMA", "SUNTV", "SUPREMEIND", "SUZLON", "SYNGENE", "TATACOMM", 
-    "TATACONSUM", "TATAELXSI", "TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TORNTPOWER", 
-    "TRENT", "TRIDENT", "TIINDIA", "TVSMOTOR", "UCOBANK", "ULTRACEMCO", "UNIONBANK", "UBL", "UPL", "VBL", "VEDL", 
-    "VOLTAS", "WHIRLPOOL", "WIPRO", "YESBANK", "ZEEL", "ZENSARTECH", "ZOMATO"
+    "ICICIGI", "ICICIPRULI", "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIACEM", "INDIAMART", "INDIANB", 
+    "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "IOC", "IRCTC", "IRFC", "ITC", 
+    "JKCEMENT", "JINDALSTEL", "JSWENERGY", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "KPITTECH", "L&TFH", "LT", "LTIM", "LTTS", 
+    "LICHSGFIN", "LICI", "LUPIN", "M&M", "M&MFIN", "MANAPPURAM", "MARICO", "MARUTI", "MAXHEALTH", "METROPOLIS", 
+    "MFSL", "MGL", "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NESTLEIND", "NMDC", "NTPC", "OBEROIRLTY", 
+    "ONGC", "PAYTM", "PEL", "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", "PNB", "POLYCAB", 
+    "POONAWALLA", "POWERGRID", "PRESTIGE", "PVRINOX", "RECLTD", "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN", 
+    "SHREECEM", "SHRIRAMFIN", "SIEMENS", "SRF", "SUNPHARMA", "SUNTV", "SYNGENE", "TATACOMM", "TATACONSUM", 
+    "TATAELXSI", "TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", 
+    "TVSMOTOR", "ULTRACEMCO", "UBL", "UPL", "VBL", "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZEEL", "ZOMATO"
 ]
 
 # ==========================================
-# 3. CORE INDICATORS ENGINE
+# 3. CORE INDICATORS ENGINE (Enhanced)
 # ==========================================
 def add_indicators(df):
     df = df.copy()
     if df.empty: return df
     
-    # Intraday VWAP
+    # 1. VWAP & EMA
     df['Date_Only'] = df.index.date
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
-    
-    # Trend & Momentum
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    
+    # 2. RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
     
-    # ATR & RVOL
-    tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
+    # 3. ADX (Trend Strength)
+    plus_dm = df['High'].diff().where(lambda x: (x > 0) & (x > df['Low'].diff().abs()), 0)
+    minus_dm = df['Low'].diff().abs().where(lambda x: (x > 0) & (x > df['High'].diff()), 0)
+    tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)
+    atr_adx = tr.rolling(14).mean()
+    plus_di = 100 * (plus_dm.rolling(14).mean() / (atr_adx + 1e-9))
+    minus_di = 100 * (minus_dm.rolling(14).mean() / (atr_adx + 1e-9))
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-9)
+    df['ADX'] = dx.rolling(14).mean()
+    
+    # 4. Volatility & RVOL
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
     
-    # Consolidation
+    # 5. Consolidation & Wick Analysis
     df['High20'] = df['High'].rolling(window=20).max()
     df['Low20'] = df['Low'].rolling(window=20).min()
     df['Range_Width'] = (df['High20'] - df['Low20']) / df['Low20'] * 100
+    
+    # Candle Wick Calculation
+    df['Candle_Range'] = df['High'] - df['Low']
+    df['Upper_Wick'] = df['High'] - df[['Open', 'Close']].max(axis=1)
+    df['Lower_Wick'] = df[['Open', 'Close']].min(axis=1) - df['Low']
     
     return df
 
@@ -99,7 +110,7 @@ def fetch_all_data():
 all_data = fetch_all_data()
 
 # ==========================================
-# 5. SCANNER LOGIC
+# 5. SCANNER LOGIC (With Wick & ADX Filters)
 # ==========================================
 def scan_stock(s):
     try:
@@ -109,41 +120,51 @@ def scan_stock(s):
         nifty_trend = "UP" if nifty['Close'] > nifty['Open'] else "DOWN"
         
         last = df.iloc[-1]
-        is_cons = last['Range_Width'] < 0.8
+        prev = df.iloc[-2]
+        
+        # New Filters
+        is_strong_adx = last['ADX'] > 25
+        is_clean_buy_candle = last['Upper_Wick'] < (last['Candle_Range'] * 0.25) # Max 25% wick
+        is_clean_sell_candle = last['Lower_Wick'] < (last['Candle_Range'] * 0.25)
+        is_cons = prev['Range_Width'] < 0.8
         
         signal, reason = None, ""
+        
         # BUY Logic
-        if nifty_trend == "UP" and last['Close'] > last['VWAP'] and last['RSI'] > 55:
-            if is_cons and last['Close'] > df.iloc[-2]['High20'] and last['RVOL'] > 1.5:
-                signal, reason = "BUY", "Consolidation Breakout 🚀"
-            elif last['RVOL'] > 2.0:
-                signal, reason = "BUY", "Big Player Entry ⚡"
+        if nifty_trend == "UP" and last['Close'] > last['VWAP'] and last['RSI'] > 55 and is_strong_adx:
+            if is_clean_buy_candle:
+                if is_cons and last['Close'] > prev['High20'] and last['RVOL'] > 1.5:
+                    signal, reason = "BUY", "Strong Box Breakout 🚀"
+                elif last['RVOL'] > 2.0:
+                    signal, reason = "BUY", "High Volume Trend ⚡"
         
         # SELL Logic
-        elif nifty_trend == "DOWN" and last['Close'] < last['VWAP'] and last['RSI'] < 45:
-            if is_cons and last['Close'] < df.iloc[-2]['Low20'] and last['RVOL'] > 1.5:
-                signal, reason = "SELL", "Consolidation Breakdown 📉"
-            elif last['RVOL'] > 2.0:
-                signal, reason = "SELL", "Big Exit 🔴"
+        elif nifty_trend == "DOWN" and last['Close'] < last['VWAP'] and last['RSI'] < 45 and is_strong_adx:
+            if is_clean_sell_candle:
+                if is_cons and last['Close'] < prev['Low20'] and last['RVOL'] > 1.5:
+                    signal, reason = "SELL", "Box Breakdown 📉"
+                elif last['RVOL'] > 2.0:
+                    signal, reason = "SELL", "Big Exit 🔴"
 
         if signal:
             sl_pts = float(last['ATR'] * 1.5)
             return {
                 "STOCK": s, "SIGNAL": signal, "PRICE": round(last['Close'], 2), "REASON": reason,
-                "RVOL": round(last['RVOL'], 2), "SL": round(last['Close'] - sl_pts if signal=="BUY" else last['Close'] + sl_pts, 2),
+                "ADX": round(last['ADX'], 2), "RVOL": round(last['RVOL'], 2),
+                "SL": round(last['Close'] - sl_pts if signal=="BUY" else last['Close'] + sl_pts, 2),
                 "TGT": round(last['Close'] + sl_pts*2.5 if signal=="BUY" else last['Close'] - sl_pts*2.5, 2),
                 "TIME": last.name.astimezone(IST).strftime('%H:%M')
             }
     except: return None
 
 # ==========================================
-# 6. UI INTERFACE & TABS
+# 6. UI & EXCEL DOWNLOAD
 # ==========================================
 tab1, tab2 = st.tabs(["🔴 LIVE SCANNER", "📊 BACKTEST"])
 
 with tab1:
-    if st.button("🚀 START SCANNING (NSE 200)"):
-        with st.spinner("Scanning 200 Stocks..."):
+    if st.button("🚀 START SCANNING (V6.0)"):
+        with st.spinner("Analyzing Market Dynamics..."):
             with ThreadPoolExecutor(max_workers=20) as executor:
                 res = [r for r in list(executor.map(scan_stock, stocks)) if r]
             
@@ -151,53 +172,38 @@ with tab1:
                 df_res = pd.DataFrame(res)
                 st.dataframe(df_res, use_container_width=True)
                 
-                # Excel Download
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_res.to_excel(writer, index=False, sheet_name='Live_Signals')
-                
-                st.download_button(
-                    label="📥 Download Live Signals (Excel)",
-                    data=output.getvalue(),
-                    file_name=f"Signals_{now.strftime('%H%M')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else: st.info("No high-probability signals found.")
+                st.download_button("📥 Download Live Signals", output.getvalue(), f"Signals_{now.strftime('%H%M')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            else: st.info("No high-quality signals meeting Wick & ADX criteria.")
 
 with tab2:
-    if st.button("📊 RUN 5-DAY BACKTEST"):
+    if st.button("📊 RUN V6.0 BACKTEST"):
         all_bt = []
-        with st.spinner("Processing Historical Data..."):
+        with st.spinner("Backtesting with Advanced Filters..."):
             for s in stocks:
                 try:
                     df = add_indicators(all_data[s + ".NS"].dropna())
                     for i in range(30, len(df)-10):
                         row = df.iloc[i]
-                        sig = None
-                        if row['RVOL'] > 1.5 and row['RSI'] > 55 and row['Close'] > row['VWAP']: sig = "BUY"
-                        elif row['RVOL'] > 1.5 and row['RSI'] < 45 and row['Close'] < row['VWAP']: sig = "SELL"
-                        
-                        if sig:
+                        # Apply V6.0 Logic for Backtest
+                        if row['ADX'] > 25 and row['RVOL'] > 1.5 and row['RSI'] > 55 and row['Close'] > row['VWAP']:
+                            # Simplified backtest exit check
                             entry_p = row['Close']
-                            sl = entry_p - (row['ATR']*1.5) if sig=="BUY" else entry_p + (row['ATR']*1.5)
-                            tp = entry_p + (row['ATR']*2.5) if sig=="BUY" else entry_p - (row['ATR']*2.5)
+                            sl = entry_p - (row['ATR']*1.5)
+                            tp = entry_p + (row['ATR']*2.5)
                             
                             res_bt, exit_t = "OPEN", None
                             for j in range(i+1, min(i+60, len(df))):
                                 next_r = df.iloc[j]
-                                check_time = next_r.name.astimezone(IST)
-                                if (sig=="BUY" and next_r['Low'] <= sl) or (sig=="SELL" and next_r['High'] >= sl):
-                                    res_bt, exit_t = "LOSS", next_r.name; break
-                                if (sig=="BUY" and next_r['High'] >= tp) or (sig=="SELL" and next_r['Low'] <= tp):
-                                    res_bt, exit_t = "PROFIT", next_r.name; break
-                                if check_time.hour == 15 and check_time.minute >= 15:
-                                    res_bt = "PROFIT" if (sig=="BUY" and next_r['Close'] > entry_p) or (sig=="SELL" and next_r['Close'] < entry_p) else "LOSS"
-                                    exit_t = next_r.name; break
+                                if next_r['Low'] <= sl: res_bt, exit_t = "LOSS", next_r.name; break
+                                if next_r['High'] >= tp: res_bt, exit_t = "PROFIT", next_r.name; break
                             
                             if res_bt != "OPEN":
                                 all_bt.append({
-                                    "Stock": s, "Date": row.name.strftime('%Y-%m-%d'),
-                                    "Signal": sig, "RVOL": round(row['RVOL'], 2), "Entry": round(entry_p, 2),
+                                    "Stock": s, "Date": row.name.strftime('%Y-%m-%d'), "Signal": "BUY",
+                                    "ADX": round(row['ADX'], 2), "RVOL": round(row['RVOL'], 2),
                                     "Result": res_bt, "Duration": int((exit_t - row.name).total_seconds() / 60)
                                 })
                 except: continue
@@ -205,16 +211,8 @@ with tab2:
         if all_bt:
             df_bt = pd.DataFrame(all_bt)
             st.dataframe(df_bt, use_container_width=True)
-            
-            # Excel Download
             bt_out = io.BytesIO()
             with pd.ExcelWriter(bt_out, engine='xlsxwriter') as writer:
                 df_bt.to_excel(writer, index=False, sheet_name='Backtest')
-            
-            st.download_button(
-                label="📥 Download Backtest Report (Excel)",
-                data=bt_out.getvalue(),
-                file_name="Backtest_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else: st.warning("No trades found in backtest.")
+            st.download_button("📥 Download V6.0 Backtest Report", bt_out.getvalue(), "Backtest_V6.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        else: st.warning("No trades met the V6.0 criteria.")
