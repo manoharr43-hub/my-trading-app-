@@ -1,6 +1,9 @@
 # =========================================================
-# 🚀 NSE AI QUANT PRO V12.0 ULTRA FINAL
-# TODAY SCANNER + 5 DAY BACKTEST + EXCEL DOWNLOAD
+# 🚀 NSE AI QUANT PRO V13.0 ULTRA FINAL
+# NSE 200 STOCKS
+# EMA9 + VWAP + RSI + RVOL
+# TODAY SCANNER + 5 DAY BACKTEST
+# EXCEL DOWNLOAD + IST TIME FIX
 # =========================================================
 
 import streamlit as st
@@ -16,7 +19,7 @@ import io
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="🚀 NSE AI QUANT PRO V12.0",
+    page_title="🚀 NSE AI QUANT PRO V13.0",
     layout="wide"
 )
 
@@ -27,7 +30,7 @@ IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
 # =========================================================
-# UI STYLE
+# CUSTOM CSS
 # =========================================================
 st.markdown("""
 <style>
@@ -74,7 +77,7 @@ st.markdown("""
 # HEADER
 # =========================================================
 st.markdown(
-    '<div class="main-title">🚀 NSE AI QUANT PRO V12.0 ULTRA</div>',
+    '<div class="main-title">🚀 NSE AI QUANT PRO V13.0 ULTRA</div>',
     unsafe_allow_html=True
 )
 
@@ -84,25 +87,63 @@ st.markdown(
 )
 
 # =========================================================
-# REFRESH
+# REFRESH BUTTON
 # =========================================================
 if st.button("🔄 REFRESH DATA"):
     st.cache_data.clear()
     st.rerun()
 
 # =========================================================
-# STOCK LIST
+# NSE 200 STOCKS
 # =========================================================
 stocks = [
-    "ABB","ACC","ADANIENT","ADANIPORTS",
-    "AXISBANK","BAJFINANCE","BHARTIARTL",
-    "BPCL","CIPLA","HDFCBANK","ICICIBANK",
-    "INFY","ITC","LT","M&M","RELIANCE",
-    "SBIN","TCS","TATAMOTORS","TITAN",
-    "WIPRO","ZOMATO","HCLTECH",
-    "POWERGRID","SUNPHARMA","MARUTI",
-    "TATASTEEL","ONGC","NTPC",
-    "JSWSTEEL","KOTAKBANK","TECHM"
+
+"ABB","ACC","AUBANK","ADANIENSOL","ADANIENT",
+"ADANIGREEN","ADANIPORTS","ADANIPOWER","ATGL",
+"ABCAPITAL","ABFRL","ALKEM","AMBUJACEM",
+"APOLLOHOSP","APOLLOTYRE","ASHOKLEY",
+"ASIANPAINT","ASTRAL","AUROPHARMA","AXISBANK",
+"BAJAJ-AUTO","BAJFINANCE","BAJAJFINSV",
+"BAJAJHLDNG","BALKRISIND","BANDHANBNK",
+"BANKBARODA","BANKINDIA","BATAINDIA","BEL",
+"BERGEPAINT","BHARATFORG","BHEL","BPCL",
+"BHARTIARTL","BIOCON","BOSCHLTD","BRITANNIA",
+"CANBK","CGPOWER","CHOLAFIN","CIPLA",
+"COALINDIA","COFORGE","COLPAL","CONCOR",
+"COROMANDEL","CROMPTON","CUMMINSIND",
+"CYIENT","DABUR","DALBHARAT","DEEPAKNTR",
+"DELHIVERY","DIVISLAB","DIXON","DLF",
+"DRREDDY","EICHERMOT","ESCORTS","EXIDEIND",
+"FEDERALBNK","FORTIS","GAIL","GLENMARK",
+"GMRINFRA","GODREJCP","GODREJPROP","GRASIM",
+"GUJGASLTD","HAL","HAVELLS","HCLTECH",
+"HDFCBANK","HDFCLIFE","HEROMOTOCO",
+"HINDALCO","HINDCOPPER","HINDPETRO",
+"HINDUNILVR","ICICIBANK","IDFCFIRSTB",
+"IEX","IGL","INDHOTEL","INDIGO",
+"INDUSINDBK","INDUSTOWER","INFY","IOC",
+"IRCTC","IRFC","ITC","JINDALSTEL",
+"JSWENERGY","JSWSTEEL","JUBLFOOD",
+"KOTAKBANK","KPITTECH","LT","LTIM",
+"LTTS","LICI","LUPIN","M&M",
+"M&MFIN","MARICO","MARUTI","MAXHEALTH",
+"METROPOLIS","MFSL","MGL","MPHASIS",
+"MRF","MUTHOOTFIN","NATIONALUM",
+"NESTLEIND","NMDC","NTPC","OBEROIRLTY",
+"ONGC","PAYTM","PERSISTENT","PETRONET",
+"PFC","PIDILITIND","PIIND","PNB",
+"POLYCAB","POONAWALLA","POWERGRID",
+"PRESTIGE","PVRINOX","RECLTD","RELIANCE",
+"SAIL","SBICARD","SBILIFE","SBIN",
+"SIEMENS","SRF","SUNPHARMA","SUNTV",
+"SYNGENE","TATACOMM","TATACONSUM",
+"TATAELXSI","TATAMOTORS","TATAPOWER",
+"TATASTEEL","TCS","TECHM","TITAN",
+"TORNTPHARM","TRENT","TVSMOTOR",
+"ULTRACEMCO","UPL","VBL","VEDL",
+"VOLTAS","WIPRO","YESBANK","ZEEL",
+"ZOMATO"
+
 ]
 
 # =========================================================
@@ -115,14 +156,20 @@ def add_indicators(df):
     if df.empty or len(df) < 30:
         return pd.DataFrame()
 
+    df.index = pd.to_datetime(
+        df.index,
+        utc=True
+    ).tz_convert("Asia/Kolkata")
+
     df['DATE_ONLY'] = df.index.date
 
-    # EMA
+    # EMA9
     df['EMA9'] = df['Close'].ewm(
         span=9,
         adjust=False
     ).mean()
 
+    # EMA20
     df['EMA20'] = df['Close'].ewm(
         span=20,
         adjust=False
@@ -164,36 +211,6 @@ def add_indicators(df):
         (df['VOLAVG'] + 1e-9)
     )
 
-    # MACD
-    ema12 = df['Close'].ewm(
-        span=12,
-        adjust=False
-    ).mean()
-
-    ema26 = df['Close'].ewm(
-        span=26,
-        adjust=False
-    ).mean()
-
-    df['MACD'] = ema12 - ema26
-
-    df['MACD_SIGNAL'] = df['MACD'].ewm(
-        span=9,
-        adjust=False
-    ).mean()
-
-    # ATR
-    tr1 = df['High'] - df['Low']
-    tr2 = abs(df['High'] - df['Close'].shift())
-    tr3 = abs(df['Low'] - df['Close'].shift())
-
-    tr = pd.concat(
-        [tr1, tr2, tr3],
-        axis=1
-    ).max(axis=1)
-
-    df['ATR'] = tr.rolling(14).mean()
-
     return df
 
 # =========================================================
@@ -202,95 +219,82 @@ def add_indicators(df):
 @st.cache_data(ttl=60)
 def fetch_data():
 
-    try:
+    tickers = [s + ".NS" for s in stocks]
+    tickers.append("^NSEI")
 
-        tickers = [s + ".NS" for s in stocks]
-        tickers.append("^NSEI")
+    data_15m = yf.download(
+        tickers=tickers,
+        period="7d",
+        interval="15m",
+        group_by="ticker",
+        auto_adjust=True,
+        progress=False,
+        threads=True
+    )
 
-        data_15m = yf.download(
-            tickers=tickers,
-            period="7d",
-            interval="15m",
-            group_by="ticker",
-            auto_adjust=True,
-            progress=False,
-            threads=True
-        )
+    data_1h = yf.download(
+        "^NSEI",
+        period="7d",
+        interval="1h",
+        auto_adjust=True,
+        progress=False
+    )
 
-        data_1h = yf.download(
-            "^NSEI",
-            period="7d",
-            interval="1h",
-            auto_adjust=True,
-            progress=False
-        )
-
-        return data_15m, data_1h
-
-    except:
-        return None, None
+    return data_15m, data_1h
 
 # =========================================================
 # LOAD DATA
 # =========================================================
 d15m, d1h = fetch_data()
 
-market_trend = "UNKNOWN"
-
-nifty_15m = pd.DataFrame()
-
 # =========================================================
 # MARKET TREND
 # =========================================================
-if d1h is not None and not d1h.empty:
+market_trend = "UNKNOWN"
 
-    try:
+try:
 
-        close_series = d1h['Close']
+    close_series = d1h['Close']
 
-        if isinstance(close_series, pd.DataFrame):
-            close_series = close_series.iloc[:, 0]
+    if isinstance(close_series, pd.DataFrame):
+        close_series = close_series.iloc[:, 0]
 
-        n_last = float(close_series.iloc[-1])
+    last_close = float(close_series.iloc[-1])
 
-        n_ema = float(
-            close_series.ewm(
-                span=20,
-                adjust=False
-            ).mean().iloc[-1]
-        )
+    ema20 = float(
+        close_series.ewm(
+            span=20,
+            adjust=False
+        ).mean().iloc[-1]
+    )
 
-        market_trend = (
-            "POSITIVE"
-            if n_last > n_ema
-            else "NEGATIVE"
-        )
+    market_trend = (
+        "POSITIVE"
+        if last_close > ema20
+        else "NEGATIVE"
+    )
 
-        nifty_raw = d15m["^NSEI"].dropna()
+    box_class = (
+        "bull"
+        if market_trend == "POSITIVE"
+        else "bear"
+    )
 
-        nifty_15m = add_indicators(nifty_raw)
+    st.markdown(
+        f"""
+        <div class="market-box {box_class}">
+        📈 MARKET TREND : {market_trend}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-        box_class = (
-            "bull"
-            if market_trend == "POSITIVE"
-            else "bear"
-        )
+except Exception as e:
 
-        st.markdown(
-            f'''
-            <div class="market-box {box_class}">
-            📈 MARKET TREND : {market_trend}
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
-
-    except Exception as e:
-
-        st.error(f"Trend Error : {e}")
+    st.error(f"Market Trend Error : {e}")
 
 # =========================================================
-# SIGNAL ENGINE
+# SCAN ENGINE
 # =========================================================
 def scan_stock(stock, is_backtest=False):
 
@@ -307,8 +311,6 @@ def scan_stock(stock, is_backtest=False):
 
         if df.empty:
             return []
-
-        nifty_sync = nifty_15m.reindex(df.index).ffill()
 
         results = []
 
@@ -333,75 +335,47 @@ def scan_stock(stock, is_backtest=False):
                 scan_df.index.date == now.date()
             ]
 
-        for i in range(20, len(scan_df)):
+        for i in range(1, len(scan_df)):
 
             idx = df.index.get_loc(scan_df.index[i])
 
             row = df.iloc[idx]
             prev = df.iloc[idx - 1]
 
-            n_row = nifty_sync.iloc[idx]
-
-            cross_up = (
-                prev['EMA9'] < prev['VWAP']
-                and
-                row['EMA9'] > row['VWAP']
-            )
-
-            cross_down = (
-                prev['EMA9'] > prev['VWAP']
-                and
-                row['EMA9'] < row['VWAP']
-            )
-
+            # BUY
             buy_signal = (
 
-                market_trend == "POSITIVE"
+                row['EMA9'] > row['VWAP']
 
                 and
 
-                n_row['Close'] > n_row['EMA20']
+                prev['EMA9'] <= prev['VWAP']
 
                 and
 
-                cross_up
+                row['RSI'] > 50
 
                 and
 
-                row['RSI'] > 55
-
-                and
-
-                row['MACD'] > row['MACD_SIGNAL']
-
-                and
-
-                row['RVOL'] > 1.2
+                row['RVOL'] > 0.8
             )
 
+            # SELL
             sell_signal = (
 
-                market_trend == "NEGATIVE"
+                row['EMA9'] < row['VWAP']
 
                 and
 
-                n_row['Close'] < n_row['EMA20']
+                prev['EMA9'] >= prev['VWAP']
 
                 and
 
-                cross_down
+                row['RSI'] < 50
 
                 and
 
-                row['RSI'] < 45
-
-                and
-
-                row['MACD'] < row['MACD_SIGNAL']
-
-                and
-
-                row['RVOL'] > 1.2
+                row['RVOL'] > 0.8
             )
 
             if buy_signal or sell_signal:
@@ -432,6 +406,7 @@ def scan_stock(stock, is_backtest=False):
         return results
 
     except:
+
         return []
 
 # =========================================================
@@ -449,9 +424,9 @@ with tab1:
 
     if st.button("🚀 RUN TODAY SCANNER"):
 
-        with st.spinner("Scanning Today Signals..."):
+        with st.spinner("Scanning NSE 200 Stocks..."):
 
-            with ThreadPoolExecutor(max_workers=20) as executor:
+            with ThreadPoolExecutor(max_workers=25) as executor:
 
                 all_results = list(
                     executor.map(
@@ -460,23 +435,54 @@ with tab1:
                     )
                 )
 
-            flat = [
+            flat_results = [
                 item
                 for sublist in all_results
                 for item in sublist
             ]
 
-            if len(flat) > 0:
+            if len(flat_results) > 0:
 
-                df_live = pd.DataFrame(flat)
+                df_live = pd.DataFrame(flat_results)
+
+                df_live = df_live.drop_duplicates(
+                    subset=["STOCK"],
+                    keep="last"
+                )
 
                 df_live = df_live.sort_values(
                     by="TIME",
                     ascending=False
                 )
 
-                st.success(
-                    f"TOTAL SIGNALS : {len(df_live)}"
+                # METRICS
+                buy_count = len(
+                    df_live[
+                        df_live['SIGNAL'] == "BUY"
+                    ]
+                )
+
+                sell_count = len(
+                    df_live[
+                        df_live['SIGNAL'] == "SELL"
+                    ]
+                )
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "TOTAL SIGNALS",
+                    len(df_live)
+                )
+
+                c2.metric(
+                    "BUY SIGNALS",
+                    buy_count
+                )
+
+                c3.metric(
+                    "SELL SIGNALS",
+                    sell_count
                 )
 
                 st.dataframe(
@@ -485,40 +491,42 @@ with tab1:
                 )
 
                 # EXCEL
-                excel_buffer = io.BytesIO()
+                output = io.BytesIO()
 
                 with pd.ExcelWriter(
-                    excel_buffer,
+                    output,
                     engine='xlsxwriter'
                 ) as writer:
 
                     df_live.to_excel(
                         writer,
                         index=False,
-                        sheet_name='Today Signals'
+                        sheet_name='Today Scanner'
                     )
 
                 st.download_button(
                     "📥 DOWNLOAD TODAY EXCEL",
-                    excel_buffer.getvalue(),
-                    file_name="TODAY_SIGNALS.xlsx",
+                    output.getvalue(),
+                    file_name="TODAY_SCANNER.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
             else:
 
-                st.warning("No Signals Found")
+                st.warning(
+                    "❌ No Signals Found"
+                )
 
 # =========================================================
 # BACKTEST
 # =========================================================
 with tab2:
 
-    if st.button("📊 RUN 5 DAY BACKTEST"):
+    if st.button("📊 RUN BACKTEST"):
 
-        with st.spinner("Running Backtest..."):
+        with st.spinner("Running 5 Day Backtest..."):
 
-            with ThreadPoolExecutor(max_workers=20) as executor:
+            with ThreadPoolExecutor(max_workers=25) as executor:
 
                 all_bt = list(
                     executor.map(
@@ -541,7 +549,7 @@ with tab2:
                 df_bt = pd.DataFrame(flat_bt)
 
                 st.success(
-                    f"TOTAL BACKTEST SIGNALS : {len(df_bt)}"
+                    f"✅ TOTAL BACKTEST SIGNALS : {len(df_bt)}"
                 )
 
                 st.dataframe(
@@ -550,10 +558,10 @@ with tab2:
                 )
 
                 # BACKTEST EXCEL
-                bt_buffer = io.BytesIO()
+                bt_output = io.BytesIO()
 
                 with pd.ExcelWriter(
-                    bt_buffer,
+                    bt_output,
                     engine='xlsxwriter'
                 ) as writer:
 
@@ -565,11 +573,13 @@ with tab2:
 
                 st.download_button(
                     "📥 DOWNLOAD BACKTEST EXCEL",
-                    bt_buffer.getvalue(),
+                    bt_output.getvalue(),
                     file_name="BACKTEST_REPORT.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
             else:
 
-                st.warning("No Backtest Signals Found")
+                st.warning(
+                    "❌ No Backtest Signals Found"
+                )
