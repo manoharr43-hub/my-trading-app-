@@ -10,7 +10,7 @@ import io
 # =========================================================
 # 1. PAGE CONFIG & STYLING
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.0 SUPREME", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.1 SUPREME", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
@@ -24,11 +24,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.0 SUPREME</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.1 SUPREME</div>', unsafe_allow_html=True)
 st.markdown(f'<div class="sub-title">🕒 LIVE TIME : {now.strftime("%H:%M:%S")} IST</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. NSE 200 STOCKS LIST (Subset for performance)
+# 2. NSE 200 STOCKS LIST (Main subset)
 # =========================================================
 stocks = ["ABB","ACC","ADANIENT","ADANIPORTS","AXISBANK","BAJFINANCE","BHARTIARTL","BPCL","CIPLA",
           "HDFCBANK","ICICIBANK","INFY","ITC","LT","M&M","RELIANCE","SBIN","TCS","TATAMOTORS","WIPRO",
@@ -63,7 +63,7 @@ def fetch_data():
     return d15m, d1h
 
 # =========================================================
-# 3. SCAN ENGINE (Fixed Logic)
+# 3. SCAN ENGINE
 # =========================================================
 def scan_single_stock(stock, data_15m, nifty_15m, market_trend):
     try:
@@ -101,29 +101,26 @@ def scan_single_stock(stock, data_15m, nifty_15m, market_trend):
     except: return []
 
 # =========================================================
-# 4. DATA FETCH & TREND CALCULATION (Error Fixed)
+# 4. TREND CALCULATION WITH SAFETY
 # =========================================================
-try:
-    d15m, d1h = fetch_data()
-    nifty_15m_raw = d15m["^NSEI"].dropna()
-    
-    if not nifty_15m_raw.empty and not d1h.empty:
-        nifty_15m = add_indicators(nifty_15m_raw)
-        n_last_1h = d1h['Close'].iloc[-1]
-        n_ema_1h = d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
-        market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
-        
-        # Display Trend Box
-        box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
-        st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend} {"📈" if market_trend == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
-    else:
-        st.error("⚠️ Nifty data is currently unavailable. Please check your internet or try after 9:15 AM.")
-        market_trend = "UNKNOWN"
-        nifty_15m = pd.DataFrame()
+d15m, d1h = fetch_data()
+market_trend = "UNKNOWN"
+nifty_15m = pd.DataFrame()
 
-except Exception as e:
-    st.error(f"⚠️ Connection Error: {str(e)}")
-    market_trend = "UNKNOWN"
+if not d1h.empty and len(d1h) > 1:
+    n_last_1h = float(d1h['Close'].iloc[-1])
+    n_ema_1h = float(d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1])
+    market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
+    
+    nifty_raw = d15m["^NSEI"].dropna()
+    if not nifty_raw.empty:
+        nifty_15m = add_indicators(nifty_raw)
+
+    # Display Trend Box
+    box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
+    st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend} {"📈" if market_trend == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
+else:
+    st.error("⚠️ Market data connecting... Please refresh after a few seconds.")
 
 # =========================================================
 # 5. UI TABS
@@ -139,8 +136,7 @@ with tab1:
             if flat_res:
                 df_f = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
                 st.dataframe(df_f, use_container_width=True)
-                # Excel
                 out = io.BytesIO()
                 df_f.to_excel(out, index=False)
                 st.download_button("📥 Download Report", out.getvalue(), "Supreme_Signals.xlsx")
-            else: st.info("No signals found for the current trend.")
+            else: st.info("No signals found right now.")
