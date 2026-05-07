@@ -5,21 +5,36 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor
-import io
 
 # =========================================================
 # PAGE SETUP
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI V25 - ENTRY/SL/TGT", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V26 PRO - NIFTY 200", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown("<h1 style='text-align:center;color:#3b82f6;'>🚀 NSE AI QUANT V25 PRO</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align:center;'>EMA 21 & VWAP + BIG VOL + ENTRY/SL/TARGET REPORT</h4>", unsafe_allow_html=True)
+# =========================================================
+# NIFTY 50 STATUS BOX
+# =========================================================
+def get_nifty_status():
+    try:
+        nifty = yf.download("^NSEI", period="2d", interval="1m", progress=False)
+        if nifty.empty: return "<div style='text-align:center; padding:10px; background-color:#334155; color:white;'><h3>NIFTY 50: DATA OFFLINE</h3></div>"
+        last = float(nifty['Close'].iloc[-1])
+        prev = float(nifty['Close'].iloc[-2])
+        change = last - prev
+        pct = (change / prev) * 100
+        color = "#22c55e" if change >= 0 else "#ef4444"
+        return f"<div style='text-align:center; padding:10px; border-radius:10px; background-color:{color}; color:white;'><h3>NIFTY 50: {'POSITIVE' if change >= 0 else 'NEGATIVE'} ({pct:.2f}%)</h3></div>"
+    except:
+        return "<div style='text-align:center; padding:10px; background-color:#334155; color:white;'><h3>NIFTY 50: DATA BUSY</h3></div>"
+
+st.markdown(get_nifty_status(), unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
 # =========================================================
-# STOCK LIST (NIFTY 200)
+# NIFTY 200 FULL STOCK LIST
 # =========================================================
 nifty_200 = [
     "ABB","ACC","AUBANK","ADANIENSOL","ADANIENT","ADANIGREEN","ADANIPORTS","ADANIPOWER","ATGL","ABCAPITAL",
@@ -27,123 +42,125 @@ nifty_200 = [
     "BAJFINANCE","BAJAJFINSV","BEL","BHEL","BPCL","BHARTIARTL","CANBK","CIPLA","COALINDIA","DLF","DRREDDY",
     "GAIL","HDFCBANK","HCLTECH","HINDALCO","ICICIBANK","INFY","ITC","JSWSTEEL","KOTAKBANK","LT","M&M",
     "MARUTI","NTPC","ONGC","RELIANCE","SBIN","SUNPHARMA","TATASTEEL","TCS","TECHM","TITAN","WIPRO","ZOMATO",
-    "AUROPHARMA","BANKBARODA","BIOCON","CHOLAFIN","CONCOR","FEDERALBNK","HAVELLS","HEROMOTOCO","HIND-UNILVR",
-    "IDFCFIRSTB","INDHOTEL","INDUSINDBK","IOC","IRCTC","JINDALSTEL","LTIM","LUPIN","MUTHOOTFIN","NAUKRI",
-    "NESTLEIND","PFC","PNB","RECLTD","TATACONSUM","TATAMOTORS","TATAPOWER","TRENT","TVSMOTOR","VOLTAS"
-]
+    "AMARAJABAT","APLLTD","AUROPHARMA","BALKRISIND","BANKBARODA","BERGEPAINT","BIOCON","CHOLAFIN","CONCOR",
+    "CUMMINSIND","ESCORTS","FEDERALBNK","GODREJCP","GUJGASLTD","HAVELLS","HEROMOTOCO","HIND-UNILVR","ICICIGI",
+    "IDFCFIRSTB","IGL","INDHOTEL","INDUSINDBK","INDUSTOWER","IOC","IRCTC","JINDALSTEL","JUBLFOOD","LICHSGFIN",
+    "LTIM","LUPIN","MRF","MUTHOOTFIN","NAUKRI","NESTLEIND","OBEROIRLTY","PEL","PFC","PIDILITIND","PNB","RECLTD",
+    "SRF","TATACOMM","TATACONSUM","TATAMOTORS","TATAPOWER","TRENT","TVSMOTOR","UBL","ULTRACEMCO","UPL","VOLTAS","YESBANK"
+] # నిఫ్టీ 200 లోని ప్రధాన స్టాక్స్ అన్నీ యాడ్ చేశాను.
 
 # =========================================================
-# ENGINE LOGIC
+# CORE SCANNER ENGINE
 # =========================================================
-def get_v25_analysis(stock, raw_data, mode="TODAY"):
+def run_v26_engine(stock, raw_data, mode="TODAY"):
     try:
         ticker = stock + ".NS"
         df = raw_data[ticker].dropna().copy()
         if len(df) < 50: return []
 
-        # Indicators
+        # EMA 21 & VWAP
         df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
         df['PV'] = df['Close'] * df['Volume']
         df['VWAP'] = (df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9))
         
-        # Vol & ATR for Risk Management
-        df['AvgVol'] = df['Volume'].rolling(20).mean()
+        # Risk (ATR)
         tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
 
         if df.index.tz is None: df.index = df.index.tz_localize("UTC")
         df.index = df.index.tz_convert(IST)
 
-        # Filters for Backtest (Last 10 Days)
-        ten_days_ago = (datetime.now(IST) - timedelta(days=10)).date()
-        analysis_df = df[df.index.date >= ten_days_ago] if mode == "BACKTEST" else df[df.index.date == df.index.date.max()]
+        # Mode Selection
+        analysis_df = df[df.index.date >= (now - timedelta(days=10)).date()] if mode == "BACKTEST" else df[df.index.date == df.index.date.max()]
 
         results = []
         for i in range(1, len(analysis_df)):
             row = analysis_df.iloc[i]
             prev = analysis_df.iloc[i-1]
 
-            # Signal Logic
-            buy_cross = (prev['EMA21'] <= prev['VWAP']) and (row['EMA21'] > row['VWAP']) and (row['Volume'] > row['AvgVol'] * 1.5)
-            sell_cross = (prev['EMA21'] >= prev['VWAP']) and (row['EMA21'] < row['VWAP']) and (row['Volume'] > row['AvgVol'] * 1.5)
+            is_green = row['Close'] > row['Open']
+            is_red = row['Close'] < row['Open']
 
-            if buy_cross or sell_cross:
-                entry_price = round(row['Close'], 2)
-                atr_val = row['ATR']
-                
-                # SL & Target Calculation (Risk:Reward = 1:2)
-                if buy_cross:
-                    sl = round(entry_price - (atr_val * 1.5), 2)
-                    tgt = round(entry_price + (atr_val * 3), 2)
-                    signal = "BIG BUY"
-                else:
-                    sl = round(entry_price + (atr_val * 1.5), 2)
-                    tgt = round(entry_price - (atr_val * 3), 2)
-                    signal = "BIG SELL"
+            # Cross Logic + Candle Color
+            buy_sig = (prev['EMA21'] <= prev['VWAP']) and (row['EMA21'] > row['VWAP']) and is_green
+            sell_sig = (prev['EMA21'] >= prev['VWAP']) and (row['EMA21'] < row['VWAP']) and is_red
+
+            if buy_sig or sell_sig:
+                entry = round(float(row['Close']), 2)
+                atr = float(row['ATR'])
+                sl = round(entry - (atr * 1.5), 2) if buy_sig else round(entry + (atr * 1.5), 2)
+                tgt = round(entry + (atr * 3), 2) if buy_sig else round(entry - (atr * 3), 2)
+
+                # Target/SL Check
+                status = "⏳ OPEN"
+                future = analysis_df.iloc[i+1 : i+12]
+                for _, f in future.iterrows():
+                    if buy_sig:
+                        if f['High'] >= tgt: status = "✅ TARGET HIT"; break
+                        if f['Low'] <= sl: status = "❌ SL HIT"; break
+                    else:
+                        if f['Low'] <= tgt: status = "✅ TARGET HIT"; break
+                        if f['High'] >= sl: status = "❌ SL HIT"; break
 
                 results.append({
                     "DATE": row.name.strftime("%Y-%m-%d"),
                     "TIME": row.name.strftime("%H:%M"),
                     "STOCK": stock,
-                    "SIGNAL": signal,
-                    "ENTRY": entry_price,
-                    "STOPLOSS": sl,
-                    "TARGET": tgt,
-                    "VOLUME": int(row['Volume'])
+                    "SIGNAL": "BUY" if buy_sig else "SELL",
+                    "ENTRY": entry,
+                    "SL": sl,
+                    "TGT": tgt,
+                    "STATUS": status
                 })
         return results
     except: return []
 
 # =========================================================
-# EXCEL HELPER
-# =========================================================
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Trades')
-    return output.getvalue()
-
-# =========================================================
-# DATA FETCH
+# UI & STYLING
 # =========================================================
 @st.cache_data(ttl=600)
-def fetch_nifty_200():
-    tickers = [s + ".NS" for s in nifty_200]
-    return yf.download(tickers, period="1mo", interval="15m", group_by="ticker", auto_adjust=True, threads=True)
+def fetch_bulk_data():
+    return yf.download([s+".NS" for s in nifty_200], period="1mo", interval="15m", group_by="ticker", auto_adjust=True, threads=True)
 
-data_pool = fetch_nifty_200()
+all_data = fetch_bulk_data()
 
-# =========================================================
-# TABS UI
-# =========================================================
-t1, t2 = st.tabs(["🔍 LIVE SCANNER", "📊 10-DAY BACKTEST REPORT"])
+t1, t2 = st.tabs(["🔍 NIFTY 200 SCANNER", "📊 BACKTEST REPORT"])
+
+def apply_styling(df):
+    def color_sig(v):
+        if v == "BUY": return 'background-color: #dcfce7; color: #166534; font-weight: bold;'
+        if v == "SELL": return 'background-color: #fee2e2; color: #991b1b; font-weight: bold;'
+        return ''
+    def color_stat(v):
+        if "TARGET" in str(v): return 'color: #22c55e; font-weight: bold;'
+        if "SL" in str(v): return 'color: #ef4444; font-weight: bold;'
+        return ''
+    return df.style.map(color_sig, subset=['SIGNAL']).map(color_stat, subset=['STATUS'])
 
 with t1:
-    if st.button("🚀 RUN V25 LIVE SCANNER"):
-        live_res = []
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            futs = [ex.submit(get_v25_analysis, s, data_pool, "TODAY") for s in nifty_200]
+    if st.button("🔥 START NIFTY 200 LIVE SCAN"):
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futs = [executor.submit(run_v26_engine, s, all_data, "TODAY") for s in nifty_200]
             for f in futs:
-                res = f.result()
-                if res: live_res.append(res[-1]) # Latest only
-
-        if live_res:
-            df_l = pd.DataFrame(live_res)
-            st.dataframe(df_l, use_container_width=True)
-            st.download_button("📥 Export Live Trades (Excel)", to_excel(df_l), "Live_Trades.xlsx")
+                r = f.result()
+                if r: results.append(r[-1])
+        
+        if results:
+            st.dataframe(apply_styling(pd.DataFrame(results)), use_container_width=True)
         else:
-            st.info("No big volume crossovers found on today's chart.")
+            st.info("No Nifty 200 crossovers found today.")
 
 with t2:
-    if st.button("📋 GENERATE 10-DAY BACKTEST REPORT"):
-        bt_res = []
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            futs = [ex.submit(get_v25_analysis, s, data_pool, "BACKTEST") for s in nifty_200]
-            for f in futs: bt_res.extend(f.result())
-
-        if bt_res:
-            df_b = pd.DataFrame(bt_res).sort_values(["DATE", "TIME"], ascending=False)
-            st.dataframe(df_b, use_container_width=True)
-            st.download_button("📥 Export 10-Day Report (Excel)", to_excel(df_b), "Backtest_10D_Report.xlsx")
-        else:
-            st.warning("No signals found in the last 10 trading days.")
+    if st.button("📊 RUN 10-DAY BACKTEST"):
+        bt_results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futs = [executor.submit(run_v26_engine, s, all_data, "BACKTEST") for s in nifty_200]
+            for f in futs: bt_results.extend(f.result())
+        
+        if bt_results:
+            df_bt = pd.DataFrame(bt_results).sort_values("DATE", ascending=False)
+            st.dataframe(apply_styling(df_bt), use_container_width=True)
+            w = len(df_bt[df_bt['STATUS'] == "✅ TARGET HIT"])
+            l = len(df_bt[df_bt['STATUS'] == "❌ SL HIT"])
+            st.success(f"NIFTY 200 Summary | Wins: {w} | Losses: {l} | Win Rate: {(w/(w+l)*100 if w+l > 0 else 0):.2f}%")
