@@ -10,13 +10,13 @@ import io
 # =========================================================
 # PAGE CONFIG & TIMEZONE
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT V15.2 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT V15.3 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V15.2</h1>', unsafe_allow_html=True)
-st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Strategy: EMA 21 + P&L Tracker</h4>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V15.3</h1>', unsafe_allow_html=True)
+st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Strategy: EMA 21 + Excel Export</h4>', unsafe_allow_html=True)
 
 # =========================================================
 # INDICATORS ENGINE
@@ -68,7 +68,7 @@ def fetch_data():
 data_pool = fetch_data()
 
 # =========================================================
-# ADVANCED SCAN & P&L LOGIC
+# SCAN LOGIC WITH P&L
 # =========================================================
 def scan(stock, mode="TODAY"):
     try:
@@ -98,11 +98,10 @@ def scan(stock, mode="TODAY"):
                 sl = round(price - risk, 2) if buy_sig else round(price + risk, 2)
                 tgt = round(price + (risk * 2), 2) if buy_sig else round(price - (risk * 2), 2)
 
-                # --- BACKTEST P&L TRACKER ---
                 status = "OPEN"
                 pnl = 0.0
                 if mode == "BACKTEST":
-                    future_data = scan_df.iloc[i+1 : i+20] # Next 20 candles (approx 1 day)
+                    future_data = scan_df.iloc[i+1 : i+25] 
                     for _, f_row in future_data.iterrows():
                         if buy_sig:
                             if f_row['High'] >= tgt: status = "🎯 TGT DONE"; pnl = round(tgt - price, 2); break
@@ -127,15 +126,18 @@ def scan(stock, mode="TODAY"):
     except: return []
 
 # =========================================================
-# UI SETUP
+# EXCEL HELPER
 # =========================================================
-tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST P&L REPORT"])
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='NSE_AI_Signals')
+    return output.getvalue()
 
-def color_result(val):
-    if "TGT" in str(val): color = '#22c55e'
-    elif "SL" in str(val): color = '#ef4444'
-    else: color = 'white'
-    return f'color: {color}; font-weight: bold'
+# =========================================================
+# UI TABS
+# =========================================================
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST REPORT"])
 
 with tab1:
     if st.button("🚀 RUN TODAY SCAN"):
@@ -145,29 +147,30 @@ with tab1:
         if flat:
             df_today = pd.DataFrame(flat).drop_duplicates('STOCK', keep='last').sort_values('TIME', ascending=False)
             st.dataframe(df_today, use_container_width=True)
+            # Excel Download for Scanner
+            excel_data = to_excel(df_today)
+            st.download_button(label="📥 Download Today Excel", data=excel_data, file_name=f"Today_Signals_{now.strftime('%Y%m%d')}.xlsx")
         else: st.warning("No signals for today.")
 
 with tab2:
-    if st.button("📊 RUN 5-DAY BACKTEST WITH P&L"):
+    if st.button("📊 RUN 5-DAY BACKTEST"):
         with ThreadPoolExecutor(max_workers=15) as exec:
             res_bt = list(exec.map(lambda s: scan(s, "BACKTEST"), stocks))
         flat_bt = [i for s in res_bt for i in s]
         if flat_bt:
             df_bt = pd.DataFrame(flat_bt).sort_values(['DATE', 'TIME'], ascending=False)
             
-            # Summary Metrics
             win_count = len(df_bt[df_bt['RESULT'] == "🎯 TGT DONE"])
             loss_count = len(df_bt[df_bt['RESULT'] == "🛑 SL HIT"])
-            total_pnl = round(df_bt['P&L'].sum(), 2)
             
+            st.subheader("Performance Summary")
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Signals", len(df_bt))
             c2.metric("Wins / Losses", f"{win_count} ✅ / {loss_count} ❌")
-            c3.metric("Total Points P&L", f"{total_pnl} pts")
+            c3.metric("Total P&L Points", f"{round(df_bt['P&L'].sum(), 2)} pts")
 
-            # Result Styling
-            try:
-                st.dataframe(df_bt.style.map(color_result, subset=['RESULT']), use_container_width=True)
-            except:
-                st.dataframe(df_bt, use_container_width=True)
+            st.dataframe(df_bt, use_container_width=True)
+            # Excel Download for Backtest
+            excel_bt = to_excel(df_bt)
+            st.download_button(label="📥 Download Backtest Excel", data=excel_bt, file_name="Backtest_Full_Report.xlsx")
         else: st.info("No backtest data found.")
