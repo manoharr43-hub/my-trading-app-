@@ -28,19 +28,20 @@ st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.0 SUPREME</div>', 
 st.markdown(f'<div class="sub-title">🕒 LIVE TIME : {now.strftime("%H:%M:%S")} IST</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. STOCKS LIST & INDICATORS
+# 2. NSE 200 STOCKS LIST (Subset for performance)
 # =========================================================
 stocks = ["ABB","ACC","ADANIENT","ADANIPORTS","AXISBANK","BAJFINANCE","BHARTIARTL","BPCL","CIPLA",
-          "HDFCBANK","ICICIBANK","INFY","ITC","LT","M&M","RELIANCE","SBIN","TCS","TATAMOTORS","WIPRO"]
+          "HDFCBANK","ICICIBANK","INFY","ITC","LT","M&M","RELIANCE","SBIN","TCS","TATAMOTORS","WIPRO",
+          "ZOMATO", "HAL", "BEL", "TRENT", "NTPC", "ONGC", "POWERGRID", "COALINDIA", "SUNPHARMA", "TITAN"]
 
 def add_indicators(df):
     df = df.copy()
-    if df.empty or len(df) < 50: return pd.DataFrame()
+    if df.empty or len(df) < 30: return pd.DataFrame()
     df['DATE_ONLY'] = df.index.date
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['PV'] = df['Close'] * df['Volume']
-    df['VWAP'] = df.groupby('DATE_ONLY')['PV'].cumsum() / df.groupby('DATE_ONLY')['Volume'].cumsum()
+    df['VWAP'] = df.groupby('DATE_ONLY')['PV'].cumsum() / (df.groupby('DATE_ONLY')['Volume'].cumsum() + 1e-9)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -62,12 +63,15 @@ def fetch_data():
     return d15m, d1h
 
 # =========================================================
-# 3. SCAN ENGINE (Completing your code)
+# 3. SCAN ENGINE (Fixed Logic)
 # =========================================================
 def scan_single_stock(stock, data_15m, nifty_15m, market_trend):
     try:
         ticker = stock + ".NS"
-        df = add_indicators(data_15m[ticker].dropna())
+        stock_raw = data_15m[ticker].dropna()
+        if stock_raw.empty: return []
+        
+        df = add_indicators(stock_raw)
         if df.empty: return []
         
         results = []
@@ -76,53 +80,67 @@ def scan_single_stock(stock, data_15m, nifty_15m, market_trend):
         
         for i in range(len(df_today)):
             idx = df.index.get_loc(df_today.index[i])
+            if idx < 1: continue
+            
             row = df.iloc[idx]
             prev = df.iloc[idx-1]
             n_row = nifty_15m.reindex(df.index, method='ffill').iloc[idx]
             
-            # EMA9-VWAP Cross
-            buy_cross = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
-            sell_cross = (prev['EMA9'] > prev['VWAP']) and (row['EMA9'] < row['VWAP'])
+            # Cross Logic
+            cross_up = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
+            cross_down = (prev['EMA9'] > prev['VWAP']) and (row['EMA9'] < row['VWAP'])
             
-            # SUPREME CONDITIONS
             if market_trend == "POSITIVE" and n_row['Close'] > n_row['EMA20']:
-                if (buy_cross or row['EMA9'] > row['VWAP']) and row['RSI'] > 55 and row['MACD'] > row['MACD_SIGNAL']:
-                    results.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": stock, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "ATR": round(row['ATR'], 2)})
+                if (cross_up or row['EMA9'] > row['VWAP']) and row['RSI'] > 55 and row['MACD'] > row['MACD_SIGNAL']:
+                    results.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": stock, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
             
             elif market_trend == "NEGATIVE" and n_row['Close'] < n_row['EMA20']:
-                if (sell_cross or row['EMA9'] < row['VWAP']) and row['RSI'] < 45 and row['MACD'] < row['MACD_SIGNAL']:
-                    results.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": stock, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "ATR": round(row['ATR'], 2)})
+                if (cross_down or row['EMA9'] < row['VWAP']) and row['RSI'] < 45 and row['MACD'] < row['MACD_SIGNAL']:
+                    results.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": stock, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
         return results
     except: return []
 
 # =========================================================
-# 4. UI EXECUTION
+# 4. DATA FETCH & TREND CALCULATION (Error Fixed)
 # =========================================================
-d15m, d1h = fetch_data()
-nifty_15m = add_indicators(d15m["^NSEI"].dropna())
-n_last_1h = d1h['Close'].iloc[-1]
-n_ema_1h = d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
-market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
+try:
+    d15m, d1h = fetch_data()
+    nifty_15m_raw = d15m["^NSEI"].dropna()
+    
+    if not nifty_15m_raw.empty and not d1h.empty:
+        nifty_15m = add_indicators(nifty_15m_raw)
+        n_last_1h = d1h['Close'].iloc[-1]
+        n_ema_1h = d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
+        
+        # Display Trend Box
+        box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
+        st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend} {"📈" if market_trend == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
+    else:
+        st.error("⚠️ Nifty data is currently unavailable. Please check your internet or try after 9:15 AM.")
+        market_trend = "UNKNOWN"
+        nifty_15m = pd.DataFrame()
 
-# Top Trend Box
-box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
-st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend} {"📈" if market_trend == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
+except Exception as e:
+    st.error(f"⚠️ Connection Error: {str(e)}")
+    market_trend = "UNKNOWN"
 
-tab1, tab2 = st.tabs(["🔍 SUPREME TRACKER", "📊 BACKTEST REPORT"])
+# =========================================================
+# 5. UI TABS
+# =========================================================
+tab1, tab2 = st.tabs(["🔍 SUPREME SCANNER", "📊 5-DAY BACKTEST"])
 
 with tab1:
-    if st.button("🚀 RUN SUPREME SCAN"):
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            all_res = list(executor.map(lambda s: scan_single_stock(s, d15m, nifty_15m, market_trend), stocks))
-        flat_res = [item for sublist in all_res for item in sublist]
-        if flat_res:
-            df_final = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
-            st.dataframe(df_final, use_container_width=True)
-            # Excel Download
-            out = io.BytesIO()
-            df_final.to_excel(out, index=False)
-            st.download_button("📥 Download Supreme Report", out.getvalue(), "Supreme_Signals.xlsx")
-        else: st.info("No supreme signals found for current trend.")
-
-with tab2:
-    st.write("Backtest results will appear here based on 10-day history.")
+    if market_trend != "UNKNOWN":
+        if st.button("🚀 START SCAN"):
+            with ThreadPoolExecutor(max_workers=30) as executor:
+                all_res = list(executor.map(lambda s: scan_single_stock(s, d15m, nifty_15m, market_trend), stocks))
+            flat_res = [item for sublist in all_res for item in sublist]
+            if flat_res:
+                df_f = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
+                st.dataframe(df_f, use_container_width=True)
+                # Excel
+                out = io.BytesIO()
+                df_f.to_excel(out, index=False)
+                st.download_button("📥 Download Report", out.getvalue(), "Supreme_Signals.xlsx")
+            else: st.info("No signals found for the current trend.")
