@@ -6,11 +6,12 @@ from datetime import datetime
 import pytz
 from concurrent.futures import ThreadPoolExecutor
 import io
+import time
 
 # ==========================================
-# 1. PAGE CONFIG & STYLING
+# 1. CONFIG & STYLING
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.4 SUPREME", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.5 SUPREME", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
@@ -24,7 +25,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.4 SUPREME</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.5 SUPREME</div>', unsafe_allow_html=True)
 st.markdown(f'<div class="sub-title">🕒 LIVE TIME : {now.strftime("%H:%M:%S")} IST</div>', unsafe_allow_html=True)
 
 # ==========================================
@@ -35,7 +36,7 @@ stocks = ["ABB", "ACC", "ADANIENT", "ADANIPORTS", "AXISBANK", "BAJFINANCE", "BHA
 
 def add_indicators(df):
     df = df.copy()
-    if df.empty or len(df) < 20: return pd.DataFrame()
+    if df.empty or len(df) < 25: return pd.DataFrame()
     df['DATE_ONLY'] = df.index.date
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
@@ -50,15 +51,22 @@ def add_indicators(df):
     ema12, ema26 = df['Close'].ewm(span=12).mean(), df['Close'].ewm(span=26).mean()
     df['MACD'] = ema12 - ema26
     df['MACD_SIGNAL'] = df['MACD'].ewm(span=9).mean()
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     return df
 
-@st.cache_data(ttl=300) # కాష్ టైమ్ పెంచాను (5 నిమిషాలు)
-def fetch_data():
-    tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
-    # డేటా మిస్ అవ్వకుండా 7 రోజుల డేటా తీసుకుంటున్నాం
-    d15m = yf.download(tickers, period="7d", interval="15m", group_by="ticker", progress=False)
-    d1h = yf.download("^NSEI", period="7d", interval="1h", progress=False)
-    return d15m, d1h
+@st.cache_data(ttl=300)
+def fetch_data_secure():
+    try:
+        tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
+        # కనెక్షన్ ఎర్రర్ రాకుండా Retry లాజిక్
+        for i in range(3):
+            data_15m = yf.download(tickers, period="7d", interval="15m", group_by="ticker", progress=False)
+            data_1h = yf.download("^NSEI", period="7d", interval="1h", progress=False)
+            if not data_15m.empty: return data_15m, data_1h
+            time.sleep(2)
+        return pd.DataFrame(), pd.DataFrame()
+    except:
+        return pd.DataFrame(), pd.DataFrame()
 
 # ==========================================
 # 3. SCAN LOGIC
@@ -93,46 +101,52 @@ def scan_stock_logic(stock, data_15m, nifty_15m, market_trend, is_backtest=False
     except: return []
 
 # ==========================================
-# 4. EXECUTION
+# 4. UI EXECUTION
 # ==========================================
-try:
-    d15m, d1h = fetch_data()
-    nifty_15m = pd.DataFrame()
-    market_trend = "UNKNOWN"
+d15m, d1h = fetch_data_secure()
+market_trend = "UNKNOWN"
+nifty_15m = pd.DataFrame()
 
-    if not d1h.empty:
-        n_last_1h = float(d1h['Close'].iloc[-1])
-        n_ema_1h = float(d1h['Close'].ewm(span=20).mean().iloc[-1])
-        market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
-        n_raw = d15m["^NSEI"].dropna()
-        if not n_raw.empty: nifty_15m = add_indicators(n_raw)
-        
-        box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
-        st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend}</div>', unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ Market data is refreshing. Please wait or try again.")
+if not d1h.empty:
+    n_last_1h = float(d1h['Close'].iloc[-1])
+    n_ema_1h = float(d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1])
+    market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
+    n_raw = d15m["^NSEI"].dropna()
+    if not n_raw.empty: nifty_15m = add_indicators(n_raw)
+    
+    box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
+    st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend}</div>', unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 5-DAY BACKTEST"])
+tab1, tab2 = st.tabs(["🔍 LIVE TRACKER (Today)", "📊 5-DAY BACKTEST"])
 
-    with tab1:
-        if st.button("🚀 START LIVE SCAN"):
+with tab1:
+    if st.button("🚀 START LIVE SCAN"):
+        if d15m.empty: st.error("⚠️ Connection lost. Please check internet and refresh.")
+        else:
             with ThreadPoolExecutor(max_workers=30) as executor:
                 all_res = list(executor.map(lambda s: scan_stock_logic(s, d15m, nifty_15m, market_trend), stocks))
             flat_res = [item for sublist in all_res for item in sublist]
             if flat_res:
                 df_l = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
                 st.dataframe(df_l.drop(columns=['DATE']), use_container_width=True)
-            else: st.info("No signals right now. Market might be closed.")
+                # Excel
+                out = io.BytesIO()
+                df_l.to_excel(out, index=False)
+                st.download_button("📥 Excel Today", out.getvalue(), f"Live_Signals_{now.strftime('%d%m')}.xlsx")
+            else: st.info("No strong signals right now.")
 
-    with tab2:
-        if st.button("📊 RUN BACKTEST"):
+with tab2:
+    if st.button("📊 RUN 5-DAY BACKTEST"):
+        if d15m.empty: st.error("⚠️ Connection lost.")
+        else:
             with ThreadPoolExecutor(max_workers=30) as executor:
                 all_bt = list(executor.map(lambda s: scan_stock_logic(s, d15m, nifty_15m, market_trend, is_backtest=True), stocks))
             flat_bt = [item for sublist in all_bt for item in sublist]
             if flat_bt:
                 df_bt = pd.DataFrame(flat_bt).sort_values(by=["DATE", "TIME"], ascending=False)
                 st.dataframe(df_bt, use_container_width=True)
-            else: st.info("No historical data found.")
-
-except Exception as e:
-    st.error("⚠️ Connection Error. Please refresh the page.")
+                # Excel
+                out_bt = io.BytesIO()
+                df_bt.to_excel(out_bt, index=False)
+                st.download_button("📥 Excel Backtest", out_bt.getvalue(), "Backtest_Report.xlsx")
+            else: st.info("No historical signals found.")
