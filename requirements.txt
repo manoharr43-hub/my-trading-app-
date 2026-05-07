@@ -3,5 +3,4 @@ yfinance
 pandas
 numpy
 pytz
-pandas_ta
 xlsxwriter
