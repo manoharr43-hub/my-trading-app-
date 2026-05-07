@@ -69,7 +69,7 @@ def fetch_data():
     d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
     return d5, d1h
 
-# 4. CORE SCAN LOGIC (Fixed nifty_df Name Error)
+# 4. CORE SCAN LOGIC (Fixed nifty_5m mapping)
 def scan_stock(s, d5, nifty_5m, n_trend_1h, is_backtest=False):
     try:
         ticker_data = d5[s + ".NS"].dropna()
@@ -86,6 +86,8 @@ def scan_stock(s, d5, nifty_5m, n_trend_1h, is_backtest=False):
             
             row = df.iloc[idx]
             prev = df.iloc[idx-1]
+            
+            # Fixed Name Error: nifty_5m used correctly here
             n_row_5m = nifty_5m.reindex(df.index, method='ffill').iloc[idx]
             
             cross_up = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
