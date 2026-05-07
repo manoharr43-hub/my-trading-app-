@@ -14,7 +14,6 @@ st.set_page_config(page_title="🚀 NSE AI QUANT PRO V7.2 ULTRA", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-# UI Styling
 st.markdown("""
     <style>
     .nifty-box { padding: 25px; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
@@ -70,7 +69,7 @@ def fetch_data():
     d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
     return d5, d1h
 
-# 4. CORE SCAN LOGIC
+# 4. CORE SCAN LOGIC (Fixed nifty_df Name Error)
 def scan_stock(s, d5, nifty_5m, n_trend_1h, is_backtest=False):
     try:
         ticker_data = d5[s + ".NS"].dropna()
@@ -110,11 +109,11 @@ n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mea
 box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
 st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h}</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["🔍 LIVE TRACKER (Today)", "📊 5-DAY BACKTEST"])
+tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 5-DAY BACKTEST"])
 
 with tab1:
-    if st.button("🚀 START LIVE SCAN"):
-        with st.spinner("Scanning 200 stocks..."):
+    if st.button("🚀 START SCAN"):
+        with st.spinner("Analyzing 200 stocks..."):
             with ThreadPoolExecutor(max_workers=30) as executor:
                 all_res = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
             flat_res = [item for sublist in all_res for item in sublist]
