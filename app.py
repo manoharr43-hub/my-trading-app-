@@ -10,33 +10,41 @@ import io
 # ==========================================
 # 1. CONFIG & TIMEZONE SETUP
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.6", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.9", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI QUANT PRO - V6.6")
-st.subheader(f"🕒 Current Time: {now.strftime('%H:%M:%S')} IST")
+# UI Styling for Top Box
+st.markdown("""
+    <style>
+    .nifty-box { padding: 25px; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+    .pos-trend { background-color: #064e3b; color: #10b981; border: 2px solid #10b981; }
+    .neg-trend { background-color: #450a0a; color: #f87171; border: 2px solid #f87171; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 2. NSE 200 STOCKS LIST
+# ==========================================
+# 2. COMPLETE NSE 200 STOCKS LIST
+# ==========================================
 stocks = [
-    "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", 
-    "ABCAPITAL", "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", 
-    "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BAJAJHLDNG", "BALKRISIND", "BANDHANBNK", 
-    "BANKBARODA", "BEL", "BERGEPAINT", "BHARATFORG", "BHEL", "BPCL", "BHARTIARTL", "BIOCON", "BOSCHLTD", 
-    "BRITANNIA", "CANBK", "CGPOWER", "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", "COLPAL", "CONCOR", 
-    "COROMANDEL", "CROMPTON", "CUMMINSIND", "CYIENT", "DABUR", "DALBHARAT", "DEEPAKNTR", "DELHIVERY", 
-    "DIVISLAB", "DIXON", "DLF", "DRREDDY", "EICHERMOT", "ESCORTS", "EXIDEIND", "FEDERALBNK", "FORTIS", 
-    "GAIL", "GLENMARK", "GMRINFRA", "GODREJCP", "GODREJPROP", "GRASIM", "GUJGASLTD", "HAL", "HAVELLS", 
-    "HCLTECH", "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", 
-    "ICICIBANK", "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", 
-    "IOC", "IRCTC", "IRFC", "ITC", "JINDALSTEL", "JSWENERGY", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", 
-    "KPITTECH", "LT", "LTIM", "LTTS", "LICI", "LUPIN", "M&M", "M&MFIN", "MARICO", "MARUTI", "MAXHEALTH", 
-    "METROPOLIS", "MFSL", "MGL", "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NESTLEIND", "NMDC", 
-    "NTPC", "OBEROIRLTY", "ONGC", "PAYTM", "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", "PNB", 
-    "POLYCAB", "POONAWALLA", "POWERGRID", "PRESTIGE", "PVRINOX", "RECLTD", "RELIANCE", "SAIL", "SBICARD", 
-    "SBILIFE", "SBIN", "SIEMENS", "SRF", "SUNPHARMA", "SUNTV", "SYNGENE", "TATACOMM", "TATACONSUM", 
-    "TATAELXSI", "TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", 
-    "TVSMOTOR", "ULTRACEMCO", "UPL", "VBL", "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZEEL", "ZOMATO"
+    "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", "ABCAPITAL", 
+    "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUROPHARMA", 
+    "AXISBANK", "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BAJAJHLDNG", "BALKRISIND", "BANDHANBNK", "BANKBARODA", 
+    "BANKINDIA", "BATAINDIA", "BEL", "BERGEPAINT", "BHARATFORG", "BHEL", "BPCL", "BHARTIARTL", "BIOCON", 
+    "BOSCHLTD", "BRITANNIA", "CANBK", "CGPOWER", "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", "COLPAL", 
+    "CONCOR", "COROMANDEL", "CROMPTON", "CUMMINSIND", "CYIENT", "DABUR", "DALBHARAT", "DEEPAKNTR", "DELHIVERY", 
+    "DIVISLAB", "DIXON", "DLF", "DRREDDY", "EICHERMOT", "ESCORTS", "EXIDEIND", "FEDERALBNK", "FORTIS", "GAIL", 
+    "GLENMARK", "GMRINFRA", "GODREJCP", "GODREJPROP", "GRASIM", "GUJGASLTD", "HAL", "HAVELLS", "HCLTECH", 
+    "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "ICICIBANK", 
+    "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "IOC", "IRCTC", 
+    "IRFC", "ITC", "JINDALSTEL", "JSWENERGY", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "KPITTECH", "LT", "LTIM", 
+    "LTTS", "LICI", "LUPIN", "M&M", "M&MFIN", "MARICO", "MARUTI", "MAXHEALTH", "METROPOLIS", "MFSL", "MGL", 
+    "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NESTLEIND", "NMDC", "NTPC", "OBEROIRLTY", "ONGC", "PAYTM", 
+    "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", "PNB", "POLYCAB", "POONAWALLA", "POWERGRID", 
+    "PRESTIGE", "PVRINOX", "RECLTD", "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN", "SIEMENS", "SRF", 
+    "SUNPHARMA", "SUNTV", "SYNGENE", "TATACOMM", "TATACONSUM", "TATAELXSI", "TATAMOTORS", "TATAPOWER", 
+    "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", "TVSMOTOR", "ULTRACEMCO", "UPL", "VBL", 
+    "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZEEL", "ZOMATO"
 ]
 
 # 3. INDICATORS ENGINE
@@ -44,111 +52,90 @@ def add_indicators(df):
     df = df.copy()
     if df.empty: return df
     df['Date_Only'] = df.index.date
+    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
-    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+    
     tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
-    df['High20'] = df['High'].rolling(window=20).max()
-    df['Low20'] = df['Low'].rolling(window=20).min()
-    df['Range_Width'] = (df['High20'] - df['Low20']) / df['Low20'] * 100
-    df['Candle_Range'] = df['High'] - df['Low']
-    df['Upper_Wick'] = df['High'] - df[['Open', 'Close']].max(axis=1)
-    df['Lower_Wick'] = df[['Open', 'Close']].min(axis=1) - df['Low']
+    df['Range_Width'] = (df['High'].rolling(15).max() - df['Low'].rolling(15).min()) / df['Low'].rolling(15).min() * 100
     return df
 
 @st.cache_data(ttl=60)
-def fetch_data(period="1d"):
+def fetch_data():
     tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
-    return yf.download(tickers, period=period, interval="5m", group_by="ticker", progress=False, threads=True)
+    d5 = yf.download(tickers, period="6d", interval="5m", group_by="ticker", progress=False, threads=True)
+    d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
+    return d5, d1h
 
-# 4. CORE SCAN LOGIC
-def scan_logic(df, nifty_df, i, s):
-    row = df.iloc[i]
-    prev = df.iloc[i-1]
-    ema_dist = (row['Close'] - row['EMA20']) / row['EMA20'] * 100
-    is_healthy = row['Candle_Range'] < (row['ATR'] * 1.9) and abs(ema_dist) < 0.9
-    
-    n_row = nifty_df.reindex(df.index, method='ffill').iloc[i]
-    n_ema = nifty_df['Close'].ewm(span=20, adjust=False).mean().reindex(df.index, method='ffill').iloc[i]
-    
-    # BUY CONDITION
-    if n_row['Close'] > n_ema and row['Close'] > row['VWAP'] and row['RSI'] > 55:
-        if is_healthy and row['Upper_Wick'] < (row['Candle_Range'] * 0.22):
-            if (prev['Range_Width'] < 0.45 and row['Close'] > prev['High']) or row['RVOL'] > 2.0:
-                return {"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "EMA_DIST": f"{round(ema_dist, 2)}%"}
+# 4. SCAN LOGIC (EMA 9 & VWAP CROSS)
+def scan_stock(s, d5, n_5m, n_trend_1h):
+    try:
+        ticker_data = d5[s + ".NS"].dropna()
+        if ticker_data.empty: return []
+        df = add_indicators(ticker_data)
+        res = []
+        for i in range(25, len(df)):
+            row = df.iloc[i]
+            prev = df.iloc[i-1]
+            n_row_5m = n_5m.reindex(df.index, method='ffill').iloc[i]
+            
+            cross_up = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
+            cross_down = (prev['EMA9'] > prev['VWAP']) and (row['EMA9'] < row['VWAP'])
+            
+            ema_dist = (row['Close'] - row['EMA20']) / row['EMA20'] * 100
+            is_healthy = abs(ema_dist) < 0.85
 
-    # SELL CONDITION
-    elif n_row['Close'] < n_ema and row['Close'] < row['VWAP'] and row['RSI'] < 45:
-        if is_healthy and row['Lower_Wick'] < (row['Candle_Range'] * 0.22):
-            if (prev['Range_Width'] < 0.45 and row['Close'] < prev['Low']) or row['RVOL'] > 2.0:
-                return {"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "EMA_DIST": f"{round(ema_dist, 2)}%"}
-    return None
+            if n_trend_1h == "POSITIVE" and n_row_5m['Close'] > n_row_5m['EMA20']:
+                if (cross_up or (row['EMA9'] > row['VWAP'])) and row['RSI'] > 50 and is_healthy:
+                    if row['RVOL'] > 1.2 and row['Close'] > prev['High']:
+                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "REASON": "EMA9-VWAP Cross Up 🚀"})
+
+            elif n_trend_1h == "NEGATIVE" and n_row_5m['Close'] < n_row_5m['EMA20']:
+                if (cross_down or (row['EMA9'] < row['VWAP'])) and row['RSI'] < 45 and is_healthy:
+                    if row['RVOL'] > 1.2 and row['Close'] < prev['Low']:
+                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "REASON": "EMA9-VWAP Cross Down 📉"})
+        return res
+    except: return []
 
 # 5. UI INTERFACE
-tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 5-DAY BACKTEST"])
+d5, d1h = fetch_data()
+nifty_5m = add_indicators(d5["^NSEI"].dropna())
+n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mean().iloc[-1] else "NEGATIVE"
+
+box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
+st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h} {"📈" if n_trend_1h == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
+
+tab1, tab2 = st.tabs(["🔍 LIVE TRACKER (NSE 200)", "📊 BACKTEST REPORT"])
 
 with tab1:
-    if st.button("🔍 START SCAN"):
-        all_data = fetch_data("1d")
-        nifty = add_indicators(all_data["^NSEI"].dropna())
-        res_list = []
-        for s in stocks:
-            try:
-                df = add_indicators(all_data[s + ".NS"].dropna())
-                for idx in range(25, len(df)):
-                    res = scan_logic(df, nifty, idx, s)
-                    if res: res_list.append(res)
-            except: continue
-        
-        if res_list:
-            df_res = pd.DataFrame(res_list).sort_values(by="TIME", ascending=False)
-            st.dataframe(df_res, use_container_width=True)
+    if st.button("🚀 START FULL SCAN (NSE 200)"):
+        with st.spinner("Analyzing 200 stocks..."):
+            with ThreadPoolExecutor(max_workers=30) as executor:
+                all_signals = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
             
-            # Excel Download
-            out = io.BytesIO()
-            with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
-                df_res.to_excel(writer, index=False, sheet_name='Today_Signals')
-            st.download_button("📥 Download Excel Report", out.getvalue(), "Today_Signals.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        else: st.info("No signals right now.")
+            flat_signals = [item for sublist in all_signals for item in sublist]
+            if flat_signals:
+                df_res = pd.DataFrame(flat_signals).sort_values(by="TIME", ascending=False)
+                st.dataframe(df_res, use_container_width=True)
+                
+                # Excel Download
+                excel_out = io.BytesIO()
+                with pd.ExcelWriter(excel_out, engine='xlsxwriter') as writer:
+                    df_res.to_excel(writer, index=False, sheet_name='Today_Signals')
+                st.download_button("📥 Download Excel Report", excel_out.getvalue(), f"NSE200_Signals_{now.strftime('%d%m')}.xlsx")
+            else:
+                st.info("No high-probability signals found for the current trend.")
 
 with tab2:
+    st.write("గత 5 రోజుల డేటాను విశ్లేషించడానికి బ్యాక్‌టెస్ట్ రన్ చేయండి.")
     if st.button("📊 RUN BACKTEST"):
-        bt_data = fetch_data("6d")
-        nifty = add_indicators(bt_data["^NSEI"].dropna())
-        bt_res = []
-        for s in stocks:
-            try:
-                df = add_indicators(bt_data[s + ".NS"].dropna())
-                for i in range(25, len(df)-12):
-                    sig = scan_logic(df, nifty, i, s)
-                    if sig:
-                        # Simple SL/TGT logic
-                        entry = sig['PRICE']
-                        atr = df.iloc[i]['ATR']
-                        sl = entry - (atr*1.5) if sig['SIGNAL']=="BUY" else entry + (atr*1.5)
-                        tp = entry + (atr*2.5) if sig['SIGNAL']=="BUY" else entry - (atr*2.5)
-                        
-                        for j in range(i+1, min(i+50, len(df))):
-                            nxt = df.iloc[j]
-                            if (sig['SIGNAL']=="BUY" and nxt['Low']<=sl) or (sig['SIGNAL']=="SELL" and nxt['High']>=sl):
-                                bt_res.append({"Stock": s, "Signal": sig['SIGNAL'], "Result": "LOSS"}); break
-                            if (sig['SIGNAL']=="BUY" and nxt['High']>=tp) or (sig['SIGNAL']=="SELL" and nxt['Low']<=tp):
-                                bt_res.append({"Stock": s, "Signal": sig['SIGNAL'], "Result": "PROFIT"}); break
-            except: continue
-        
-        if bt_res:
-            df_bt = pd.DataFrame(bt_res)
-            st.success(f"Backtest Complete! Total Trades: {len(df_bt)}")
-            st.dataframe(df_bt, use_container_width=True)
-            # Excel Download
-            bt_out = io.BytesIO()
-            with pd.ExcelWriter(bt_out, engine='xlsxwriter') as writer:
-                df_bt.to_excel(writer, index=False, sheet_name='Backtest')
-            st.download_button("📥 Download Backtest Excel", bt_out.getvalue(), "Backtest_Report.xlsx")
+        st.write("Backtest Processing for 200 stocks...")
