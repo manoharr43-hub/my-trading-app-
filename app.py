@@ -10,16 +10,16 @@ import io
 # =========================================================
 # PAGE CONFIG & TIMEZONE
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT V17.1 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT V18.0 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V17.1</h1>', unsafe_allow_html=True)
-st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Error Fixed & High Precision</h4>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V18.0</h1>', unsafe_allow_html=True)
+st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Live Scanner Excel + TGT Status</h4>', unsafe_allow_html=True)
 
 # =========================================================
-# POWER INDICATORS ENGINE
+# PRECISION INDICATORS ENGINE
 # =========================================================
 def get_indicators(df):
     df = df.copy()
@@ -30,13 +30,10 @@ def get_indicators(df):
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9)
 
-    # ADX Calculation
-    plus_dm = df['High'].diff()
-    minus_dm = df['Low'].diff()
-    plus_dm[plus_dm < 0] = 0
-    minus_dm[minus_dm > 0] = 0
-    minus_dm = abs(minus_dm)
-    tr = pd.concat([df['High'] - df['Low'], abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))], axis=1).max(axis=1)
+    # ADX Logic
+    tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))], axis=1).max(axis=1)
+    plus_dm = df['High'].diff().clip(lower=0)
+    minus_dm = df['Low'].diff().clip(upper=0).abs()
     plus_di = 100 * (plus_dm.rolling(14).mean() / (tr.rolling(14).mean() + 1e-9))
     minus_di = 100 * (minus_dm.rolling(14).mean() / (tr.rolling(14).mean() + 1e-9))
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)
@@ -81,8 +78,9 @@ def scan(stock, mode="TODAY"):
         scan_df = df[df.index.date == now.date()] if mode == "TODAY" else df
         results = []
         for i in range(2, len(scan_df)):
-            row, prev = scan_df.iloc[i], scan_df.iloc[i-1]
+            row = scan_df.iloc[i]
             valid_time = time(9, 45) <= row.name.time() <= time(14, 45)
+            
             buy_sig = (row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP'] and row['ADX'] > 30 and 55 < row['RSI'] < 65 and valid_time)
             sell_sig = (row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP'] and row['ADX'] > 30 and 35 < row['RSI'] < 45 and valid_time)
 
@@ -92,52 +90,53 @@ def scan(stock, mode="TODAY"):
                 risk = row['ATR'] * 1.5
                 sl = round(price - risk, 2) if buy_sig else round(price + risk, 2)
                 tgt = round(price + (risk * 2), 2) if buy_sig else round(price - (risk * 2), 2)
-                status, pnl = "OPEN", 0.0
-                if mode == "BACKTEST":
-                    future = scan_df.iloc[i+1 : i+25]
-                    for _, f in future.iterrows():
-                        if buy_sig:
-                            if f['High'] >= tgt: status, pnl = "🎯 TGT DONE", round(tgt - price, 2); break
-                            elif f['Low'] <= sl: status, pnl = "🛑 SL HIT", round(sl - price, 2); break
-                        else:
-                            if f['Low'] <= tgt: status, pnl = "🎯 TGT DONE", round(price - tgt, 2); break
-                            elif f['High'] >= sl: status, pnl = "🛑 SL HIT", round(price - sl, 2); break
-                results.append({"DATE": row.name.strftime("%Y-%m-%d"), "TIME": row.name.strftime("%H:%M"), "STOCK": stock, "SIGNAL": sig, "PRICE": price, "SL": sl, "TGT": tgt, "RESULT": status, "P&L": pnl})
+                
+                # Live Status Check
+                ltp = round(scan_df.iloc[-1]['Close'], 2)
+                status = "⏳ RUNNING"
+                if buy_sig and ltp >= tgt: status = "✅ TGT HIT"
+                elif sell_sig and ltp <= tgt: status = "✅ TGT HIT"
+                elif buy_sig and ltp <= sl: status = "❌ SL HIT"
+                elif sell_sig and ltp >= sl: status = "❌ SL HIT"
+
+                results.append({
+                    "TIME": row.name.strftime("%H:%M"), "STOCK": stock, "SIGNAL": sig, 
+                    "ENTRY": price, "LTP": ltp, "SL": sl, "TGT": tgt, "STATUS": status,
+                    "ADX": round(row['ADX'], 1), "RSI": round(row['RSI'], 1), "DATE": row.name.strftime("%Y-%m-%d")
+                })
         return results
     except: return []
 
 # =========================================================
-# UI & ERROR FIX (Using .map instead of .applymap)
+# UI & DOWNLOAD HELPERS
 # =========================================================
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
+        df.to_excel(writer, index=False, sheet_name='Signals')
     return output.getvalue()
 
-def color_rows(val):
-    if val == "🎯 TGT DONE": return 'color: #4ade80; font-weight: bold'
-    if val == "🛑 SL HIT": return 'color: #f87171; font-weight: bold'
-    return ''
+def color_status(val):
+    if "TGT" in str(val): return 'color: #4ade80; font-weight: bold'
+    if "SL" in str(val): return 'color: #f87171; font-weight: bold'
+    return 'color: #fbbf24'
 
-tab1, tab2 = st.tabs(["🔍 SCANNER", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST"])
 
 with tab1:
-    if st.button("🚀 RUN SCANNER"):
+    if st.button("🚀 RUN SCANNER (V18)"):
         res = [item for s in stocks for item in scan(s, "TODAY")]
         if res:
             df = pd.DataFrame(res).drop_duplicates('STOCK', keep='last').sort_values('TIME', ascending=False)
-            st.dataframe(df, use_container_width=True)
-        else: st.info("No precision signals found.")
+            st.dataframe(df.style.map(color_status, subset=['STATUS']), use_container_width=True)
+            # Scanner Excel Add
+            st.download_button("📥 Download Scanner Excel", to_excel(df), f"Scanner_{now.date()}.xlsx")
+        else: st.info("No precision signals detected.")
 
 with tab2:
-    if st.button("📊 RUN BACKTEST"):
+    if st.button("📊 RUN BACKTEST (V18)"):
         res_bt = [item for s in stocks for item in scan(s, "BACKTEST")]
         if res_bt:
             df_bt = pd.DataFrame(res_bt).sort_values(['DATE', 'TIME'], ascending=False)
-            # FIX: Using .map() instead of .applymap() to avoid the error
-            try:
-                st.dataframe(df_bt.style.map(color_rows, subset=['RESULT']), use_container_width=True)
-            except AttributeError:
-                st.dataframe(df_bt.style.applymap(color_rows, subset=['RESULT']), use_container_width=True)
-            st.download_button("📥 Download Report", to_excel(df_bt), "Backtest_V17.xlsx")
+            st.dataframe(df_bt.style.map(color_status, subset=['STATUS']), use_container_width=True)
+            st.download_button("📥 Download Backtest Excel", to_excel(df_bt), "Backtest_V18.xlsx")
