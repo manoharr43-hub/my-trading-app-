@@ -8,15 +8,15 @@ import io
 from streamlit_autorefresh import st_autorefresh
 
 # =========================================================
-# 🚀 NSE AI QUANT PRO V7 ULTRA
-# EMA9 VWAP CROSS + RSI + RVOL + EMA20
+# 🚀 NSE AI QUANT PRO V7.1 ULTRA FIXED
+# EMA9 VWAP CROSS + RSI + RVOL + MACD + BACKTEST
 # =========================================================
 
 # =========================================================
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="🚀 NSE AI QUANT PRO V7 ULTRA",
+    page_title="🚀 NSE AI QUANT PRO V7.1 ULTRA",
     layout="wide"
 )
 
@@ -34,7 +34,7 @@ now = datetime.now(IST)
 # =========================================================
 # TITLE
 # =========================================================
-st.title("🚀 NSE AI QUANT PRO V7 ULTRA")
+st.title("🚀 NSE AI QUANT PRO V7.1 ULTRA")
 st.subheader(f"🕒 LIVE TIME : {now.strftime('%H:%M:%S')} IST")
 
 # =========================================================
@@ -48,9 +48,9 @@ stocks = [
     "SUNPHARMA","TATAMOTORS","TATASTEEL","POWERGRID",
     "NTPC","ONGC","COALINDIA","JSWSTEEL","HCLTECH",
     "TECHM","INDUSINDBK","ADANIENT","ADANIPORTS",
-    "ADANIGREEN","HAL","BEL","BHEL","DLF","LODHA",
-    "IRCTC","PFC","RECLTD","BANKBARODA","PNB",
-    "CANBK","IDFCFIRSTB","YESBANK","IOC","BPCL"
+    "ADANIGREEN","HAL","BEL","BHEL","DLF","IRCTC",
+    "PFC","RECLTD","BANKBARODA","PNB","CANBK",
+    "IDFCFIRSTB","YESBANK","IOC","BPCL"
 ]
 
 # =========================================================
@@ -64,67 +64,101 @@ def add_indicators(df):
         return df
 
     # VWAP
-    df['Date'] = df.index.date
+    df['DATE_ONLY'] = df.index.date
+
     df['PV'] = df['Close'] * df['Volume']
 
     df['VWAP'] = (
-        df.groupby('Date')['PV'].cumsum()
+        df.groupby('DATE_ONLY')['PV'].cumsum()
         /
-        df.groupby('Date')['Volume'].cumsum()
+        df.groupby('DATE_ONLY')['Volume'].cumsum()
     )
 
     # EMA
-    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA9'] = df['Close'].ewm(
+        span=9,
+        adjust=False
+    ).mean()
+
+    df['EMA20'] = df['Close'].ewm(
+        span=20,
+        adjust=False
+    ).mean()
 
     # RSI
     delta = df['Close'].diff()
 
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    gain = (
+        delta.where(delta > 0, 0)
+    ).rolling(14).mean()
+
+    loss = (
+        -delta.where(delta < 0, 0)
+    ).rolling(14).mean()
 
     rs = gain / (loss + 1e-9)
 
     df['RSI'] = 100 - (100 / (1 + rs))
 
     # RVOL
-    df['VolAvg'] = df['Volume'].rolling(20).mean()
-    df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
+    df['VOL_AVG'] = df['Volume'].rolling(20).mean()
+
+    df['RVOL'] = (
+        df['Volume']
+        /
+        (df['VOL_AVG'] + 1e-9)
+    )
 
     # ATR
     tr1 = df['High'] - df['Low']
     tr2 = abs(df['High'] - df['Close'].shift())
     tr3 = abs(df['Low'] - df['Close'].shift())
 
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    tr = pd.concat(
+        [tr1, tr2, tr3],
+        axis=1
+    ).max(axis=1)
 
     df['ATR'] = tr.rolling(14).mean()
 
     # MACD
-    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+    ema12 = df['Close'].ewm(
+        span=12,
+        adjust=False
+    ).mean()
+
+    ema26 = df['Close'].ewm(
+        span=26,
+        adjust=False
+    ).mean()
 
     df['MACD'] = ema12 - ema26
-    df['MACD_SIGNAL'] = df['MACD'].ewm(span=9, adjust=False).mean()
+
+    df['MACD_SIGNAL'] = df['MACD'].ewm(
+        span=9,
+        adjust=False
+    ).mean()
 
     return df
 
 # =========================================================
-# DOWNLOAD DATA
+# FETCH DATA
 # =========================================================
 @st.cache_data(ttl=60)
 def fetch_data(period="5d"):
 
-    tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
+    tickers = [s + ".NS" for s in stocks]
+
+    tickers.append("^NSEI")
 
     data = yf.download(
         tickers=tickers,
         period=period,
         interval="15m",
         auto_adjust=True,
-        group_by="ticker",
         progress=False,
-        threads=True
+        threads=True,
+        group_by="ticker"
     )
 
     return data
@@ -134,107 +168,162 @@ def fetch_data(period="5d"):
 # =========================================================
 def generate_signal(df, nifty_df, i, stock):
 
-    row = df.iloc[i]
-    prev = df.iloc[i - 1]
+    try:
 
-    # NIFTY TREND
-    nifty_sync = nifty_df.reindex(df.index).ffill()
+        row = df.iloc[i]
+        prev = df.iloc[i - 1]
 
-    if i >= len(nifty_sync):
+        # =================================================
+        # NIFTY TREND
+        # =================================================
+        nifty_sync = nifty_df.reindex(df.index).ffill()
+
+        if i >= len(nifty_sync):
+            return None
+
+        n_row = nifty_sync.iloc[i]
+
+        market_bullish = bool(
+            n_row['Close'] > n_row['EMA20']
+        )
+
+        market_bearish = bool(
+            n_row['Close'] < n_row['EMA20']
+        )
+
+        # =================================================
+        # EMA9 VWAP CROSS
+        # =================================================
+        buy_cross = (
+            prev['EMA9'] < prev['VWAP']
+            and
+            row['EMA9'] > row['VWAP']
+        )
+
+        sell_cross = (
+            prev['EMA9'] > prev['VWAP']
+            and
+            row['EMA9'] < row['VWAP']
+        )
+
+        # =================================================
+        # MACD
+        # =================================================
+        macd_bullish = (
+            row['MACD'] > row['MACD_SIGNAL']
+        )
+
+        macd_bearish = (
+            row['MACD'] < row['MACD_SIGNAL']
+        )
+
+        # =================================================
+        # BUY SIGNAL
+        # =================================================
+        buy_signal = (
+
+            buy_cross
+
+            and
+
+            row['RSI'] > 60
+
+            and
+
+            row['RVOL'] > 1.5
+
+            and
+
+            row['Close'] > row['EMA20']
+
+            and
+
+            macd_bullish
+
+            and
+
+            market_bullish
+        )
+
+        # =================================================
+        # SELL SIGNAL
+        # =================================================
+        sell_signal = (
+
+            sell_cross
+
+            and
+
+            row['RSI'] < 40
+
+            and
+
+            row['RVOL'] > 1.5
+
+            and
+
+            row['Close'] < row['EMA20']
+
+            and
+
+            macd_bearish
+
+            and
+
+            market_bearish
+        )
+
+        # =================================================
+        # AI SCORE
+        # =================================================
+        score = round(
+            (
+                row['RVOL'] * 20
+                +
+                row['RSI']
+            ) / 2,
+            2
+        )
+
+        score = min(score, 100)
+
+        # =================================================
+        # BUY RETURN
+        # =================================================
+        if buy_signal:
+
+            return {
+                "TIME": row.name.astimezone(IST).strftime('%d-%m %H:%M'),
+                "STOCK": stock,
+                "SIGNAL": "BUY",
+                "PRICE": round(row['Close'], 2),
+                "RSI": round(row['RSI'], 2),
+                "RVOL": round(row['RVOL'], 2),
+                "AI_SCORE": score
+            }
+
+        # =================================================
+        # SELL RETURN
+        # =================================================
+        if sell_signal:
+
+            return {
+                "TIME": row.name.astimezone(IST).strftime('%d-%m %H:%M'),
+                "STOCK": stock,
+                "SIGNAL": "SELL",
+                "PRICE": round(row['Close'], 2),
+                "RSI": round(row['RSI'], 2),
+                "RVOL": round(row['RVOL'], 2),
+                "AI_SCORE": score
+            }
+
         return None
 
-    n_row = nifty_sync.iloc[i]
-
-    market_bullish = n_row['Close'] > n_row['EMA20']
-    market_bearish = n_row['Close'] < n_row['EMA20']
-
-    # EMA9 VWAP CROSS
-    buy_cross = (
-        prev['EMA9'] < prev['VWAP']
-        and
-        row['EMA9'] > row['VWAP']
-    )
-
-    sell_cross = (
-        prev['EMA9'] > prev['VWAP']
-        and
-        row['EMA9'] < row['VWAP']
-    )
-
-    # MACD
-    macd_bullish = row['MACD'] > row['MACD_SIGNAL']
-    macd_bearish = row['MACD'] < row['MACD_SIGNAL']
-
-    # BUY
-    buy_signal = (
-        buy_cross
-        and
-        row['RSI'] > 60
-        and
-        row['RVOL'] > 1.5
-        and
-        row['Close'] > row['EMA20']
-        and
-        macd_bullish
-        and
-        market_bullish
-    )
-
-    # SELL
-    sell_signal = (
-        sell_cross
-        and
-        row['RSI'] < 40
-        and
-        row['RVOL'] > 1.5
-        and
-        row['Close'] < row['EMA20']
-        and
-        macd_bearish
-        and
-        market_bearish
-    )
-
-    # AI SCORE
-    score = round(
-        (
-            row['RVOL'] * 20
-            +
-            row['RSI']
-        ) / 2,
-        2
-    )
-
-    # BUY RETURN
-    if buy_signal:
-
-        return {
-            "TIME": row.name.astimezone(IST).strftime('%d-%m %H:%M'),
-            "STOCK": stock,
-            "SIGNAL": "BUY",
-            "PRICE": round(row['Close'], 2),
-            "RSI": round(row['RSI'], 2),
-            "RVOL": round(row['RVOL'], 2),
-            "AI_SCORE": score
-        }
-
-    # SELL RETURN
-    if sell_signal:
-
-        return {
-            "TIME": row.name.astimezone(IST).strftime('%d-%m %H:%M'),
-            "STOCK": stock,
-            "SIGNAL": "SELL",
-            "PRICE": round(row['Close'], 2),
-            "RSI": round(row['RSI'], 2),
-            "RVOL": round(row['RVOL'], 2),
-            "AI_SCORE": score
-        }
-
-    return None
+    except:
+        return None
 
 # =========================================================
-# UI TABS
+# TABS
 # =========================================================
 tab1, tab2 = st.tabs([
     "🔍 LIVE SCANNER",
@@ -254,12 +343,23 @@ with tab1:
 
             all_data = fetch_data("5d")
 
+            # =================================================
+            # NIFTY
+            # =================================================
             nifty = add_indicators(
                 all_data["^NSEI"].dropna()
             )
 
+            nifty['EMA20'] = nifty['Close'].ewm(
+                span=20,
+                adjust=False
+            ).mean()
+
             results = []
 
+            # =================================================
+            # STOCK LOOP
+            # =================================================
             for stock in stocks:
 
                 try:
@@ -271,11 +371,17 @@ with tab1:
 
                     raw = all_data[ticker].dropna()
 
-                    if raw.empty or len(raw) < 30:
+                    if raw.empty:
+                        continue
+
+                    if len(raw) < 30:
                         continue
 
                     df = add_indicators(raw)
 
+                    # =========================================
+                    # SIGNAL LOOP
+                    # =========================================
                     for i in range(25, len(df)):
 
                         signal = generate_signal(
@@ -294,58 +400,78 @@ with tab1:
             # =================================================
             # RESULTS
             # =================================================
-            if results:
+            if len(results) > 0:
 
                 df_res = pd.DataFrame(results)
 
+                # REMOVE DUPLICATES
                 df_res = df_res.drop_duplicates(
                     subset=["STOCK", "SIGNAL"],
                     keep="last"
                 )
 
+                # SORT
                 df_res = df_res.sort_values(
                     by="AI_SCORE",
                     ascending=False
                 )
 
+                # =================================================
                 # MARKET TREND
+                # =================================================
                 nifty_last = nifty.iloc[-1]
 
                 if nifty_last['Close'] > nifty_last['EMA20']:
-                    st.success("📈 MARKET TREND : BULLISH")
-                else:
-                    st.error("📉 MARKET TREND : BEARISH")
 
+                    st.success(
+                        "📈 MARKET TREND : BULLISH"
+                    )
+
+                else:
+
+                    st.error(
+                        "📉 MARKET TREND : BEARISH"
+                    )
+
+                # =================================================
                 # METRICS
-                total_buy = len(df_res[df_res['SIGNAL'] == "BUY"])
-                total_sell = len(df_res[df_res['SIGNAL'] == "SELL"])
+                # =================================================
+                total_buy = len(
+                    df_res[df_res['SIGNAL'] == "BUY"]
+                )
+
+                total_sell = len(
+                    df_res[df_res['SIGNAL'] == "SELL"]
+                )
 
                 c1, c2, c3 = st.columns(3)
 
-                c1.metric("TOTAL SIGNALS", len(df_res))
-                c2.metric("BUY SIGNALS", total_buy)
-                c3.metric("SELL SIGNALS", total_sell)
+                c1.metric(
+                    "TOTAL SIGNALS",
+                    len(df_res)
+                )
 
-                # COLOR STYLE
-                def color_signal(val):
+                c2.metric(
+                    "BUY SIGNALS",
+                    total_buy
+                )
 
-                    if val == "BUY":
-                        return "background-color: green; color:white"
+                c3.metric(
+                    "SELL SIGNALS",
+                    total_sell
+                )
 
-                    if val == "SELL":
-                        return "background-color: red; color:white"
-
-                    return ""
-
+                # =================================================
+                # DATAFRAME
+                # =================================================
                 st.dataframe(
-                    df_res.style.applymap(
-                        color_signal,
-                        subset=['SIGNAL']
-                    ),
+                    df_res,
                     use_container_width=True
                 )
 
-                # DOWNLOAD
+                # =================================================
+                # EXCEL DOWNLOAD
+                # =================================================
                 output = io.BytesIO()
 
                 with pd.ExcelWriter(
@@ -367,7 +493,10 @@ with tab1:
                 )
 
             else:
-                st.warning("No Strong Signals Found")
+
+                st.warning(
+                    "❌ No Strong Signals Found"
+                )
 
 # =========================================================
 # BACKTEST
@@ -388,6 +517,9 @@ with tab2:
 
             bt_results = []
 
+            # =================================================
+            # STOCK LOOP
+            # =================================================
             for stock in stocks:
 
                 try:
@@ -399,11 +531,17 @@ with tab2:
 
                     raw = bt_data[ticker].dropna()
 
-                    if raw.empty or len(raw) < 50:
+                    if raw.empty:
+                        continue
+
+                    if len(raw) < 50:
                         continue
 
                     df = add_indicators(raw)
 
+                    # =============================================
+                    # SIGNAL LOOP
+                    # =============================================
                     for i in range(30, len(df)-20):
 
                         signal = generate_signal(
@@ -419,20 +557,29 @@ with tab2:
 
                             atr = df.iloc[i]['ATR']
 
+                            # BUY
                             if signal['SIGNAL'] == "BUY":
 
                                 sl = entry - (atr * 1.5)
+
                                 tp = entry + (atr * 2.5)
 
+                            # SELL
                             else:
 
                                 sl = entry + (atr * 1.5)
+
                                 tp = entry - (atr * 2.5)
 
                             result = "OPEN"
 
-                            # CHECK FUTURE CANDLES
-                            for j in range(i+1, min(i+20, len(df))):
+                            # =====================================
+                            # FUTURE CHECK
+                            # =====================================
+                            for j in range(
+                                i+1,
+                                min(i+20, len(df))
+                            ):
 
                                 nxt = df.iloc[j]
 
@@ -440,28 +587,40 @@ with tab2:
                                 if signal['SIGNAL'] == "BUY":
 
                                     if nxt['Low'] <= sl:
+
                                         result = "LOSS"
+
                                         break
 
                                     if nxt['High'] >= tp:
+
                                         result = "PROFIT"
+
                                         break
 
                                 # SELL
                                 else:
 
                                     if nxt['High'] >= sl:
+
                                         result = "LOSS"
+
                                         break
 
                                     if nxt['Low'] <= tp:
+
                                         result = "PROFIT"
+
                                         break
 
                             bt_results.append({
+
                                 "STOCK": stock,
+
                                 "SIGNAL": signal['SIGNAL'],
+
                                 "RESULT": result
+
                             })
 
                 except:
@@ -470,7 +629,7 @@ with tab2:
             # =================================================
             # BACKTEST RESULTS
             # =================================================
-            if bt_results:
+            if len(bt_results) > 0:
 
                 df_bt = pd.DataFrame(bt_results)
 
@@ -485,28 +644,50 @@ with tab2:
                 total = wins + losses
 
                 if total > 0:
+
                     winrate = round(
                         (wins / total) * 100,
                         2
                     )
+
                 else:
+
                     winrate = 0
 
-                st.success("✅ BACKTEST COMPLETE")
+                st.success(
+                    "✅ BACKTEST COMPLETE"
+                )
 
                 a1, a2, a3, a4 = st.columns(4)
 
-                a1.metric("TOTAL TRADES", total)
-                a2.metric("PROFIT", wins)
-                a3.metric("LOSS", losses)
-                a4.metric("WIN RATE", f"{winrate}%")
+                a1.metric(
+                    "TOTAL TRADES",
+                    total
+                )
+
+                a2.metric(
+                    "PROFIT",
+                    wins
+                )
+
+                a3.metric(
+                    "LOSS",
+                    losses
+                )
+
+                a4.metric(
+                    "WIN RATE",
+                    f"{winrate}%"
+                )
 
                 st.dataframe(
                     df_bt,
                     use_container_width=True
                 )
 
-                # DOWNLOAD
+                # =================================================
+                # EXCEL DOWNLOAD
+                # =================================================
                 bt_output = io.BytesIO()
 
                 with pd.ExcelWriter(
@@ -528,4 +709,7 @@ with tab2:
                 )
 
             else:
-                st.warning("No Backtest Trades Found")
+
+                st.warning(
+                    "❌ No Backtest Trades Found"
+                )
