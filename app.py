@@ -6,124 +6,130 @@ from datetime import datetime
 import pytz
 from concurrent.futures import ThreadPoolExecutor
 import io
+import time
 
 # ==========================================
-# 1. CONFIG & TIMEZONE SETUP
+# 1. CONFIG & STYLING
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.9", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.6 SUPREME", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-# UI Styling
 st.markdown("""
-    <style>
-    .nifty-box { padding: 25px; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
-    .pos-trend { background-color: #064e3b; color: #10b981; border: 2px solid #10b981; }
+<style>
+    .main-title{ text-align:center; font-size:42px; font-weight:bold; color:#22c55e; }
+    .sub-title{ text-align:center; font-size:18px; color:#cbd5e1; margin-bottom:25px; }
+    .nifty-box { padding: 20px; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+    .pos-trend { background-color: #052e16; color: #22c55e; border: 2px solid #22c55e; }
     .neg-trend { background-color: #450a0a; color: #f87171; border: 2px solid #f87171; }
-    </style>
-    """, unsafe_allow_html=True)
+</style>
+""", unsafe_allow_html=True)
 
-# 2. FULL NSE 200 LIST
-stocks = [
-    "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", "ABCAPITAL", 
-    "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUROPHARMA", 
-    "AXISBANK", "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BAJAJHLDNG", "BALKRISIND", "BANDHANBNK", "BANKBARODA", 
-    "BANKINDIA", "BATAINDIA", "BEL", "BERGEPAINT", "BHARATFORG", "BHEL", "BPCL", "BHARTIARTL", "BIOCON", 
-    "BOSCHLTD", "BRITANNIA", "CANBK", "CGPOWER", "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", "COLPAL", 
-    "CONCOR", "COROMANDEL", "CROMPTON", "CUMMINSIND", "CYIENT", "DABUR", "DALBHARAT", "DEEPAKNTR", "DELHIVERY", 
-    "DIVISLAB", "DIXON", "DLF", "DRREDDY", "EICHERMOT", "ESCORTS", "EXIDEIND", "FEDERALBNK", "FORTIS", "GAIL", 
-    "GLENMARK", "GMRINFRA", "GODREJCP", "GODREJPROP", "GRASIM", "GUJGASLTD", "HAL", "HAVELLS", "HCLTECH", 
-    "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "ICICIBANK", 
-    "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "IOC", "IRCTC", 
-    "IRFC", "ITC", "JINDALSTEL", "JSWENERGY", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "KPITTECH", "LT", "LTIM", 
-    "LTTS", "LICI", "LUPIN", "M&M", "M&MFIN", "MARICO", "MARUTI", "MAXHEALTH", "METROPOLIS", "MFSL", "MGL", 
-    "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NESTLEIND", "NMDC", "NTPC", "OBEROIRLTY", "ONGC", "PAYTM", 
-    "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", "PNB", "POLYCAB", "POONAWALLA", "POWERGRID", 
-    "PRESTIGE", "PVRINOX", "RECLTD", "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN", "SIEMENS", "SRF", 
-    "SUNPHARMA", "SUNTV", "SYNGENE", "TATACOMM", "TATACONSUM", "TATAELXSI", "TATAMOTORS", "TATAPOWER", 
-    "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", "TVSMOTOR", "ULTRACEMCO", "UPL", "VBL", 
-    "VEDL", "VOLTAS", "WIPRO", "YESBANK", "ZEEL", "ZOMATO"
-]
+st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.6 SUPREME</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="sub-title">🕒 LIVE TIME : {now.strftime("%H:%M:%S")} IST</div>', unsafe_allow_html=True)
 
-# 3. INDICATORS ENGINE
+# ==========================================
+# 2. STOCKS LIST & INDICATORS
+# ==========================================
+stocks = ["ABB", "ACC", "ADANIENT", "ADANIPORTS", "AXISBANK", "BAJFINANCE", "BHARTIARTL", "BPCL", "CIPLA", "HDFCBANK", 
+          "ICICIBANK", "INFY", "ITC", "LT", "M&M", "RELIANCE", "SBIN", "TCS", "TATAMOTORS", "TITAN", "WIPRO", "ZOMATO"]
+
 def add_indicators(df):
     df = df.copy()
-    if df.empty: return df
-    df['Date_Only'] = df.index.date
+    if df.empty or len(df) < 25: return pd.DataFrame()
+    df['DATE_ONLY'] = df.index.date
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['PV'] = df['Close'] * df['Volume']
-    df['VWAP'] = df.groupby('Date_Only')['PV'].cumsum() / df.groupby('Date_Only')['Volume'].cumsum()
-    
+    df['VWAP'] = df.groupby('DATE_ONLY')['PV'].cumsum() / (df.groupby('DATE_ONLY')['Volume'].cumsum() + 1e-9)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-    
-    tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)
-    df['ATR'] = tr.rolling(14).mean()
-    df['VolAvg'] = df['Volume'].rolling(20).mean()
-    df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
-    df['Range_Width'] = (df['High'].rolling(15).max() - df['Low'].rolling(15).min()) / df['Low'].rolling(15).min() * 100
+    df['VOLAVG'] = df['Volume'].rolling(20).mean()
+    df['RVOL'] = df['Volume'] / (df['VOLAVG'] + 1e-9)
+    ema12, ema26 = df['Close'].ewm(span=12).mean(), df['Close'].ewm(span=26).mean()
+    df['MACD'] = ema12 - ema26
+    df['MACD_SIGNAL'] = df['MACD'].ewm(span=9).mean()
+    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     return df
 
 @st.cache_data(ttl=60)
-def fetch_data():
-    tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
-    d5 = yf.download(tickers, period="6d", interval="5m", group_by="ticker", progress=False)
-    d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
-    return d5, d1h
-
-# 4. SCAN LOGIC (EMA 9 & VWAP CROSS)
-def scan_stock(s, d5, n_5m, n_trend_1h):
+def fetch_data_secure():
     try:
-        df = add_indicators(d5[s + ".NS"].dropna())
-        res = []
-        for i in range(25, len(df)):
-            row = df.iloc[i]
-            prev = df.iloc[i-1]
-            n_row_5m = n_5m.reindex(df.index, method='ffill').iloc[i]
+        tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
+        data_15m = yf.download(tickers, period="7d", interval="15m", group_by="ticker", progress=False)
+        data_1h = yf.download("^NSEI", period="7d", interval="1h", progress=False)
+        return data_15m, data_1h
+    except:
+        return None, None
+
+# ==========================================
+# 3. SCAN LOGIC
+# ==========================================
+def scan_stock_logic(stock, data_15m, nifty_15m, market_trend, is_backtest=False):
+    try:
+        ticker = stock + ".NS"
+        stock_raw = data_15m[ticker].dropna()
+        df = add_indicators(stock_raw)
+        if df.empty: return []
+        
+        results = []
+        today_date = now.date()
+        scan_df = df if is_backtest else df[df.index.date == today_date]
+        
+        for i in range(len(scan_df)):
+            idx = df.index.get_loc(scan_df.index[i])
+            if idx < 1: continue
+            row, prev = df.iloc[idx], df.iloc[idx-1]
+            n_row = nifty_15m.reindex(df.index, method='ffill').iloc[idx]
             
-            # EMA 9 / VWAP Crossover
             cross_up = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
             cross_down = (prev['EMA9'] > prev['VWAP']) and (row['EMA9'] < row['VWAP'])
             
-            ema_dist = (row['Close'] - row['EMA20']) / row['EMA20'] * 100
-            is_healthy = abs(ema_dist) < 0.85
-
-            # BUY Logic
-            if n_trend_1h == "POSITIVE" and n_row_5m['Close'] > n_row_5m['EMA20']:
-                if (cross_up or (row['EMA9'] > row['VWAP'])) and row['RSI'] > 50 and is_healthy:
-                    if row['RVOL'] > 1.2 and row['Close'] > prev['High']:
-                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "REASON": "EMA9-VWAP Cross Up 🚀"})
-
-            # SELL Logic
-            elif n_trend_1h == "NEGATIVE" and n_row_5m['Close'] < n_row_5m['EMA20']:
-                if (cross_down or (row['EMA9'] < row['VWAP'])) and row['RSI'] < 45 and is_healthy:
-                    if row['RVOL'] > 1.2 and row['Close'] < prev['Low']:
-                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "REASON": "EMA9-VWAP Cross Down 📉"})
-        return res
+            if market_trend == "POSITIVE" and n_row['Close'] > n_row['EMA20']:
+                if (cross_up or row['EMA9'] > row['VWAP']) and row['RSI'] > 55 and row['MACD'] > row['MACD_SIGNAL']:
+                    results.append({"DATE": row.name.strftime('%d-%b'), "TIME": row.name.strftime('%H:%M'), "STOCK": stock, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
+            elif market_trend == "NEGATIVE" and n_row['Close'] < n_row['EMA20']:
+                if (cross_down or row['EMA9'] < row['VWAP']) and row['RSI'] < 45 and row['MACD'] < row['MACD_SIGNAL']:
+                    results.append({"DATE": row.name.strftime('%d-%b'), "TIME": row.name.strftime('%H:%M'), "STOCK": stock, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
+        return results
     except: return []
 
-# 5. UI INTERFACE
-d5, d1h = fetch_data()
-nifty_5m = add_indicators(d5["^NSEI"].dropna())
-n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mean().iloc[-1] else "NEGATIVE"
+# ==========================================
+# 4. EXECUTION WITH ERROR GUARD
+# ==========================================
+d15m, d1h = fetch_data_secure()
+market_trend = "UNKNOWN"
+nifty_15m = pd.DataFrame()
 
-box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
-st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h}</div>', unsafe_allow_html=True)
+# ఎర్రర్ రాకుండా ఇక్కడ చెక్ చేస్తున్నాను
+if d1h is not None and not d1h.empty:
+    try:
+        n_last_1h = d1h['Close'].iloc[-1]
+        n_ema_1h = d1h['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
+        n_raw = d15m["^NSEI"].dropna()
+        if not n_raw.empty:
+            nifty_15m = add_indicators(n_raw)
+            box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
+            st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend}</div>', unsafe_allow_html=True)
+    except:
+        st.warning("⚠️ Market data sync issue. Please refresh.")
+else:
+    st.error("⚠️ Connection Error. Market might be closed or network slow. Please refresh after some time.")
 
-if st.button("🚀 START SCAN (EMA9-VWAP Edition)"):
-    with ThreadPoolExecutor(max_workers=25) as executor:
-        all_signals = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
-    
-    flat_signals = [item for sublist in all_signals for item in sublist]
-    if flat_signals:
-        df_res = pd.DataFrame(flat_signals).sort_values(by="TIME", ascending=False)
-        st.dataframe(df_res, use_container_width=True)
-        # Excel Download
-        excel_out = io.BytesIO()
-        df_res.to_excel(excel_out, index=False)
-        st.download_button("📥 Download Today's Signals", excel_out.getvalue(), f"V6_9_Signals.xlsx")
-    else: st.info("No EMA9/VWAP Crossover signals found.")
+tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 5-DAY BACKTEST"])
+
+with tab1:
+    if st.button("🚀 START SCAN"):
+        if market_trend == "UNKNOWN":
+            st.error("Cannot scan: Data not available.")
+        else:
+            with ThreadPoolExecutor(max_workers=30) as executor:
+                all_res = list(executor.map(lambda s: scan_stock_logic(s, d15m, nifty_15m, market_trend), stocks))
+            flat_res = [item for sublist in all_res for item in sublist]
+            if flat_res:
+                df_l = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
+                st.dataframe(df_l.drop(columns=['DATE']), use_container_width=True)
+            else: st.info("No strong signals found right now.")
