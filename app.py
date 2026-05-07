@@ -22,7 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. FULL NSE 200 LIST
+# 2. NSE 200 LIST
 stocks = [
     "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", "ABCAPITAL", 
     "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUROPHARMA", 
@@ -72,7 +72,7 @@ def fetch_data():
     d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
     return d5, d1h
 
-# 4. SCAN LOGIC
+# 4. SCAN LOGIC (Corrected Function Name)
 def scan_stock(s, d5, n_5m, n_trend_1h):
     try:
         ticker_data = d5[s + ".NS"].dropna()
@@ -93,12 +93,12 @@ def scan_stock(s, d5, n_5m, n_trend_1h):
             if n_trend_1h == "POSITIVE" and n_row_5m['Close'] > n_row_5m['EMA20']:
                 if (cross_up or (row['EMA9'] > row['VWAP'])) and row['RSI'] > 50 and is_healthy:
                     if row['RVOL'] > 1.2 and row['Close'] > prev['High']:
-                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "REASON": "EMA9-VWAP Cross Up 🚀"})
+                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "BUY", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
 
             elif n_trend_1h == "NEGATIVE" and n_row_5m['Close'] < n_row_5m['EMA20']:
                 if (cross_down or (row['EMA9'] < row['VWAP'])) and row['RSI'] < 45 and is_healthy:
                     if row['RVOL'] > 1.2 and row['Close'] < prev['Low']:
-                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2), "REASON": "EMA9-VWAP Cross Down 📉"})
+                        res.append({"TIME": row.name.astimezone(IST).strftime('%H:%M'), "STOCK": s, "SIGNAL": "SELL", "PRICE": round(row['Close'], 2), "RVOL": round(row['RVOL'], 2)})
         return res
     except: return []
 
@@ -108,13 +108,14 @@ nifty_5m = add_indicators(d5["^NSEI"].dropna())
 n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mean().iloc[-1] else "NEGATIVE"
 
 box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
-st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h} {"📈" if n_trend_1h == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h}</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 BACKTEST"])
 
 with tab1:
     if st.button("🚀 START SCAN"):
         with ThreadPoolExecutor(max_workers=30) as executor:
+            # Here we use scan_stock consistently
             all_signals = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
         
         flat_signals = [item for sublist in all_signals for item in sublist]
