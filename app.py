@@ -10,16 +10,16 @@ import io
 # =========================================================
 # PAGE CONFIG & TIMEZONE
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT V15 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT V15.1 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V15.0</h1>', unsafe_allow_html=True)
-st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Strategy: EMA 21 + Big Player + Pullback</h4>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V15.1</h1>', unsafe_allow_html=True)
+st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Mode: EMA 21 + Institutional Flow</h4>', unsafe_allow_html=True)
 
 # =========================================================
-# INDICATORS ENGINE (UPDATED WITH EMA 21 & BODY SIZE)
+# INDICATORS ENGINE
 # =========================================================
 def get_indicators(df):
     df = df.copy()
@@ -27,7 +27,7 @@ def get_indicators(df):
 
     # EMAs & VWAP
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean() # Big Move Filter
+    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9)
@@ -44,7 +44,7 @@ def get_indicators(df):
     df['TR'] = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
     df['ATR'] = df['TR'].rolling(14).mean()
 
-    # Volatility & Volume Analysis
+    # Volume & Body Analysis
     df['VOLAVG'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VOLAVG'] + 1e-9)
     df['BODY'] = abs(df['Close'] - df['Open'])
@@ -71,7 +71,7 @@ def fetch_data():
 data_pool = fetch_data()
 
 # =========================================================
-# NEW ADVANCED SCAN LOGIC
+# SCAN LOGIC
 # =========================================================
 def scan(stock, mode="TODAY"):
     try:
@@ -87,27 +87,24 @@ def scan(stock, mode="TODAY"):
             row = scan_df.iloc[i]
             prev = scan_df.iloc[i-1]
 
-            # --- 1. BIG PLAYER ENTRY LOGIC ---
-            # High Volume (> 2.0) and Strong Candle Body
+            # 1. BIG PLAYER ENTRY
             big_player = (row['RVOL'] > 2.0 and row['BODY'] > (1.5 * row['BODY_AVG']))
 
-            # --- 2. PULLBACK LOGIC (EMA 21 SUPPORT) ---
-            # Price touches or dips near EMA 21 and recovers
+            # 2. EMA 21 PULLBACK
             pb_buy = (prev['Low'] > prev['EMA21'] and row['Low'] <= row['EMA21'] and row['Close'] > row['EMA21'])
             pb_sell = (prev['High'] < prev['EMA21'] and row['High'] >= row['EMA21'] and row['Close'] < row['EMA21'])
 
-            # --- 3. TREND CONFIRMATION ---
-            bullish_trend = row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP']
-            bearish_trend = row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP']
+            # 3. TREND CONFIRMATION
+            bull_trend = row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP']
+            bear_trend = row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP']
 
-            buy_sig = (bullish_trend and (big_player or pb_buy) and row['RSI'] > 52)
-            sell_sig = (bearish_trend and (big_player or pb_sell) and row['RSI'] < 48)
+            buy_sig = (bull_trend and (big_player or pb_buy) and row['RSI'] > 52)
+            sell_sig = (bear_trend and (big_player or pb_sell) and row['RSI'] < 48)
 
             if buy_sig or sell_sig:
                 sig_type = "🚀 BIG ENTRY" if big_player else "🔄 PULLBACK"
                 signal = "BUY" if buy_sig else "SELL"
                 
-                # Risk Management
                 risk = row['ATR'] * 1.5
                 sl = round(row['Close'] - risk, 2) if buy_sig else round(row['Close'] + risk, 2)
                 tgt = round(row['Close'] + (risk * 2), 2) if buy_sig else round(row['Close'] - (risk * 2), 2)
@@ -128,9 +125,9 @@ def scan(stock, mode="TODAY"):
     except: return []
 
 # =========================================================
-# UI SETUP
+# UI & STYLING
 # =========================================================
-tab1, tab2 = st.tabs(["🔍 LIVE SCANNER (V15)", "📊 BACKTEST REPORT"])
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST"])
 
 def get_excel(df):
     output = io.BytesIO()
@@ -138,31 +135,37 @@ def get_excel(df):
         df.to_excel(writer, index=False, sheet_name='Signals')
     return output.getvalue()
 
+def color_signal(val):
+    color = '#22c55e' if val == 'BUY' else '#ef4444'
+    return f'color: {color}; font-weight: bold'
+
 with tab1:
-    if st.button("🚀 START SCANNING (BIG PLAYERS + EMA21)"):
+    if st.button("🚀 RUN V15.1 SCAN"):
         with ThreadPoolExecutor(max_workers=15) as exec:
             res = list(exec.map(lambda s: scan(s, "TODAY"), stocks))
         flat = [i for s in res for i in s]
         if flat:
             df_today = pd.DataFrame(flat).drop_duplicates('STOCK', keep='last').sort_values('TIME', ascending=False)
             
-            # Styling for display
-            def color_signal(val):
-                color = '#22c55e' if val == 'BUY' else '#ef4444'
-                return f'color: {color}; font-weight: bold'
-
-            st.dataframe(df_today.style.applymap(color_signal, subset=['SIGNAL']), use_container_width=True)
-            st.download_button("📥 Export Today's Signals", get_excel(df_today), "V15_Today_Signals.xlsx")
+            # ATTRIBUTE ERROR FIX: Using map if available, otherwise applymap
+            try:
+                st.dataframe(df_today.style.map(color_signal, subset=['SIGNAL']), use_container_width=True)
+            except AttributeError:
+                st.dataframe(df_today.style.applymap(color_signal, subset=['SIGNAL']), use_container_width=True)
+            
+            st.download_button("📥 Export Signals", get_excel(df_today), "V15_Signals.xlsx")
         else:
-            st.info("Searching for Big Player or Pullback entries... No signals found yet.")
+            st.warning("No Big Player or Pullback signals found.")
 
 with tab2:
-    if st.button("📊 RUN 5-DAY BACKTEST (V15)"):
+    if st.button("📊 RUN BACKTEST"):
         with ThreadPoolExecutor(max_workers=15) as exec:
             res_bt = list(exec.map(lambda s: scan(s, "BACKTEST"), stocks))
         flat_bt = [i for s in res_bt for i in s]
         if flat_bt:
             df_bt = pd.DataFrame(flat_bt).sort_values(['DATE', 'TIME'], ascending=False)
-            st.success(f"Found {len(df_bt)} high-conviction signals in 5 days.")
-            st.dataframe(df_bt, use_container_width=True)
-            st.download_button("📥 Download Full Report", get_excel(df_bt), "V15_Backtest_Report.xlsx")
+            try:
+                st.dataframe(df_bt.style.map(color_signal, subset=['SIGNAL']), use_container_width=True)
+            except AttributeError:
+                st.dataframe(df_bt.style.applymap(color_signal, subset=['SIGNAL']), use_container_width=True)
+            st.download_button("📥 Download Report", get_excel(df_bt), "Backtest.xlsx")
