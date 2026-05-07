@@ -23,9 +23,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. COMPLETE NSE 200 LIST
-# ==========================================
+# 2. FULL NSE 200 LIST
 stocks = [
     "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", "ABCAPITAL", 
     "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUROPHARMA", 
@@ -63,10 +61,6 @@ def add_indicators(df):
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
     df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
-    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = ema12 - ema26
-    df['MACD_SIGNAL'] = df['MACD'].ewm(span=9, adjust=False).mean()
     return df
 
 @st.cache_data(ttl=60)
@@ -76,7 +70,7 @@ def fetch_data():
     d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
     return d5, d1h
 
-# 4. CORE LOGIC
+# 4. CORE SCAN LOGIC
 def scan_stock(s, d5, nifty_5m, n_trend_1h, is_backtest=False):
     try:
         ticker_data = d5[s + ".NS"].dropna()
@@ -85,7 +79,6 @@ def scan_stock(s, d5, nifty_5m, n_trend_1h, is_backtest=False):
         
         res = []
         today_date = now.date()
-        # Backtest అయితే మొత్తం 5 రోజులు, లేకపోతే కేవలం ఈరోజు
         scan_df = df if is_backtest else df[df.index.date == today_date]
         
         for i in range(len(scan_df)):
@@ -115,36 +108,33 @@ nifty_5m = add_indicators(d5["^NSEI"].dropna())
 n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mean().iloc[-1] else "NEGATIVE"
 
 box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
-st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h} {"📈" if n_trend_1h == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h}</div>', unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["🔍 LIVE TRACKER (Today)", "📊 5-DAY BACKTEST"])
 
 with tab1:
     if st.button("🚀 START LIVE SCAN"):
-        with st.spinner("Analyzing 200 stocks for today..."):
+        with st.spinner("Scanning 200 stocks..."):
             with ThreadPoolExecutor(max_workers=30) as executor:
                 all_res = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
             flat_res = [item for sublist in all_res for item in sublist]
             if flat_res:
                 df_live = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
                 st.dataframe(df_live.drop(columns=['DATE', 'ATR']), use_container_width=True)
-                # LIVE EXCEL
-                live_out = io.BytesIO()
-                df_live.to_excel(live_out, index=False)
-                st.download_button("📥 Download Today's Signals", live_out.getvalue(), f"Today_Signals_{now.strftime('%d%m')}.xlsx")
-            else: st.info("No signals found for today.")
+                excel_out = io.BytesIO()
+                df_live.to_excel(excel_out, index=False)
+                st.download_button("📥 Download Excel", excel_out.getvalue(), "Today_Signals.xlsx")
+            else: st.info("No signals found.")
 
 with tab2:
-    if st.button("📊 RUN 5-DAY BACKTEST"):
-        with st.spinner("Running Historical Backtest..."):
+    if st.button("📊 RUN BACKTEST"):
+        with st.spinner("Running Backtest..."):
             with ThreadPoolExecutor(max_workers=30) as executor:
                 all_bt = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h, is_backtest=True), stocks))
             flat_bt = [item for sublist in all_bt for item in sublist]
             if flat_bt:
                 df_bt = pd.DataFrame(flat_bt)
-                st.success(f"Backtest Complete! Total Trades: {len(df_bt)}")
-                st.dataframe(df_bt.drop(columns=['ATR']), use_container_width=True)
-                # BACKTEST EXCEL
+                st.dataframe(df_bt, use_container_width=True)
                 bt_out = io.BytesIO()
                 df_bt.to_excel(bt_out, index=False)
-                st.download_button("📥 Download Backtest Report", bt_out.getvalue(), "Backtest_Report.xlsx")
+                st.download_button("📥 Download Backtest Excel", bt_out.getvalue(), "Backtest_Report.xlsx")
