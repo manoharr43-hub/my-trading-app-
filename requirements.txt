@@ -3,6 +3,5 @@ yfinance
 pandas
 numpy
 pytz
-streamlit-autorefresh
-xlsxwriter
 pandas_ta
+xlsxwriter
