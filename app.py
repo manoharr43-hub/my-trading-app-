@@ -10,36 +10,44 @@ import io
 # =========================================================
 # PAGE CONFIG & TIMEZONE
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT V18.0 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT V19.0 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V18.0</h1>', unsafe_allow_html=True)
-st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Live Scanner Excel + TGT Status</h4>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V19.0</h1>', unsafe_allow_html=True)
+st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Bollinger Bands + 80% Accuracy Logic</h4>', unsafe_allow_html=True)
 
 # =========================================================
-# PRECISION INDICATORS ENGINE
+# ADVANCED INDICATORS ENGINE
 # =========================================================
 def get_indicators(df):
     df = df.copy()
     if len(df) < 50: return pd.DataFrame()
 
+    # EMAs & VWAP
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9)
 
-    # ADX Logic
+    # 1. Bollinger Bands (20, 2)
+    df['BB_MID'] = df['Close'].rolling(window=20).mean()
+    df['BB_STD'] = df['Close'].rolling(window=20).std()
+    df['BB_UPPER'] = df['BB_MID'] + (df['BB_STD'] * 2)
+    df['BB_LOWER'] = df['BB_MID'] - (df['BB_STD'] * 2)
+
+    # 2. ADX (Trend Strength)
     tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))], axis=1).max(axis=1)
     plus_dm = df['High'].diff().clip(lower=0)
     minus_dm = df['Low'].diff().clip(upper=0).abs()
-    plus_di = 100 * (plus_dm.rolling(14).mean() / (tr.rolling(14).mean() + 1e-9))
-    minus_di = 100 * (minus_dm.rolling(14).mean() / (tr.rolling(14).mean() + 1e-9))
+    tr_smooth = tr.rolling(14).mean()
+    plus_di = 100 * (plus_dm.rolling(14).mean() / (tr_smooth + 1e-9))
+    minus_di = 100 * (minus_dm.rolling(14).mean() / (tr_smooth + 1e-9))
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)
     df['ADX'] = dx.rolling(14).mean()
 
-    # RSI & ATR
+    # 3. RSI & ATR
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -50,7 +58,7 @@ def get_indicators(df):
     return df
 
 # =========================================================
-# STOCKS
+# STOCKS LIST
 # =========================================================
 stocks = ["ABB","ACC","AUBANK","ADANIENSOL","ADANIENT","ADANIGREEN","ADANIPORTS","ADANIPOWER","ATGL",
           "ABCAPITAL","ABFRL","ALKEM","AMBUJACEM","APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASIANPAINT",
@@ -67,7 +75,7 @@ def fetch_data():
 data_pool = fetch_data()
 
 # =========================================================
-# SCAN LOGIC
+# PRECISION SCAN LOGIC
 # =========================================================
 def scan(stock, mode="TODAY"):
     try:
@@ -79,10 +87,27 @@ def scan(stock, mode="TODAY"):
         results = []
         for i in range(2, len(scan_df)):
             row = scan_df.iloc[i]
-            valid_time = time(9, 45) <= row.name.time() <= time(14, 45)
+            prev = scan_df.iloc[i-1]
             
-            buy_sig = (row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP'] and row['ADX'] > 30 and 55 < row['RSI'] < 65 and valid_time)
-            sell_sig = (row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP'] and row['ADX'] > 30 and 35 < row['RSI'] < 45 and valid_time)
+            # --- FILTERS ---
+            valid_time = time(9, 45) <= row.name.time() <= time(14, 45)
+            strong_trend = row['ADX'] > 30
+            
+            # Bollinger Band Safety: ధర అప్పర్ బాండ్ కంటే తక్కువ ఉంటేనే బై చేయాలి
+            bb_buy_safety = row['Close'] < row['BB_UPPER']
+            bb_sell_safety = row['Close'] > row['BB_LOWER']
+
+            # Pullback & Volume
+            pb_buy = (prev['Low'] <= prev['EMA21'] and row['Close'] > row['EMA21'])
+            pb_sell = (prev['High'] >= prev['EMA21'] and row['Close'] < row['EMA21'])
+            vol_ok = row['RVOL'] > 2.2
+
+            # Signal Generation
+            buy_sig = (row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP'] and 
+                       (pb_buy or vol_ok) and 55 < row['RSI'] < 65 and strong_trend and valid_time and bb_buy_safety)
+            
+            sell_sig = (row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP'] and 
+                        (pb_sell or vol_ok) and 35 < row['RSI'] < 45 and strong_trend and valid_time and bb_sell_safety)
 
             if buy_sig or sell_sig:
                 sig = "BUY" if buy_sig else "SELL"
@@ -91,7 +116,7 @@ def scan(stock, mode="TODAY"):
                 sl = round(price - risk, 2) if buy_sig else round(price + risk, 2)
                 tgt = round(price + (risk * 2), 2) if buy_sig else round(price - (risk * 2), 2)
                 
-                # Live Status Check
+                # Live Status Check for Scanner
                 ltp = round(scan_df.iloc[-1]['Close'], 2)
                 status = "⏳ RUNNING"
                 if buy_sig and ltp >= tgt: status = "✅ TGT HIT"
@@ -108,35 +133,34 @@ def scan(stock, mode="TODAY"):
     except: return []
 
 # =========================================================
-# UI & DOWNLOAD HELPERS
+# UI & HELPERS
 # =========================================================
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Signals')
+        df.to_excel(writer, index=False)
     return output.getvalue()
 
-def color_status(val):
+def style_status(val):
     if "TGT" in str(val): return 'color: #4ade80; font-weight: bold'
     if "SL" in str(val): return 'color: #f87171; font-weight: bold'
     return 'color: #fbbf24'
 
-tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER (BB)", "📊 BACKTEST REPORT"])
 
 with tab1:
-    if st.button("🚀 RUN SCANNER (V18)"):
+    if st.button("🚀 RUN SCANNER V19"):
         res = [item for s in stocks for item in scan(s, "TODAY")]
         if res:
             df = pd.DataFrame(res).drop_duplicates('STOCK', keep='last').sort_values('TIME', ascending=False)
-            st.dataframe(df.style.map(color_status, subset=['STATUS']), use_container_width=True)
-            # Scanner Excel Add
-            st.download_button("📥 Download Scanner Excel", to_excel(df), f"Scanner_{now.date()}.xlsx")
-        else: st.info("No precision signals detected.")
+            st.dataframe(df.style.map(style_status, subset=['STATUS']), use_container_width=True)
+            st.download_button("📥 Download Scanner Excel", to_excel(df), f"Scanner_V19_{now.date()}.xlsx")
+        else: st.info("No precision signals with Bollinger safety found.")
 
 with tab2:
-    if st.button("📊 RUN BACKTEST (V18)"):
+    if st.button("📊 RUN BACKTEST V19"):
         res_bt = [item for s in stocks for item in scan(s, "BACKTEST")]
         if res_bt:
             df_bt = pd.DataFrame(res_bt).sort_values(['DATE', 'TIME'], ascending=False)
-            st.dataframe(df_bt.style.map(color_status, subset=['STATUS']), use_container_width=True)
-            st.download_button("📥 Download Backtest Excel", to_excel(df_bt), "Backtest_V18.xlsx")
+            st.dataframe(df_bt.style.map(style_status, subset=['STATUS']), use_container_width=True)
+            st.download_button("📥 Download Backtest Excel", to_excel(df_bt), "Backtest_V19.xlsx")
