@@ -10,29 +10,27 @@ import io
 # =========================================================
 # PAGE CONFIG & TIMEZONE
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI QUANT V15.1 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT V15.2 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V15.1</h1>', unsafe_allow_html=True)
-st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Mode: EMA 21 + Institutional Flow</h4>', unsafe_allow_html=True)
+st.markdown(f'<h1 style="text-align:center; color:#22c55e;">🚀 NSE AI QUANT PRO V15.2</h1>', unsafe_allow_html=True)
+st.markdown(f'<h4 style="text-align:center;">🕒 IST: {now.strftime("%Y-%m-%d %H:%M:%S")} | Strategy: EMA 21 + P&L Tracker</h4>', unsafe_allow_html=True)
 
 # =========================================================
 # INDICATORS ENGINE
 # =========================================================
 def get_indicators(df):
     df = df.copy()
-    if len(df) < 35: return pd.DataFrame()
+    if len(df) < 40: return pd.DataFrame()
 
-    # EMAs & VWAP
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     
     df['PV'] = df['Close'] * df['Volume']
     df['VWAP'] = df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9)
 
-    # RSI & ATR
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -44,7 +42,6 @@ def get_indicators(df):
     df['TR'] = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
     df['ATR'] = df['TR'].rolling(14).mean()
 
-    # Volume & Body Analysis
     df['VOLAVG'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VOLAVG'] + 1e-9)
     df['BODY'] = abs(df['Close'] - df['Open'])
@@ -71,7 +68,7 @@ def fetch_data():
 data_pool = fetch_data()
 
 # =========================================================
-# SCAN LOGIC
+# ADVANCED SCAN & P&L LOGIC
 # =========================================================
 def scan(stock, mode="TODAY"):
     try:
@@ -87,85 +84,90 @@ def scan(stock, mode="TODAY"):
             row = scan_df.iloc[i]
             prev = scan_df.iloc[i-1]
 
-            # 1. BIG PLAYER ENTRY
             big_player = (row['RVOL'] > 2.0 and row['BODY'] > (1.5 * row['BODY_AVG']))
-
-            # 2. EMA 21 PULLBACK
             pb_buy = (prev['Low'] > prev['EMA21'] and row['Low'] <= row['EMA21'] and row['Close'] > row['EMA21'])
             pb_sell = (prev['High'] < prev['EMA21'] and row['High'] >= row['EMA21'] and row['Close'] < row['EMA21'])
 
-            # 3. TREND CONFIRMATION
-            bull_trend = row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP']
-            bear_trend = row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP']
-
-            buy_sig = (bull_trend and (big_player or pb_buy) and row['RSI'] > 52)
-            sell_sig = (bear_trend and (big_player or pb_sell) and row['RSI'] < 48)
+            buy_sig = (row['EMA9'] > row['EMA21'] and row['Close'] > row['VWAP'] and (big_player or pb_buy) and row['RSI'] > 52)
+            sell_sig = (row['EMA9'] < row['EMA21'] and row['Close'] < row['VWAP'] and (big_player or pb_sell) and row['RSI'] < 48)
 
             if buy_sig or sell_sig:
-                sig_type = "🚀 BIG ENTRY" if big_player else "🔄 PULLBACK"
                 signal = "BUY" if buy_sig else "SELL"
-                
+                price = round(row['Close'], 2)
                 risk = row['ATR'] * 1.5
-                sl = round(row['Close'] - risk, 2) if buy_sig else round(row['Close'] + risk, 2)
-                tgt = round(row['Close'] + (risk * 2), 2) if buy_sig else round(row['Close'] - (risk * 2), 2)
+                sl = round(price - risk, 2) if buy_sig else round(price + risk, 2)
+                tgt = round(price + (risk * 2), 2) if buy_sig else round(price - (risk * 2), 2)
+
+                # --- BACKTEST P&L TRACKER ---
+                status = "OPEN"
+                pnl = 0.0
+                if mode == "BACKTEST":
+                    future_data = scan_df.iloc[i+1 : i+20] # Next 20 candles (approx 1 day)
+                    for _, f_row in future_data.iterrows():
+                        if buy_sig:
+                            if f_row['High'] >= tgt: status = "🎯 TGT DONE"; pnl = round(tgt - price, 2); break
+                            elif f_row['Low'] <= sl: status = "🛑 SL HIT"; pnl = round(sl - price, 2); break
+                        else:
+                            if f_row['Low'] <= tgt: status = "🎯 TGT DONE"; pnl = round(price - tgt, 2); break
+                            elif f_row['High'] >= sl: status = "🛑 SL HIT"; pnl = round(price - sl, 2); break
 
                 results.append({
                     "DATE": row.name.strftime("%Y-%m-%d"),
                     "TIME": row.name.strftime("%H:%M"),
                     "STOCK": stock,
-                    "TYPE": sig_type,
                     "SIGNAL": signal,
-                    "PRICE": round(row['Close'], 2),
+                    "PRICE": price,
                     "SL": sl,
                     "TGT": tgt,
-                    "RSI": round(row['RSI'], 1),
-                    "RVOL": round(row['RVOL'], 1)
+                    "RESULT": status,
+                    "P&L": pnl,
+                    "TYPE": "🚀 BIG" if big_player else "🔄 PB"
                 })
         return results
     except: return []
 
 # =========================================================
-# UI & STYLING
+# UI SETUP
 # =========================================================
-tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 BACKTEST P&L REPORT"])
 
-def get_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Signals')
-    return output.getvalue()
-
-def color_signal(val):
-    color = '#22c55e' if val == 'BUY' else '#ef4444'
+def color_result(val):
+    if "TGT" in str(val): color = '#22c55e'
+    elif "SL" in str(val): color = '#ef4444'
+    else: color = 'white'
     return f'color: {color}; font-weight: bold'
 
 with tab1:
-    if st.button("🚀 RUN V15.1 SCAN"):
+    if st.button("🚀 RUN TODAY SCAN"):
         with ThreadPoolExecutor(max_workers=15) as exec:
             res = list(exec.map(lambda s: scan(s, "TODAY"), stocks))
         flat = [i for s in res for i in s]
         if flat:
             df_today = pd.DataFrame(flat).drop_duplicates('STOCK', keep='last').sort_values('TIME', ascending=False)
-            
-            # ATTRIBUTE ERROR FIX: Using map if available, otherwise applymap
-            try:
-                st.dataframe(df_today.style.map(color_signal, subset=['SIGNAL']), use_container_width=True)
-            except AttributeError:
-                st.dataframe(df_today.style.applymap(color_signal, subset=['SIGNAL']), use_container_width=True)
-            
-            st.download_button("📥 Export Signals", get_excel(df_today), "V15_Signals.xlsx")
-        else:
-            st.warning("No Big Player or Pullback signals found.")
+            st.dataframe(df_today, use_container_width=True)
+        else: st.warning("No signals for today.")
 
 with tab2:
-    if st.button("📊 RUN BACKTEST"):
+    if st.button("📊 RUN 5-DAY BACKTEST WITH P&L"):
         with ThreadPoolExecutor(max_workers=15) as exec:
             res_bt = list(exec.map(lambda s: scan(s, "BACKTEST"), stocks))
         flat_bt = [i for s in res_bt for i in s]
         if flat_bt:
             df_bt = pd.DataFrame(flat_bt).sort_values(['DATE', 'TIME'], ascending=False)
+            
+            # Summary Metrics
+            win_count = len(df_bt[df_bt['RESULT'] == "🎯 TGT DONE"])
+            loss_count = len(df_bt[df_bt['RESULT'] == "🛑 SL HIT"])
+            total_pnl = round(df_bt['P&L'].sum(), 2)
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Signals", len(df_bt))
+            c2.metric("Wins / Losses", f"{win_count} ✅ / {loss_count} ❌")
+            c3.metric("Total Points P&L", f"{total_pnl} pts")
+
+            # Result Styling
             try:
-                st.dataframe(df_bt.style.map(color_signal, subset=['SIGNAL']), use_container_width=True)
-            except AttributeError:
-                st.dataframe(df_bt.style.applymap(color_signal, subset=['SIGNAL']), use_container_width=True)
-            st.download_button("📥 Download Report", get_excel(df_bt), "Backtest.xlsx")
+                st.dataframe(df_bt.style.map(color_result, subset=['RESULT']), use_container_width=True)
+            except:
+                st.dataframe(df_bt, use_container_width=True)
+        else: st.info("No backtest data found.")
