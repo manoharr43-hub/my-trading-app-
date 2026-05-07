@@ -14,7 +14,6 @@ st.set_page_config(page_title="🚀 NSE AI QUANT PRO V6.9", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-# UI Styling for Top Box
 st.markdown("""
     <style>
     .nifty-box { padding: 25px; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
@@ -23,9 +22,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. COMPLETE NSE 200 STOCKS LIST
-# ==========================================
+# 2. FULL NSE 200 LIST
 stocks = [
     "ABB", "ACC", "AUBANK", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "ATGL", "ABCAPITAL", 
     "ABFRL", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "AUROPHARMA", 
@@ -66,17 +63,16 @@ def add_indicators(df):
     df['ATR'] = tr.rolling(14).mean()
     df['VolAvg'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VolAvg'] + 1e-9)
-    df['Range_Width'] = (df['High'].rolling(15).max() - df['Low'].rolling(15).min()) / df['Low'].rolling(15).min() * 100
     return df
 
 @st.cache_data(ttl=60)
 def fetch_data():
     tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
-    d5 = yf.download(tickers, period="6d", interval="5m", group_by="ticker", progress=False, threads=True)
+    d5 = yf.download(tickers, period="6d", interval="5m", group_by="ticker", progress=False)
     d1h = yf.download("^NSEI", period="5d", interval="1h", progress=False)
     return d5, d1h
 
-# 4. SCAN LOGIC (EMA 9 & VWAP CROSS)
+# 4. SCAN LOGIC
 def scan_stock(s, d5, n_5m, n_trend_1h):
     try:
         ticker_data = d5[s + ".NS"].dropna()
@@ -91,8 +87,8 @@ def scan_stock(s, d5, n_5m, n_trend_1h):
             cross_up = (prev['EMA9'] < prev['VWAP']) and (row['EMA9'] > row['VWAP'])
             cross_down = (prev['EMA9'] > prev['VWAP']) and (row['EMA9'] < row['VWAP'])
             
-            ema_dist = (row['Close'] - row['EMA20']) / row['EMA20'] * 100
-            is_healthy = abs(ema_dist) < 0.85
+            ema_dist = abs((row['Close'] - row['EMA20']) / row['EMA20'] * 100)
+            is_healthy = ema_dist < 0.85
 
             if n_trend_1h == "POSITIVE" and n_row_5m['Close'] > n_row_5m['EMA20']:
                 if (cross_up or (row['EMA9'] > row['VWAP'])) and row['RSI'] > 50 and is_healthy:
@@ -106,7 +102,7 @@ def scan_stock(s, d5, n_5m, n_trend_1h):
         return res
     except: return []
 
-# 5. UI INTERFACE
+# 5. UI EXECUTION
 d5, d1h = fetch_data()
 nifty_5m = add_indicators(d5["^NSEI"].dropna())
 n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mean().iloc[-1] else "NEGATIVE"
@@ -114,28 +110,18 @@ n_trend_1h = "POSITIVE" if d1h['Close'].iloc[-1] > d1h['Close'].ewm(span=20).mea
 box_class = "pos-trend" if n_trend_1h == "POSITIVE" else "neg-trend"
 st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {n_trend_1h} {"📈" if n_trend_1h == "POSITIVE" else "📉"}</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["🔍 LIVE TRACKER (NSE 200)", "📊 BACKTEST REPORT"])
+tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 BACKTEST"])
 
 with tab1:
-    if st.button("🚀 START FULL SCAN (NSE 200)"):
-        with st.spinner("Analyzing 200 stocks..."):
-            with ThreadPoolExecutor(max_workers=30) as executor:
-                all_signals = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
-            
-            flat_signals = [item for sublist in all_signals for item in sublist]
-            if flat_signals:
-                df_res = pd.DataFrame(flat_signals).sort_values(by="TIME", ascending=False)
-                st.dataframe(df_res, use_container_width=True)
-                
-                # Excel Download
-                excel_out = io.BytesIO()
-                with pd.ExcelWriter(excel_out, engine='xlsxwriter') as writer:
-                    df_res.to_excel(writer, index=False, sheet_name='Today_Signals')
-                st.download_button("📥 Download Excel Report", excel_out.getvalue(), f"NSE200_Signals_{now.strftime('%d%m')}.xlsx")
-            else:
-                st.info("No high-probability signals found for the current trend.")
-
-with tab2:
-    st.write("గత 5 రోజుల డేటాను విశ్లేషించడానికి బ్యాక్‌టెస్ట్ రన్ చేయండి.")
-    if st.button("📊 RUN BACKTEST"):
-        st.write("Backtest Processing for 200 stocks...")
+    if st.button("🚀 START SCAN"):
+        with ThreadPoolExecutor(max_workers=30) as executor:
+            all_signals = list(executor.map(lambda s: scan_stock(s, d5, nifty_5m, n_trend_1h), stocks))
+        
+        flat_signals = [item for sublist in all_signals for item in sublist]
+        if flat_signals:
+            df_res = pd.DataFrame(flat_signals).sort_values(by="TIME", ascending=False)
+            st.dataframe(df_res, use_container_width=True)
+            excel_out = io.BytesIO()
+            df_res.to_excel(excel_out, index=False)
+            st.download_button("📥 Download Excel", excel_out.getvalue(), "Signals.xlsx")
+        else: st.info("No signals found.")
