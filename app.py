@@ -10,7 +10,7 @@ import io
 # ==========================================
 # 1. PAGE CONFIG & STYLING
 # ==========================================
-st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.3 SUPREME", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI QUANT PRO V9.4 SUPREME", layout="wide")
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
@@ -24,14 +24,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.3 SUPREME</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🚀 NSE AI QUANT PRO V9.4 SUPREME</div>', unsafe_allow_html=True)
 st.markdown(f'<div class="sub-title">🕒 LIVE TIME : {now.strftime("%H:%M:%S")} IST</div>', unsafe_allow_html=True)
 
 # ==========================================
-# 2. NSE 200 LIST & INDICATORS
+# 2. STOCKS LIST & INDICATORS
 # ==========================================
-stocks = ["ABB", "ACC", "AUBANK", "ADANIENT", "ADANIPORTS", "AXISBANK", "BAJFINANCE", "BHARTIARTL", "BPCL", "CIPLA", 
-          "HDFCBANK", "ICICIBANK", "INFY", "ITC", "LT", "M&M", "RELIANCE", "SBIN", "TCS", "TATAMOTORS"]
+stocks = ["ABB", "ACC", "ADANIENT", "ADANIPORTS", "AXISBANK", "BAJFINANCE", "BHARTIARTL", "BPCL", "CIPLA", "HDFCBANK", 
+          "ICICIBANK", "INFY", "ITC", "LT", "M&M", "RELIANCE", "SBIN", "TCS", "TATAMOTORS", "TITAN", "WIPRO", "ZOMATO"]
 
 def add_indicators(df):
     df = df.copy()
@@ -47,17 +47,17 @@ def add_indicators(df):
     df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
     df['VOLAVG'] = df['Volume'].rolling(20).mean()
     df['RVOL'] = df['Volume'] / (df['VOLAVG'] + 1e-9)
-    df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
     ema12, ema26 = df['Close'].ewm(span=12).mean(), df['Close'].ewm(span=26).mean()
     df['MACD'] = ema12 - ema26
     df['MACD_SIGNAL'] = df['MACD'].ewm(span=9).mean()
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300) # కాష్ టైమ్ పెంచాను (5 నిమిషాలు)
 def fetch_data():
     tickers = [s + ".NS" for s in stocks] + ["^NSEI"]
-    d15m = yf.download(tickers, period="6d", interval="15m", group_by="ticker", progress=False)
-    d1h = yf.download("^NSEI", period="6d", interval="1h", progress=False)
+    # డేటా మిస్ అవ్వకుండా 7 రోజుల డేటా తీసుకుంటున్నాం
+    d15m = yf.download(tickers, period="7d", interval="15m", group_by="ticker", progress=False)
+    d1h = yf.download("^NSEI", period="7d", interval="1h", progress=False)
     return d15m, d1h
 
 # ==========================================
@@ -93,14 +93,14 @@ def scan_stock_logic(stock, data_15m, nifty_15m, market_trend, is_backtest=False
     except: return []
 
 # ==========================================
-# 4. DATA FETCH & TREND (Stability Fix)
+# 4. EXECUTION
 # ==========================================
-d15m, d1h = fetch_data()
-market_trend = "UNKNOWN"
-nifty_15m = pd.DataFrame()
+try:
+    d15m, d1h = fetch_data()
+    nifty_15m = pd.DataFrame()
+    market_trend = "UNKNOWN"
 
-if not d1h.empty and len(d1h) > 0:
-    try:
+    if not d1h.empty:
         n_last_1h = float(d1h['Close'].iloc[-1])
         n_ema_1h = float(d1h['Close'].ewm(span=20).mean().iloc[-1])
         market_trend = "POSITIVE" if n_last_1h > n_ema_1h else "NEGATIVE"
@@ -109,35 +109,30 @@ if not d1h.empty and len(d1h) > 0:
         
         box_class = "pos-trend" if market_trend == "POSITIVE" else "neg-trend"
         st.markdown(f'<div class="nifty-box {box_class}">NIFTY 50 1-HOUR TREND: {market_trend}</div>', unsafe_allow_html=True)
-    except: market_trend = "UNKNOWN"
-else:
-    st.warning("⚠️ Market data connecting... Please wait.")
+    else:
+        st.warning("⚠️ Market data is refreshing. Please wait or try again.")
 
-tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 BACKTEST"])
+    tab1, tab2 = st.tabs(["🔍 LIVE TRACKER", "📊 5-DAY BACKTEST"])
 
-with tab1:
-    if st.button("🚀 START SCAN"):
-        if market_trend == "UNKNOWN": st.error("Market data unavailable.")
-        else:
+    with tab1:
+        if st.button("🚀 START LIVE SCAN"):
             with ThreadPoolExecutor(max_workers=30) as executor:
                 all_res = list(executor.map(lambda s: scan_stock_logic(s, d15m, nifty_15m, market_trend), stocks))
             flat_res = [item for sublist in all_res for item in sublist]
             if flat_res:
-                df_live = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
-                st.dataframe(df_live.drop(columns=['DATE']), use_container_width=True)
-                out = io.BytesIO()
-                df_live.to_excel(out, index=False)
-                st.download_button("📥 Excel Download", out.getvalue(), "Today_Signals.xlsx")
-            else: st.info("No signals right now.")
+                df_l = pd.DataFrame(flat_res).sort_values(by="TIME", ascending=False)
+                st.dataframe(df_l.drop(columns=['DATE']), use_container_width=True)
+            else: st.info("No signals right now. Market might be closed.")
 
-with tab2:
-    if st.button("📊 RUN 5-DAY BACKTEST"):
-        with ThreadPoolExecutor(max_workers=30) as executor:
-            all_bt = list(executor.map(lambda s: scan_stock_logic(s, d15m, nifty_15m, market_trend, is_backtest=True), stocks))
-        flat_bt = [item for sublist in all_bt for item in sublist]
-        if flat_bt:
-            df_bt = pd.DataFrame(flat_bt).sort_values(by=["DATE", "TIME"], ascending=False)
-            st.dataframe(df_bt, use_container_width=True)
-            out_bt = io.BytesIO()
-            df_bt.to_excel(out_bt, index=False)
-            st.download_button("📥 Backtest Excel", out_bt.getvalue(), "Backtest_Report.xlsx")
+    with tab2:
+        if st.button("📊 RUN BACKTEST"):
+            with ThreadPoolExecutor(max_workers=30) as executor:
+                all_bt = list(executor.map(lambda s: scan_stock_logic(s, d15m, nifty_15m, market_trend, is_backtest=True), stocks))
+            flat_bt = [item for sublist in all_bt for item in sublist]
+            if flat_bt:
+                df_bt = pd.DataFrame(flat_bt).sort_values(by=["DATE", "TIME"], ascending=False)
+                st.dataframe(df_bt, use_container_width=True)
+            else: st.info("No historical data found.")
+
+except Exception as e:
+    st.error("⚠️ Connection Error. Please refresh the page.")
