@@ -9,14 +9,14 @@ import io
 import time
 
 # =========================================================
-# 🚀 NSE AI QUANT PRO V10.0 SUPREME ULTRA
+# 🚀 NSE AI QUANT PRO V11.0 SUPREME FINAL
 # =========================================================
 
 # =========================================================
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="🚀 NSE AI QUANT PRO V10.0 SUPREME ULTRA",
+    page_title="🚀 NSE AI QUANT PRO V11.0 SUPREME FINAL",
     layout="wide"
 )
 
@@ -34,7 +34,7 @@ st.markdown("""
 
 .main-title{
     text-align:center;
-    font-size:44px;
+    font-size:42px;
     font-weight:bold;
     color:#22c55e;
 }
@@ -43,36 +43,28 @@ st.markdown("""
     text-align:center;
     font-size:18px;
     color:#cbd5e1;
-    margin-bottom:25px;
+    margin-bottom:20px;
 }
 
-.nifty-box{
+.market-box{
     padding:20px;
-    border-radius:14px;
+    border-radius:12px;
     text-align:center;
     font-size:24px;
     font-weight:bold;
     margin-bottom:20px;
 }
 
-.pos-trend{
+.bull{
     background:#052e16;
     color:#22c55e;
     border:2px solid #22c55e;
 }
 
-.neg-trend{
+.bear{
     background:#450a0a;
     color:#f87171;
     border:2px solid #f87171;
-}
-
-.metric-card{
-    background:#111827;
-    padding:18px;
-    border-radius:12px;
-    text-align:center;
-    border:1px solid #374151;
 }
 
 </style>
@@ -82,7 +74,7 @@ st.markdown("""
 # HEADER
 # =========================================================
 st.markdown(
-    '<div class="main-title">🚀 NSE AI QUANT PRO V10.0 SUPREME ULTRA</div>',
+    '<div class="main-title">🚀 NSE AI QUANT PRO V11.0 SUPREME FINAL</div>',
     unsafe_allow_html=True
 )
 
@@ -94,30 +86,27 @@ st.markdown(
 # =========================================================
 # REFRESH BUTTON
 # =========================================================
-col_refresh1, col_refresh2 = st.columns([1, 5])
-
-with col_refresh1:
-    if st.button("🔄 Refresh"):
-        st.cache_data.clear()
-        st.rerun()
+if st.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
 
 # =========================================================
 # NSE STOCKS
 # =========================================================
 stocks = [
-    "ABB","ACC","ADANIENT","ADANIPORTS","AXISBANK",
-    "BAJFINANCE","BHARTIARTL","BPCL","CIPLA",
-    "HDFCBANK","ICICIBANK","INFY","ITC","LT",
-    "M&M","RELIANCE","SBIN","TCS","TATAMOTORS",
-    "TITAN","WIPRO","ZOMATO","HCLTECH",
+    "ABB","ACC","ADANIENT","ADANIPORTS",
+    "AXISBANK","BAJFINANCE","BHARTIARTL",
+    "BPCL","CIPLA","HDFCBANK","ICICIBANK",
+    "INFY","ITC","LT","M&M","RELIANCE",
+    "SBIN","TCS","TATAMOTORS","TITAN",
+    "WIPRO","ZOMATO","HCLTECH",
     "POWERGRID","SUNPHARMA","MARUTI",
-    "TATASTEEL","ONGC","NTPC","JSWSTEEL",
-    "KOTAKBANK","ULTRACEMCO","TECHM",
-    "INDUSINDBK","HINDALCO","COALINDIA"
+    "TATASTEEL","ONGC","NTPC",
+    "JSWSTEEL","KOTAKBANK","TECHM"
 ]
 
 # =========================================================
-# INDICATORS ENGINE
+# INDICATORS
 # =========================================================
 def add_indicators(df):
 
@@ -209,10 +198,10 @@ def add_indicators(df):
     return df
 
 # =========================================================
-# FETCH DATA SAFE
+# FETCH DATA
 # =========================================================
 @st.cache_data(ttl=60)
-def fetch_data_secure():
+def fetch_data():
 
     try:
 
@@ -252,16 +241,16 @@ def fetch_data_secure():
 # =========================================================
 # SCAN ENGINE
 # =========================================================
-def scan_stock(stock, data_15m, nifty_15m, market_trend):
+def scan_stock(stock, d15m, nifty_15m, market_trend):
 
     try:
 
         ticker = stock + ".NS"
 
-        if ticker not in data_15m:
+        if ticker not in d15m:
             return []
 
-        raw = data_15m[ticker].dropna()
+        raw = d15m[ticker].dropna()
 
         df = add_indicators(raw)
 
@@ -272,9 +261,9 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
 
         results = []
 
-        today_date = now.date()
+        today = now.date()
 
-        scan_df = df[df.index.date == today_date]
+        scan_df = df[df.index.date == today]
 
         for i in range(1, len(scan_df)):
 
@@ -284,7 +273,6 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
                 continue
 
             row = df.iloc[idx]
-
             prev = df.iloc[idx - 1]
 
             n_row = nifty_sync.iloc[idx]
@@ -302,7 +290,7 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
                 row['EMA9'] < row['VWAP']
             )
 
-            # BUY SIGNAL
+            # BUY
             buy_signal = (
 
                 market_trend == "POSITIVE"
@@ -332,7 +320,7 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
                 row['Close'] > row['EMA20']
             )
 
-            # SELL SIGNAL
+            # SELL
             sell_signal = (
 
                 market_trend == "NEGATIVE"
@@ -375,7 +363,7 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
                 100
             )
 
-            # BUY ENTRY
+            # BUY RESULT
             if buy_signal:
 
                 results.append({
@@ -395,7 +383,7 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
                     "AI_SCORE": ai_score
                 })
 
-            # SELL ENTRY
+            # SELL RESULT
             if sell_signal:
 
                 results.append({
@@ -424,14 +412,14 @@ def scan_stock(stock, data_15m, nifty_15m, market_trend):
 # =========================================================
 # LOAD DATA
 # =========================================================
-d15m, d1h = fetch_data_secure()
+d15m, d1h = fetch_data()
 
 market_trend = "UNKNOWN"
 
 nifty_15m = pd.DataFrame()
 
 # =========================================================
-# SAFE MARKET TREND
+# MARKET TREND
 # =========================================================
 if (
     d1h is not None
@@ -443,16 +431,16 @@ if (
 
     try:
 
-        n_last_1h = d1h['Close'].iloc[-1]
+        n_last = d1h['Close'].iloc[-1]
 
-        n_ema_1h = d1h['Close'].ewm(
+        n_ema = d1h['Close'].ewm(
             span=20,
             adjust=False
         ).mean().iloc[-1]
 
         market_trend = (
             "POSITIVE"
-            if n_last_1h > n_ema_1h
+            if n_last > n_ema
             else "NEGATIVE"
         )
 
@@ -469,15 +457,15 @@ if (
             nifty_15m = add_indicators(n_raw)
 
             box_class = (
-                "pos-trend"
+                "bull"
                 if market_trend == "POSITIVE"
-                else "neg-trend"
+                else "bear"
             )
 
             st.markdown(
                 f'''
-                <div class="nifty-box {box_class}">
-                📈 NIFTY 50 TREND : {market_trend}
+                <div class="market-box {box_class}">
+                📈 NIFTY TREND : {market_trend}
                 </div>
                 ''',
                 unsafe_allow_html=True
@@ -492,7 +480,7 @@ if (
     except Exception as e:
 
         st.error(
-            f"⚠️ Data Error : {e}"
+            f"⚠️ Error : {e}"
         )
 
 else:
@@ -510,7 +498,7 @@ tab1, tab2 = st.tabs([
 ])
 
 # =========================================================
-# LIVE TRACKER
+# LIVE SCANNER
 # =========================================================
 with tab1:
 
@@ -519,7 +507,7 @@ with tab1:
         if market_trend == "UNKNOWN":
 
             st.error(
-                "Cannot scan : Data not available"
+                "❌ Market Data Not Available"
             )
 
         else:
@@ -637,7 +625,7 @@ with tab2:
         if market_trend == "UNKNOWN":
 
             st.error(
-                "Cannot run backtest : No data"
+                "❌ Cannot Run Backtest"
             )
 
         else:
@@ -667,7 +655,6 @@ with tab2:
                         for i in range(25, len(df)-10):
 
                             row = df.iloc[i]
-
                             prev = df.iloc[i - 1]
 
                             n_row = nifty_sync.iloc[i]
@@ -752,7 +739,10 @@ with tab2:
 
                                 result = "OPEN"
 
-                                for j in range(i+1, min(i+10, len(df))):
+                                for j in range(
+                                    i + 1,
+                                    min(i + 10, len(df))
+                                ):
 
                                     nxt = df.iloc[j]
 
@@ -849,3 +839,32 @@ with tab2:
 
                     st.dataframe(
                         df_bt,
+                        use_container_width=True
+                    )
+
+                    # DOWNLOAD
+                    bt_buffer = io.BytesIO()
+
+                    with pd.ExcelWriter(
+                        bt_buffer,
+                        engine='xlsxwriter'
+                    ) as writer:
+
+                        df_bt.to_excel(
+                            writer,
+                            index=False,
+                            sheet_name='Backtest'
+                        )
+
+                    st.download_button(
+                        "📥 DOWNLOAD BACKTEST",
+                        bt_buffer.getvalue(),
+                        file_name="NSE_BACKTEST.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                else:
+
+                    st.warning(
+                        "❌ No Backtest Trades Found"
+                    )
