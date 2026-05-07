@@ -2,179 +2,147 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, time
+from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor
 import io
 
 # =========================================================
-# PAGE CONFIG
+# PAGE SETUP
 # =========================================================
-st.set_page_config(
-    page_title="🚀 NSE AI QUANT PRO V23 - NIFTY 200",
-    layout="wide"
-)
+st.set_page_config(page_title="🚀 EMA21-VWAP BIG VOL SCANNER", layout="wide")
 
-# =========================================================
-# TIMEZONE & THEME
-# =========================================================
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.markdown("""
-    <style>
-    .main { background-color: #0f172a; color: white; }
-    .stMetric { background-color: #1e293b; padding: 15px; border-radius: 10px; border: 1px solid #334155; }
-    </style>
-    """, unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;color:#3b82f6;'>🚀 NSE AI QUANT V24</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center;'>EMA 21 & VWAP CROSSOVER + BIG VOLUME</h3>", unsafe_allow_html=True)
 
 # =========================================================
-# NIFTY 200 STOCK LIST (Major Stocks)
+# NIFTY 200 STOCKS (Top 150+ for Performance)
 # =========================================================
-# సమయం ఆదా చేయడానికి ప్రధాన నిఫ్టీ 200 స్టాక్స్ ఇక్కడ ఉన్నాయి
-nifty_200_stocks = [
+nifty_200 = [
     "ABB","ACC","AUBANK","ADANIENSOL","ADANIENT","ADANIGREEN","ADANIPORTS","ADANIPOWER","ATGL","ABCAPITAL",
     "ABFRL","ALKEM","AMBUJACEM","APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASIANPAINT","AXISBANK","BAJAJ-AUTO",
     "BAJFINANCE","BAJAJFINSV","BEL","BHEL","BPCL","BHARTIARTL","CANBK","CIPLA","COALINDIA","DLF","DRREDDY",
     "GAIL","HDFCBANK","HCLTECH","HINDALCO","ICICIBANK","INFY","ITC","JSWSTEEL","KOTAKBANK","LT","M&M",
     "MARUTI","NTPC","ONGC","RELIANCE","SBIN","SUNPHARMA","TATASTEEL","TCS","TECHM","TITAN","WIPRO","ZOMATO",
-    "AMARAJABAT","APLLTD","AUROPHARMA","BALKRISIND","BANDHANBNK","BANKBARODA","BERGEPAINT","BIOCON","CHOLAFIN",
-    "CONCOR","CUMMINSIND","ESCORTS","FEDERALBNK","GODREJCP","GUJGASLTD","HAVELLS","HEROMOTOCO","HIND-UNILVR",
-    "ICICIGI","IDFCFIRSTB","IGL","INDHOTEL","INDUSINDBK","INDUSTOWER","IOC","IRCTC","JINDALSTEL","JUBLFOOD",
-    "LICHSGFIN","LTIM","LUPIN","MRF","MUTHOOTFIN","NAUKRI","NESTLEIND","OBEROIRLTY","PEL","PFC","PIDILITIND",
-    "PNB","RECLTD","SRF","TATACOMM","TATACONSUM","TATAMOTORS","TATAPOWER","TRENT","TVSMOTOR","UBL","ULTRACEMCO",
-    "UPL","VOLTAS","YESBANK"
-] # మరిన్ని యాడ్ చేసుకోవచ్చు
+    "AUROPHARMA","BALKRISIND","BANKBARODA","BERGEPAINT","BIOCON","CHOLAFIN","CONCOR","CUMMINSIND","ESCORTS",
+    "FEDERALBNK","GODREJCP","HAVELLS","HEROMOTOCO","HIND-UNILVR","ICICIGI","IDFCFIRSTB","IGL","INDHOTEL",
+    "INDUSINDBK","INDUSTOWER","IOC","IRCTC","JINDALSTEL","JUBLFOOD","LTIM","LUPIN","MRF","MUTHOOTFIN",
+    "NAUKRI","NESTLEIND","OBEROIRLTY","PFC","PIDILITIND","PNB","RECLTD","SRF","TATACONSUM","TATAMOTORS",
+    "TATAPOWER","TRENT","TVSMOTOR","ULTRACEMCO","VOLTAS","YESBANK"
+]
 
 # =========================================================
-# INDICATORS CALCULATOR
+# INDICATORS & LOGIC
 # =========================================================
-def calculate_v23_indicators(df):
-    df = df.copy().ffill()
-    if len(df) < 50: return pd.DataFrame()
-
-    # EMAs
-    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
-    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
-    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-
-    # VWAP
-    df['PV'] = df['Close'] * df['Volume']
-    df['VWAP'] = (df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9))
-
-    # RSI & ADX
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = ((-delta.where(delta < 0, 0))).rolling(14).mean()
-    df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-    
-    tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))], axis=1).max(axis=1)
-    df['ATR'] = tr.rolling(14).mean()
-    
-    # RVOL
-    df['RVOL'] = df['Volume'] / (df['Volume'].rolling(20).mean() + 1e-9)
-
-    return df
-
-# =========================================================
-# CORE SCANNER LOGIC
-# =========================================================
-def run_v23_engine(stock, mode="TODAY", raw_data=None):
+def get_v24_signals(stock, raw_data):
     try:
         ticker = stock + ".NS"
-        df = calculate_v23_indicators(raw_data[ticker].dropna())
-        if df.empty: return []
+        df = raw_data[ticker].dropna().copy()
+        if len(df) < 30: return []
 
+        # EMA 21
+        df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
+
+        # VWAP
+        df['PV'] = df['Close'] * df['Volume']
+        df['VWAP'] = (df.groupby(df.index.date)['PV'].cumsum() / (df.groupby(df.index.date)['Volume'].cumsum() + 1e-9))
+
+        # Volume Analysis (Big Volume = 2x Average)
+        df['AvgVol'] = df['Volume'].rolling(20).mean()
+        df['BigVol'] = df['Volume'] > (df['AvgVol'] * 2)
+
+        # Timezone
         if df.index.tz is None: df.index = df.index.tz_localize("UTC")
         df.index = df.index.tz_convert(IST)
 
-        scan_df = df[df.index.date == df.index.date.max()] if mode == "TODAY" else df.copy()
-        
         results = []
-        for i in range(5, len(scan_df) - 5):
-            row = scan_df.iloc[i]
+        # Last 10 Days only for Backtest
+        ten_days_ago = (datetime.now(IST) - timedelta(days=10)).date()
+        df = df[df.index.date >= ten_days_ago]
+
+        for i in range(1, len(df)):
+            row = df.iloc[i]
+            prev = df.iloc[i-1]
+
+            # BUY: EMA21 crosses above VWAP + Big Volume
+            buy_signal = (prev['EMA21'] <= prev['VWAP']) and (row['EMA21'] > row['VWAP']) and row['BigVol']
             
-            # V23 PRO CONDITIONS
-            buy_sig = (row['Close'] > row['EMA50'] and row['EMA9'] > row['EMA21'] and 
-                       row['Close'] > row['VWAP'] and 55 < row['RSI'] < 75)
-            
-            sell_sig = (row['Close'] < row['EMA50'] and row['EMA9'] < row['EMA21'] and 
-                        row['Close'] < row['VWAP'] and 25 < row['RSI'] < 45)
+            # SELL: EMA21 crosses below VWAP + Big Volume
+            sell_signal = (prev['EMA21'] >= prev['VWAP']) and (row['EMA21'] < row['VWAP']) and row['BigVol']
 
-            if buy_sig or sell_sig:
-                signal = "BUY" if buy_sig else "SELL"
-                entry = round(row['Close'], 2)
-                sl = round(entry - (row['ATR'] * 1.5), 2) if buy_sig else round(entry + (row['ATR'] * 1.5), 2)
-                tgt = round(entry + (row['ATR'] * 3), 2) if buy_sig else round(entry - (row['ATR'] * 3), 2)
-
-                # Outcome Simulation
-                status = "⏳ OPEN"
-                future = scan_df.iloc[i+1 : i+10]
-                for _, frow in future.iterrows():
-                    if buy_sig:
-                        if frow['High'] >= tgt: status = "✅ TARGET"; break
-                        if frow['Low'] <= sl: status = "❌ SL"; break
-                    else:
-                        if frow['Low'] <= tgt: status = "✅ TARGET"; break
-                        if frow['High'] >= sl: status = "❌ SL"; break
-
+            if buy_signal or sell_signal:
                 results.append({
                     "DATE": row.name.strftime("%Y-%m-%d"),
                     "TIME": row.name.strftime("%H:%M"),
-                    "STOCK": stock, "SIGNAL": signal, "ENTRY": entry,
-                    "SL": sl, "TGT": tgt, "STATUS": status,
-                    "RVOL": round(row['RVOL'], 2)
+                    "STOCK": stock,
+                    "SIGNAL": "BIG BUY" if buy_signal else "BIG SELL",
+                    "PRICE": round(row['Close'], 2),
+                    "VOLUME": int(row['Volume']),
+                    "VOL_SHOCK": "YES" if row['BigVol'] else "NO"
                 })
         return results
     except: return []
 
 # =========================================================
-# MAIN INTERFACE
+# EXCEL HELPER
 # =========================================================
-st.title("🚀 NSE AI QUANT PRO V23 (NIFTY 200)")
+def convert_to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Signals')
+    return output.getvalue()
 
-tab1, tab2 = st.tabs(["🔍 MULTI-STOCK SCANNER", "📊 BACKTEST DASHBOARD"])
-
+# =========================================================
+# UI DATA LOADING
+# =========================================================
 @st.cache_data(ttl=600)
-def load_bulk_data():
-    tickers = [s + ".NS" for s in nifty_200_stocks]
-    return yf.download(tickers, period="1mo", interval="15m", group_by="ticker", auto_adjust=True, threads=True)
+def fetch_data_bulk():
+    tickers = [s + ".NS" for s in nifty_200]
+    return yf.download(tickers, period="1mo", interval="15m", group_by="ticker", auto_adjust=True)
 
-all_data = load_bulk_data()
+all_data = fetch_data_bulk()
+
+# =========================================================
+# TABS
+# =========================================================
+tab1, tab2 = st.tabs(["🔍 LIVE SCANNER", "📊 10-DAY BACKTEST EXCEL"])
 
 with tab1:
-    if st.button("🔥 START NIFTY 200 SCAN"):
-        with st.spinner(f"Scanning {len(nifty_200_stocks)} Stocks..."):
-            today_res = []
-            with ThreadPoolExecutor(max_workers=15) as executor:
-                futures = [executor.submit(run_v23_engine, s, "TODAY", all_data) for s in nifty_200_stocks]
-                for f in futures: today_res.extend(f.result())
+    if st.button("🔥 RUN EMA-VWAP SCAN"):
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(get_v24_signals, s, all_data) for s in nifty_200]
+            for f in futures:
+                # Only take the latest signal for Live Scanner
+                res = f.result()
+                if res: results.append(res[-1])
+        
+        if results:
+            df_live = pd.DataFrame(results)
+            st.success(f"Found {len(df_live)} Big Momentum Signals")
+            st.dataframe(df_live, use_container_width=True)
             
-            if today_res:
-                st.success(f"Found {len(today_res)} Signals")
-                st.dataframe(pd.DataFrame(today_res), use_container_width=True)
-            else:
-                st.warning("ప్రస్తుతానికి ఎటువంటి హై-ప్రాబబిలిటీ సిగ్నల్స్ లేవు.")
+            excel_data = convert_to_excel(df_live)
+            st.download_button("📥 Download Live Excel", excel_data, "Live_Signals.xlsx")
+        else:
+            st.warning("No Crossover with Big Volume found right now.")
 
 with tab2:
-    if st.button("📊 GENERATE BACKTEST REPORT"):
-        with st.spinner("Analyzing past 30 days performance..."):
-            bt_res = []
-            with ThreadPoolExecutor(max_workers=15) as executor:
-                futures = [executor.submit(run_v23_engine, s, "BACKTEST", all_data) for s in nifty_200_stocks]
-                for f in futures: bt_res.extend(f.result())
+    st.write("గత 10 రోజుల డేటాలో వచ్చిన అన్ని క్రాస్ఓవర్ సిగ్నల్స్ ఇక్కడ కనిపిస్తాయి.")
+    if st.button("📈 GENERATE 10-DAY REPORT"):
+        bt_results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(get_v24_signals, s, all_data) for s in nifty_200]
+            for f in futures: bt_results.extend(f.result())
+        
+        if bt_results:
+            df_bt = pd.DataFrame(bt_results)
+            st.dataframe(df_bt.sort_values("DATE", ascending=False), use_container_width=True)
             
-            if bt_res:
-                df_bt = pd.DataFrame(bt_res)
-                wins = len(df_bt[df_bt['STATUS'] == "✅ TARGET"])
-                losses = len(df_bt[df_bt['STATUS'] == "❌ SL"])
-                acc = (wins / (wins + losses) * 100) if (wins+losses) > 0 else 0
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Win Accuracy", f"{acc:.2f}%")
-                c2.metric("Target Hits", wins)
-                c3.metric("SL Hits", losses)
-                
-                st.dataframe(df_bt.sort_values("DATE", ascending=False), use_container_width=True)
-            else:
-                st.error("No backtest data found.")
+            bt_excel = convert_to_excel(df_bt)
+            st.download_button("📥 Download 10-Day Backtest Excel", bt_excel, "Backtest_10Days.xlsx")
+        else:
+            st.error("No signals found in the last 10 days.")
