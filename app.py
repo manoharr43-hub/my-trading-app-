@@ -87,7 +87,7 @@ def win_probability(score):
     return 40
 
 # =========================
-# ENGINE (BUY + SELL + BIG PLAYER)
+# ENGINE (BUY + SELL)
 # =========================
 def engine(stock, raw, date):
     try:
@@ -97,9 +97,9 @@ def engine(stock, raw, date):
         df = raw[key].dropna().copy()
         if len(df) < 60:
             return []
+        df["EMA21"] = df["Close"].ewm(span=21).mean()
         df["EMA20"] = df["Close"].ewm(span=20).mean()
         df["EMA50"] = df["Close"].ewm(span=50).mean()
-        df["EMA21"] = df["Close"].ewm(span=21).mean()
         df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / (df["Volume"].cumsum() + 1e-9)
         tr = pd.concat([
             df["High"] - df["Low"],
@@ -119,9 +119,8 @@ def engine(stock, raw, date):
             t = row.name.time()
             if not (datetime.strptime("09:15","%H:%M").time() <= t <= datetime.strptime("15:30","%H:%M").time()):
                 continue
-            # BUY / SELL + Big Player Entry
-            buy = (row["Close"] > row["VWAP"] and 50 < row["RSI"] < 70 and row["Volume"] > row["VOL_AVG"]*3 and row["EMA20"] > row["EMA50"])
-            sell = (row["Close"] < row["VWAP"] and 30 < row["RSI"] < 50 and row["Volume"] > row["VOL_AVG"]*3 and row["EMA20"] < row["EMA50"])
+            buy = (row["Close"] > row["VWAP"] and 50 < row["RSI"] < 70)
+            sell = (row["Close"] < row["VWAP"] and 30 < row["RSI"] < 50)
             if not (buy or sell):
                 continue
             entry = row["Close"]
@@ -197,4 +196,23 @@ with tab1:
                 st.dataframe(pos_df.head(10))
             neg_df = df[df["SIGNAL"] == "SELL"].sort_values("SCORE", ascending=False)
             if not neg_df.empty:
-                st.subheader("📉 TOP NEGATIVE (SELL
+                st.subheader("📉 TOP NEGATIVE (SELL)")
+                st.dataframe(neg_df.head(10))
+            st.subheader("📊 ALL SIGNALS")
+            st.dataframe(df)
+            st.download_button(
+                "⬇️ DOWNLOAD EXCEL",
+                data=to_excel(df),
+                file_name="nse_ai_v53_live.xlsx"
+            )
+        else:
+            st.warning("NO SIGNALS FOUND")
+
+# =========================
+# BACKTEST
+# =========================
+with tab2:
+    d = st.date_input("Select Date", now.date() - timedelta(days=1))
+    if st.button("RUN BACKTEST"):
+        results = []
+        with ThreadPoolExecutor(max_workers=10
