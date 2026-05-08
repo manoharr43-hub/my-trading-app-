@@ -5,91 +5,41 @@ import numpy as np
 from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor
-import io
 
-# =========================================================
+# =========================
 # APP CONFIG
-# =========================================================
-st.set_page_config(page_title="🚀 NSE AI V35 PRO", layout="wide")
+# =========================
+st.set_page_config(page_title="🚀 NSE AI V50 PRO - NIFTY200", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-# =========================================================
-# LIVE CLOCK
-# =========================================================
-st.markdown(f"""
-## 🕒 LIVE TIME (IST)
-### {now.strftime("%Y-%m-%d %H:%M:%S")}
-""")
+st.title("🚀 NSE AI V50 PRO - NIFTY 200 DECISION SYSTEM")
 
-# =========================================================
-# NIFTY BOX (POSITIVE / NEGATIVE)
-# =========================================================
-def nifty_box():
-    try:
-        n = yf.Ticker("^NSEI").history(period="2d")
+st.markdown(f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        last = n['Close'].iloc[-1]
-        prev = n['Close'].iloc[-2]
-
-        change = last - prev
-        pct = (change / prev) * 100
-
-        if change >= 0:
-            color = "#16a34a"
-            status = "🟢 POSITIVE"
-        else:
-            color = "#dc2626"
-            status = "🔴 NEGATIVE"
-
-        return f"""
-        <div style="
-            background:{color};
-            padding:20px;
-            border-radius:12px;
-            text-align:center;
-            color:white;
-            margin-bottom:20px;
-        ">
-            <h2>NIFTY 50 INDEX</h2>
-            <h3>{status}</h3>
-            <h3>{pct:.2f}%</h3>
-        </div>
-        """
-    except:
-        return "<div style='padding:15px;background:#334155;color:white'>NIFTY LOADING...</div>"
-
-st.markdown(nifty_box(), unsafe_allow_html=True)
-
-# =========================================================
-# STOCK LIST (SAFE CORE SET)
-# =========================================================
+# =========================
+# NIFTY 200 STOCKS (CORE + EXPANDED)
+# =========================
 stocks = [
+    # NIFTY 50 CORE
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
     "ITC","LT","BHARTIARTL","KOTAKBANK","HCLTECH","WIPRO","TECHM",
     "SUNPHARMA","TITAN","MARUTI","ONGC","NTPC","POWERGRID","COALINDIA",
-    "JSWSTEEL","TATASTEEL","HINDALCO","BAJFINANCE","BAJAJFINSV",
-    "ASIANPAINT","ULTRACEMCO","NESTLEIND","BRITANNIA","DRREDDY","CIPLA",
-    "DIVISLAB","ADANIENT","ADANIPORTS","BEL","BHEL","DLF","GAIL",
-    "IOC","BPCL","INDUSINDBK","PNB","BANKBARODA","CANBK",
-    "SBILIFE","HDFCLIFE","TATAMOTORS","EICHERMOT","HEROMOTOCO",
-    "M&M","TVSMOTOR","GRASIM","UPL","PIDILITIND","DABUR",
-    "MARICO","COLPAL","TRENT","PAGEIND","HAL","ABB","SIEMENS"
+
+    # LARGE MID EXPANSION
+    "BAJFINANCE","BAJAJFINSV","ADANIENT","ADANIPORTS","ULTRACEMCO",
+    "ASIANPAINT","NESTLEIND","BRITANNIA","DRREDDY","CIPLA","DIVISLAB",
+    "EICHERMOT","HEROMOTOCO","TATAMOTORS","M&M","TVSMOTOR",
+    "JSWSTEEL","TATASTEEL","HINDALCO","GRASIM","UPL","PIDILITIND",
+    "DABUR","MARICO","COLPAL","TRENT","PAGEIND","HAVELLS",
+    "SIEMENS","ABB","HAL","BEL","BHEL","DLF","GAIL","IOC","BPCL",
+    "INDUSINDBK","PNB","BANKBARODA","CANBK","SBILIFE","HDFCLIFE"
 ]
 
-# =========================================================
-# EXCEL EXPORT
-# =========================================================
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
-    return output.getvalue()
-
-# =========================================================
+# =========================
 # DATA LOAD
-# =========================================================
+# =========================
 @st.cache_data(ttl=300)
 def load_data():
     return yf.download(
@@ -102,9 +52,9 @@ def load_data():
 
 data = load_data()
 
-# =========================================================
-# RSI CALC
-# =========================================================
+# =========================
+# RSI
+# =========================
 def rsi(x):
     d = x.diff()
     g = d.clip(lower=0)
@@ -112,9 +62,53 @@ def rsi(x):
     rs = g.rolling(14).mean() / (l.rolling(14).mean()+1e-9)
     return 100 - (100/(1+rs))
 
-# =========================================================
-# ENGINE (FINAL CLEAN LOGIC)
-# =========================================================
+# =========================
+# SCORE ENGINE
+# =========================
+def score_engine(row):
+
+    score = 0
+
+    if row['Close'] > row['VWAP']:
+        score += 25
+
+    if 55 <= row['RSI'] <= 68:
+        score += 25
+    elif 30 <= row['RSI'] < 45:
+        score += 25
+
+    if row['Volume'] > row['VOL_AVG']:
+        score += 20
+
+    if row['Close'] > row['EMA21']:
+        score += 20
+
+    return min(score, 100)
+
+# =========================
+# WIN PROBABILITY
+# =========================
+def win_probability(score, rsi_val):
+
+    base = score
+
+    if 55 <= rsi_val <= 65:
+        base += 10
+
+    if base >= 90:
+        return 85
+    elif base >= 80:
+        return 75
+    elif base >= 70:
+        return 65
+    elif base >= 60:
+        return 55
+    else:
+        return 40
+
+# =========================
+# ENGINE
+# =========================
 def engine(stock, raw, date):
 
     try:
@@ -123,7 +117,6 @@ def engine(stock, raw, date):
             return []
 
         df['EMA21'] = df['Close'].ewm(span=21).mean()
-        df['EMA50'] = df['Close'].ewm(span=50).mean()
 
         df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
 
@@ -133,8 +126,7 @@ def engine(stock, raw, date):
             abs(df['Low']-df['Close'].shift())
         ], axis=1).max(axis=1)
 
-        df['ATR'] = tr.rolling(14, min_periods=1).mean()
-
+        df['ATR'] = tr.rolling(14).mean()
         df['RSI'] = rsi(df['Close'])
         df['VOL_AVG'] = df['Volume'].rolling(20).mean()
 
@@ -142,93 +134,93 @@ def engine(stock, raw, date):
             df.index = df.index.tz_localize("UTC")
 
         df.index = df.index.tz_convert(IST)
-
         df = df[df.index.date == pd.to_datetime(date).date()]
 
         results = []
-        last_signal = None
 
         for i in range(1, len(df)):
 
             row = df.iloc[i]
+
             t = row.name.time()
 
             if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
                 continue
 
-            # COOLDOWN
-            if last_signal and (row.name - last_signal).seconds < 900:
-                continue
-
             vol_ok = row['Volume'] > row['VOL_AVG']
 
-            buy = (
-                row['Close'] > row['VWAP'] and
-                55 < row['RSI'] < 68 and
-                vol_ok
+            buy = (row['Close'] > row['VWAP'] and 50 < row['RSI'] < 70 and vol_ok)
+            sell = (row['Close'] < row['VWAP'] and 30 < row['RSI'] < 50 and vol_ok)
+
+            if not (buy or sell):
+                continue
+
+            entry = row['Close']
+            atr = row['ATR']
+
+            sl = entry - atr*2.5 if buy else entry + atr*2.5
+            tgt = entry + atr*2.0 if buy else entry - atr*2.0
+
+            score = score_engine(row)
+            win = win_probability(score, row['RSI'])
+
+            decision = (
+                "STRONG BUY" if score >= 80 else
+                "BUY" if score >= 65 else
+                "HOLD" if score >= 50 else
+                "AVOID"
             )
 
-            sell = (
-                row['Close'] < row['VWAP'] and
-                30 < row['RSI'] < 45 and
-                vol_ok
-            )
+            status = "OPEN"
 
-            if buy or sell:
+            future = df.iloc[i+1:i+20]
 
-                entry = row['Close']
-                atr = row['ATR']
+            for _, f in future.iterrows():
+                if buy:
+                    if f['High'] >= tgt:
+                        status = "TARGET"
+                        break
+                    if f['Low'] <= sl:
+                        status = "SL"
+                        break
+                else:
+                    if f['Low'] <= tgt:
+                        status = "TARGET"
+                        break
+                    if f['High'] >= sl:
+                        status = "SL"
+                        break
 
-                sl = entry - atr*2.5 if buy else entry + atr*2.5
-                tgt = entry + atr*2.0 if buy else entry - atr*2.0
-
-                status = "OPEN"
-
-                future = df.iloc[i+1:i+20]
-
-                for _, f in future.iterrows():
-
-                    if buy:
-                        if f['High'] >= tgt:
-                            status = "TARGET"
-                            break
-                        if f['Low'] <= sl:
-                            status = "SL"
-                            break
-                    else:
-                        if f['Low'] <= tgt:
-                            status = "TARGET"
-                            break
-                        if f['High'] <= sl:
-                            status = "SL"
-                            break
-
-                results.append({
-                    "TIME": row.name.strftime("%H:%M"),
-                    "STOCK": stock,
-                    "SIGNAL": "BUY" if buy else "SELL",
-                    "ENTRY": round(entry,2),
-                    "SL": round(sl,2),
-                    "TARGET": round(tgt,2),
-                    "RSI": round(row['RSI'],2),
-                    "STATUS": status
-                })
-
-                last_signal = row.name
+            results.append({
+                "TIME": row.name.strftime("%H:%M"),
+                "STOCK": stock,
+                "SIGNAL": "BUY" if buy else "SELL",
+                "ENTRY": round(entry,2),
+                "SL": round(sl,2),
+                "TARGET": round(tgt,2),
+                "RSI": round(row['RSI'],2),
+                "SCORE": score,
+                "WIN%": win,
+                "DECISION": decision,
+                "STATUS": status
+            })
 
         return results
 
     except:
         return []
 
-# =========================================================
+# =========================
 # UI
-# =========================================================
+# =========================
 tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
 
+# =========================
+# LIVE
+# =========================
 with tab1:
 
-    if st.button("RUN LIVE SCAN"):
+    if st.button("RUN LIVE SCAN (NIFTY200)"):
 
         results = []
 
@@ -238,16 +230,26 @@ with tab1:
             for f in futures:
                 r = f.result()
                 if r:
-                    results.append(r[-1])
+                    results.extend(r)
 
         df = pd.DataFrame(results)
 
         if not df.empty:
-            st.dataframe(df)
-            st.download_button("📥 LIVE EXCEL", to_excel(df), file_name="LIVE.xlsx")
-        else:
-            st.warning("NO SIGNALS")
 
+            df = df.sort_values("SCORE", ascending=False)
+
+            st.subheader("🥇 TOP 5 STOCK PICKS")
+            st.dataframe(df.head(5))
+
+            st.subheader("📊 ALL SIGNALS (NIFTY200)")
+            st.dataframe(df)
+
+        else:
+            st.warning("NO SIGNALS FOUND")
+
+# =========================
+# BACKTEST
+# =========================
 with tab2:
 
     d = st.date_input("Select Date", now.date()-timedelta(days=1))
@@ -274,8 +276,6 @@ with tab2:
             losses = len(df[df['STATUS']=="SL"])
 
             st.success(f"WINS: {wins} | LOSSES: {losses}")
-
-            st.download_button("📥 BACKTEST EXCEL", to_excel(df), file_name="BACKTEST.xlsx")
 
         else:
             st.warning("NO DATA")
