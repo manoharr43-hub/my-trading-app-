@@ -10,7 +10,7 @@ import io
 # =========================================================
 # APP CONFIG
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI V34 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V35 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
@@ -24,19 +24,46 @@ st.markdown(f"""
 """)
 
 # =========================================================
-# NIFTY TREND
+# NIFTY BOX (POSITIVE / NEGATIVE)
 # =========================================================
-def nifty_trend():
+def nifty_box():
     try:
-        n = yf.Ticker("^NSEI").history(period="5d")
-        return n['Close'].iloc[-1] > n['Close'].rolling(5).mean().iloc[-1]
-    except:
-        return True
+        n = yf.Ticker("^NSEI").history(period="2d")
 
-market_up = nifty_trend()
+        last = n['Close'].iloc[-1]
+        prev = n['Close'].iloc[-2]
+
+        change = last - prev
+        pct = (change / prev) * 100
+
+        if change >= 0:
+            color = "#16a34a"
+            status = "🟢 POSITIVE"
+        else:
+            color = "#dc2626"
+            status = "🔴 NEGATIVE"
+
+        return f"""
+        <div style="
+            background:{color};
+            padding:20px;
+            border-radius:12px;
+            text-align:center;
+            color:white;
+            margin-bottom:20px;
+        ">
+            <h2>NIFTY 50 INDEX</h2>
+            <h3>{status}</h3>
+            <h3>{pct:.2f}%</h3>
+        </div>
+        """
+    except:
+        return "<div style='padding:15px;background:#334155;color:white'>NIFTY LOADING...</div>"
+
+st.markdown(nifty_box(), unsafe_allow_html=True)
 
 # =========================================================
-# NIFTY 200 STOCKS (CLEAN CORE LIST)
+# STOCK LIST (SAFE CORE SET)
 # =========================================================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
@@ -61,7 +88,7 @@ def to_excel(df):
     return output.getvalue()
 
 # =========================================================
-# DATA
+# DATA LOAD
 # =========================================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -76,7 +103,7 @@ def load_data():
 data = load_data()
 
 # =========================================================
-# RSI
+# RSI CALC
 # =========================================================
 def rsi(x):
     d = x.diff()
@@ -95,7 +122,6 @@ def engine(stock, raw, date):
         if len(df) < 60:
             return []
 
-        # INDICATORS
         df['EMA21'] = df['Close'].ewm(span=21).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
 
@@ -110,10 +136,8 @@ def engine(stock, raw, date):
         df['ATR'] = tr.rolling(14, min_periods=1).mean()
 
         df['RSI'] = rsi(df['Close'])
-
         df['VOL_AVG'] = df['Volume'].rolling(20).mean()
 
-        # TIMEZONE
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
 
@@ -129,28 +153,25 @@ def engine(stock, raw, date):
             row = df.iloc[i]
             t = row.name.time()
 
-            # TIME FILTER
             if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
                 continue
 
-            # COOLDOWN (NO OVERTRADE)
+            # COOLDOWN
             if last_signal and (row.name - last_signal).seconds < 900:
                 continue
 
             vol_ok = row['Volume'] > row['VOL_AVG']
 
-            trend_ok = (row['EMA21'] > row['EMA50']) if market_up else (row['EMA21'] < row['EMA50'])
-
             buy = (
                 row['Close'] > row['VWAP'] and
                 55 < row['RSI'] < 68 and
-                vol_ok and trend_ok
+                vol_ok
             )
 
             sell = (
                 row['Close'] < row['VWAP'] and
                 30 < row['RSI'] < 45 and
-                vol_ok and trend_ok
+                vol_ok
             )
 
             if buy or sell:
@@ -158,7 +179,6 @@ def engine(stock, raw, date):
                 entry = row['Close']
                 atr = row['ATR']
 
-                # SAFE SL / TARGET
                 sl = entry - atr*2.5 if buy else entry + atr*2.5
                 tgt = entry + atr*2.0 if buy else entry - atr*2.0
 
