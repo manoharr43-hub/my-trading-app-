@@ -4,209 +4,154 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import pytz
-from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
+import io
 
 # =========================
-# APP CONFIG
+# CONFIG
 # =========================
-st.set_page_config(page_title="🚀 NSE AI V52 PRO - NIFTY200", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V60 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V52 PRO - NIFTY 200 DECISION SYSTEM")
+st.title("🚀 NSE AI V60 PRO - FULL MARKET CONTROL PANEL")
+
 st.markdown(f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =========================
-# STOCK LIST
+# NIFTY 50 STOCKS
 # =========================
-stocks = [
+nifty50 = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
     "ITC","LT","BHARTIARTL","KOTAKBANK","HCLTECH","WIPRO","TECHM",
     "SUNPHARMA","TITAN","MARUTI","ONGC","NTPC","POWERGRID","COALINDIA",
-    "BAJFINANCE","BAJAJFINSV","ADANIENT","ADANIPORTS","ULTRACEMCO",
-    "ASIANPAINT","NESTLEIND","BRITANNIA","DRREDDY","CIPLA","DIVISLAB",
-    "EICHERMOT","HEROMOTOCO","TATAMOTORS","M&M","TVSMOTOR",
-    "JSWSTEEL","TATASTEEL","HINDALCO","GRASIM","UPL","PIDILITIND",
-    "DABUR","MARICO","COLPAL","TRENT","PAGEIND","HAVELLS",
-    "SIEMENS","ABB","HAL","BEL","BHEL","DLF","GAIL","IOC","BPCL",
-    "INDUSINDBK","PNB","BANKBARODA","CANBK","SBILIFE","HDFCLIFE"
+    "BAJFINANCE","BAJAJFINSV","ASIANPAINT","NESTLEIND","BRITANNIA",
+    "ULTRACEMCO","TATAMOTORS","M&M","HINDUNILVR","JSWSTEEL"
 ]
 
 # =========================
-# DATA LOAD
+# DATA FUNCTION
 # =========================
-@st.cache_data(ttl=300)
-def load_data():
-    tickers = [s + ".NS" for s in stocks]
+def get_stock_data(symbol):
     try:
-        df = yf.download(
-            tickers,
-            period="1mo",
-            interval="15m",
-            group_by="ticker",
-            threads=True
-        )
-        return df
-    except Exception as e:
-        st.error(f"Data load failed: {e}")
-        return pd.DataFrame()
+        df = yf.download(symbol+".NS", period="2d", interval="15m")
+        if len(df) < 2:
+            return None
 
-data = load_data()
+        last = df['Close'].iloc[-1]
+        prev = df['Close'].iloc[-2]
 
-# =========================
-# RSI
-# =========================
-def rsi(x):
-    d = x.diff()
-    g = d.clip(lower=0)
-    l = -d.clip(upper=0)
-    rs = g.rolling(14).mean() / (l.rolling(14).mean() + 1e-9)
-    return 100 - (100 / (1 + rs))
+        change = last - prev
+        pct = (change / prev) * 100
+
+        return {
+            "STOCK": symbol,
+            "PRICE": round(last,2),
+            "CHANGE": round(change,2),
+            "PERCENT": round(pct,2),
+            "TREND": "POSITIVE" if change > 0 else "NEGATIVE"
+        }
+
+    except:
+        return None
 
 # =========================
-# SCORE ENGINE
+# MARKET SCANNER
 # =========================
-def score_engine(row):
-    score = 0
-    if row['Close'] > row['VWAP']:
-        score += 25
-    if 55 <= row['RSI'] <= 68:
-        score += 25
-    elif 30 <= row['RSI'] < 45:
-        score += 25
-    if row['Volume'] > row['VOL_AVG']:
-        score += 20
-    if row['Close'] > row['EMA21']:
-        score += 20
-    return min(score, 100)
+def scan_market():
+
+    results = []
+
+    for s in nifty50:
+        data = get_stock_data(s)
+        if data:
+            results.append(data)
+
+    return pd.DataFrame(results)
 
 # =========================
-# WIN PROBABILITY
+# SCENARIO ENGINE
 # =========================
-def win_probability(score, rsi_val):
-    base = score
-    if 55 <= rsi_val <= 65:
-        base += 10
-    if base >= 90:
-        return 85
-    elif base >= 80:
-        return 75
-    elif base >= 70:
-        return 65
-    elif base >= 60:
-        return 55
+def market_scenario(df):
+
+    avg = df["PERCENT"].mean()
+
+    if avg > 0:
+        return "🟢 BULLISH MARKET - BUY SIDE ACTIVE"
     else:
-        return 40
+        return "🔴 BEARISH MARKET - SELL SIDE ACTIVE"
 
 # =========================
-# ENGINE
+# TOP PICKS
 # =========================
-def engine(stock, raw, date):
-    try:
-        key = stock + ".NS"
-        if key not in raw.columns.get_level_values(0):
-            return []
-        df = raw[key].dropna().copy()
-        if len(df) < 60:
-            return []
-        df['EMA21'] = df['Close'].ewm(span=21).mean()
-        df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
-        tr = pd.concat([
-            df['High'] - df['Low'],
-            abs(df['High'] - df['Close'].shift()),
-            abs(df['Low'] - df['Close'].shift())
-        ], axis=1).max(axis=1)
-        df['ATR'] = tr.rolling(14).mean()
-        df['RSI'] = rsi(df['Close'])
-        df['VOL_AVG'] = df['Volume'].rolling(20).mean()
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-        df.index = df.index.tz_convert(IST)
-        df = df[df.index.date == pd.to_datetime(date).date()]
-        results = []
-        if df.empty:
-            return []
-        for i in range(1, len(df)):
-            row = df.iloc[i]
-            t = row.name.time()
-            if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
-                continue
-            vol_ok = row['Volume'] > row['VOL_AVG']
-            buy = (row['Close'] > row['VWAP'] and 50 < row['RSI'] < 70 and vol_ok)
-            sell = (row['Close'] < row['VWAP'] and 30 < row['RSI'] < 50 and vol_ok)
-            if not (buy or sell):
-                continue
-            entry = row['Close']
-            atr = row['ATR']
-            if pd.isna(atr):
-                continue
-            sl = entry - atr * 2.5 if buy else entry + atr * 2.5
-            tgt = entry + atr * 2.0 if buy else entry - atr * 2.0
-            score = score_engine(row)
-            win = win_probability(score, row['RSI'])
-            decision = (
-                "STRONG BUY" if score >= 80 else
-                "BUY" if score >= 65 else
-                "HOLD" if score >= 50 else
-                "AVOID"
-            )
-            status = "OPEN"
-            future = df.iloc[i+1:i+20]
-            for _, f in future.iterrows():
-                if buy:
-                    if f['High'] >= tgt:
-                        status = "TARGET"
-                        break
-                    if f['Low'] <= sl:
-                        status = "SL"
-                        break
-                else:
-                    if f['Low'] <= tgt:
-                        status = "TARGET"
-                        break
-                    if f['High'] >= sl:
-                        status = "SL"
-                        break
-            results.append({
-                "TIME": row.name.strftime("%H:%M"),
-                "STOCK": stock,
-                "SIGNAL": "BUY" if buy else "SELL",
-                "ENTRY": round(entry, 2),
-                "SL": round(sl, 2),
-                "TARGET": round(tgt, 2),
-                "RSI": round(row['RSI'], 2),
-                "SCORE": score,
-                "WIN%": win,
-                "DECISION": decision,
-                "STATUS": status
-            })
-        return results
-    except Exception:
-        return []
+def top_picks(df):
+
+    pos = df[df["TREND"]=="POSITIVE"].sort_values("PERCENT", ascending=False).head(5)
+    neg = df[df["TREND"]=="NEGATIVE"].sort_values("PERCENT").head(5)
+
+    return pos, neg
+
+# =========================
+# EXCEL EXPORT
+# =========================
+def to_excel(df):
+
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name="NIFTY_REPORT")
+
+    return output.getvalue()
 
 # =========================
 # UI
 # =========================
-tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["📊 NIFTY MARKET VIEW", "📈 FULL REPORT"])
 
 # =========================
-# LIVE SCANNER
+# TAB 1 - MARKET VIEW
 # =========================
 with tab1:
-    if st.button("RUN LIVE SCAN (NIFTY200)"):
-        results = []
-        with ThreadPoolExecutor(max_workers=12) as ex:
-            futures = [ex.submit(engine, s, data, now.date()) for s in stocks]
-            for f in futures:
-                r = f.result()
-                if r:
-                    results.extend(r)
-        df = pd.DataFrame(results)
+
+    if st.button("RUN MARKET SCAN"):
+
+        df = scan_market()
+
         if not df.empty:
-            df = df.sort_values("SCORE", ascending=False)
-            # NIFTY50 Positive/Negative Box
-            nifty50 = df[df['STOCK'].isin(stocks[:50])]
-            pos = len(nifty50[nifty50['SIGNAL'] == "BUY"])
-            neg = len(nifty50[nifty50['SIGNAL'] == "SELL"])
+
+            st.subheader("📊 MARKET SCENARIO")
+            st.info(market_scenario(df))
+
+            pos, neg = top_picks(df)
+
+            st.subheader("🟢 TOP POSITIVE STOCKS")
+            st.dataframe(pos)
+
+            st.subheader("🔴 TOP NEGATIVE STOCKS")
+            st.dataframe(neg)
+
+        else:
+            st.warning("NO DATA FOUND")
+
+# =========================
+# TAB 2 - FULL REPORT + EXCEL
+# =========================
+with tab2:
+
+    if st.button("GENERATE FULL REPORT"):
+
+        df = scan_market()
+
+        if not df.empty:
+
+            st.subheader("📊 COMPLETE NIFTY REPORT")
+            st.dataframe(df)
+
+            st.download_button(
+                "📥 DOWNLOAD EXCEL REPORT",
+                to_excel(df),
+                file_name="NSE_MARKET_REPORT.xlsx"
+            )
+
+        else:
+            st.warning("NO DATA FOUND")
