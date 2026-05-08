@@ -42,6 +42,7 @@ stocks = get_nifty200_stocks()
 @st.cache_data(ttl=300)
 def load_data():
     tickers = [s + ".NS" for s in stocks]
+
     return yf.download(
         tickers,
         period="1mo",
@@ -59,8 +60,10 @@ def rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
+
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
+
     rs = avg_gain / (avg_loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
@@ -69,6 +72,7 @@ def rsi(series, period=14):
 # =========================
 def score_engine(row):
     score = 0
+
     if row["Close"] > row["VWAP"]:
         score += 25
     if 55 <= row["RSI"] <= 70:
@@ -77,6 +81,7 @@ def score_engine(row):
         score += 20
     if row["Close"] > row["EMA21"]:
         score += 20
+
     return min(score, 100)
 
 def win_probability(score):
@@ -87,53 +92,76 @@ def win_probability(score):
     return 40
 
 # =========================
-# ENGINE (BUY + SELL)
+# ENGINE (BUY + SELL FIXED)
 # =========================
 def engine(stock, raw, date):
+
     try:
         key = stock + ".NS"
+
         if key not in raw.columns.get_level_values(0):
             return []
+
         df = raw[key].dropna().copy()
         if len(df) < 60:
             return []
+
         df["EMA21"] = df["Close"].ewm(span=21).mean()
-        df["EMA20"] = df["Close"].ewm(span=20).mean()
-        df["EMA50"] = df["Close"].ewm(span=50).mean()
+
         df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / (df["Volume"].cumsum() + 1e-9)
+
         tr = pd.concat([
             df["High"] - df["Low"],
             abs(df["High"] - df["Close"].shift()),
             abs(df["Low"] - df["Close"].shift())
         ], axis=1).max(axis=1)
+
         df["ATR"] = tr.rolling(14).mean()
         df["RSI"] = rsi(df["Close"])
         df["VOL_AVG"] = df["Volume"].rolling(20).mean()
+
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
+
         df.index = df.index.tz_convert(IST)
         df = df[df.index.date == pd.to_datetime(date).date()]
+
         results = []
+
         for i in range(1, len(df)):
+
             row = df.iloc[i]
             t = row.name.time()
-            if not (datetime.strptime("09:15","%H:%M").time() <= t <= datetime.strptime("15:30","%H:%M").time()):
+
+            if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
                 continue
+
+            # =========================
+            # BUY + SELL LOGIC
+            # =========================
             buy = (row["Close"] > row["VWAP"] and 50 < row["RSI"] < 70)
             sell = (row["Close"] < row["VWAP"] and 30 < row["RSI"] < 50)
+
             if not (buy or sell):
                 continue
+
             entry = row["Close"]
             atr = row["ATR"]
+
             if pd.isna(atr):
                 continue
+
             sl = entry - atr * 2.5 if buy else entry + atr * 2.5
             tgt = entry + atr * 2.0 if buy else entry - atr * 2.0
+
             score = score_engine(row)
             win = win_probability(score)
-            decision = "STRONG BUY" if buy and score >= 80 else "BUY" if buy else "STRONG SELL" if sell and score >= 80 else "SELL"
+
+            decision = "STRONG BUY" if score >= 80 else "BUY" if score >= 65 else "HOLD" if score >= 50 else "AVOID"
+
             status = "OPEN"
             future = df.iloc[i+1:i+15]
+
             for _, f in future.iterrows():
                 if buy:
                     if f["High"] >= tgt:
@@ -143,8 +171,9 @@ def engine(stock, raw, date):
                 else:
                     if f["Low"] <= tgt:
                         status = "TARGET"; break
-                    if f["High"] >= sl:
+                    if f["High"] <= sl:
                         status = "SL"; break
+
             results.append({
                 "TIME": row.name.strftime("%H:%M"),
                 "STOCK": stock,
@@ -158,7 +187,9 @@ def engine(stock, raw, date):
                 "DECISION": decision,
                 "STATUS": status
             })
+
         return results
+
     except:
         return []
 
@@ -180,31 +211,33 @@ tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
 # LIVE
 # =========================
 with tab1:
+
     if st.button("RUN LIVE SCAN"):
+
         results = []
+
         with ThreadPoolExecutor(max_workers=10) as ex:
             for r in ex.map(lambda s: engine(s, data, now.date()), stocks):
                 results.extend(r)
+
         df = pd.DataFrame(results)
+
         if not df.empty:
+
             df = df.sort_values("SCORE", ascending=False)
+
             st.subheader("🥇 TOP PICKS")
             st.dataframe(df.head(10))
-            pos_df = df[df["SIGNAL"] == "BUY"].sort_values("SCORE", ascending=False)
-            if not pos_df.empty:
-                st.subheader("📈 TOP POSITIVE (BUY)")
-                st.dataframe(pos_df.head(10))
-            neg_df = df[df["SIGNAL"] == "SELL"].sort_values("SCORE", ascending=False)
-            if not neg_df.empty:
-                st.subheader("📉 TOP NEGATIVE (SELL)")
-                st.dataframe(neg_df.head(10))
+
             st.subheader("📊 ALL SIGNALS")
             st.dataframe(df)
+
             st.download_button(
                 "⬇️ DOWNLOAD EXCEL",
                 data=to_excel(df),
                 file_name="nse_ai_v53_live.xlsx"
             )
+
         else:
             st.warning("NO SIGNALS FOUND")
 
@@ -212,7 +245,33 @@ with tab1:
 # BACKTEST
 # =========================
 with tab2:
+
     d = st.date_input("Select Date", now.date() - timedelta(days=1))
+
     if st.button("RUN BACKTEST"):
+
         results = []
-        with ThreadPoolExecutor(max_workers=10
+
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            for r in ex.map(lambda s: engine(s, data, d), stocks):
+                results.extend(r)
+
+        df = pd.DataFrame(results)
+
+        if not df.empty:
+
+            st.dataframe(df)
+
+            wins = len(df[df["STATUS"] == "TARGET"])
+            losses = len(df[df["STATUS"] == "SL"])
+
+            st.success(f"WINS: {wins} | LOSSES: {losses}")
+
+            st.download_button(
+                "⬇️ DOWNLOAD EXCEL",
+                data=to_excel(df),
+                file_name="nse_ai_v53_backtest.xlsx"
+            )
+
+        else:
+            st.warning("NO DATA")
