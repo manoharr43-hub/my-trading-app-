@@ -10,7 +10,7 @@ import io
 # =========================================================
 # APP CONFIG
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI V31 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V34 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
@@ -24,34 +24,19 @@ st.markdown(f"""
 """)
 
 # =========================================================
-# NIFTY 50 DASHBOARD (POSITIVE / NEGATIVE)
+# NIFTY TREND
 # =========================================================
-def nifty_dashboard():
+def nifty_trend():
     try:
         n = yf.Ticker("^NSEI").history(period="5d")
-
-        last = n['Close'].iloc[-1]
-        prev = n['Close'].iloc[-2]
-
-        change = last - prev
-        pct = (change / prev) * 100
-
-        status = "🟢 POSITIVE" if change > 0 else "🔴 NEGATIVE"
-
-        return f"""
-        <div style="padding:15px;background:#0f172a;color:white;
-        border-radius:10px;text-align:center">
-        <h2>NIFTY 50 : {status}</h2>
-        <h3>Change: {pct:.2f}%</h3>
-        </div>
-        """
+        return n['Close'].iloc[-1] > n['Close'].rolling(5).mean().iloc[-1]
     except:
-        return "<h3>Loading NIFTY...</h3>"
+        return True
 
-st.markdown(nifty_dashboard(), unsafe_allow_html=True)
+market_up = nifty_trend()
 
 # =========================================================
-# NSE 200 STOCKS (FULL EXPANDED)
+# NIFTY 200 STOCKS (CLEAN CORE LIST)
 # =========================================================
 stocks = [
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
@@ -60,14 +45,14 @@ stocks = [
     "JSWSTEEL","TATASTEEL","HINDALCO","BAJFINANCE","BAJAJFINSV",
     "ASIANPAINT","ULTRACEMCO","NESTLEIND","BRITANNIA","DRREDDY","CIPLA",
     "DIVISLAB","ADANIENT","ADANIPORTS","BEL","BHEL","DLF","GAIL",
-    "IOC","BPCL","M&M","HEROMOTOCO","EICHERMOT","INDUSINDBK",
-    "PNB","BANKBARODA","CANBK","SBILIFE","HDFCLIFE","TATAMOTORS",
-    "TATAPOWER","GRASIM","UPL","PIDILITIND","DABUR","MARICO",
-    "COLPAL","TRENT","PAGEIND","RECLTD","PFC","HAL","ABB","SIEMENS"
+    "IOC","BPCL","INDUSINDBK","PNB","BANKBARODA","CANBK",
+    "SBILIFE","HDFCLIFE","TATAMOTORS","EICHERMOT","HEROMOTOCO",
+    "M&M","TVSMOTOR","GRASIM","UPL","PIDILITIND","DABUR",
+    "MARICO","COLPAL","TRENT","PAGEIND","HAL","ABB","SIEMENS"
 ]
 
 # =========================================================
-# EXCEL FUNCTION
+# EXCEL EXPORT
 # =========================================================
 def to_excel(df):
     output = io.BytesIO()
@@ -76,10 +61,10 @@ def to_excel(df):
     return output.getvalue()
 
 # =========================================================
-# DATA FETCH
+# DATA
 # =========================================================
 @st.cache_data(ttl=300)
-def fetch_data():
+def load_data():
     return yf.download(
         [s+".NS" for s in stocks],
         period="1mo",
@@ -88,7 +73,7 @@ def fetch_data():
         threads=True
     )
 
-data = fetch_data()
+data = load_data()
 
 # =========================================================
 # RSI
@@ -101,15 +86,16 @@ def rsi(x):
     return 100 - (100/(1+rs))
 
 # =========================================================
-# ENGINE
+# ENGINE (FINAL CLEAN LOGIC)
 # =========================================================
 def engine(stock, raw, date):
 
     try:
         df = raw[stock+".NS"].dropna().copy()
-        if len(df) < 50:
+        if len(df) < 60:
             return []
 
+        # INDICATORS
         df['EMA21'] = df['Close'].ewm(span=21).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
 
@@ -127,6 +113,7 @@ def engine(stock, raw, date):
 
         df['VOL_AVG'] = df['Volume'].rolling(20).mean()
 
+        # TIMEZONE
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
 
@@ -135,6 +122,7 @@ def engine(stock, raw, date):
         df = df[df.index.date == pd.to_datetime(date).date()]
 
         results = []
+        last_signal = None
 
         for i in range(1, len(df)):
 
@@ -145,22 +133,24 @@ def engine(stock, raw, date):
             if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
                 continue
 
+            # COOLDOWN (NO OVERTRADE)
+            if last_signal and (row.name - last_signal).seconds < 900:
+                continue
+
             vol_ok = row['Volume'] > row['VOL_AVG']
 
-            # ================= BUY =================
+            trend_ok = (row['EMA21'] > row['EMA50']) if market_up else (row['EMA21'] < row['EMA50'])
+
             buy = (
                 row['Close'] > row['VWAP'] and
-                row['EMA21'] > row['EMA50'] and
-                55 < row['RSI'] < 70 and
-                vol_ok
+                55 < row['RSI'] < 68 and
+                vol_ok and trend_ok
             )
 
-            # ================= SELL =================
             sell = (
                 row['Close'] < row['VWAP'] and
-                row['EMA21'] < row['EMA50'] and
                 30 < row['RSI'] < 45 and
-                vol_ok
+                vol_ok and trend_ok
             )
 
             if buy or sell:
@@ -168,12 +158,13 @@ def engine(stock, raw, date):
                 entry = row['Close']
                 atr = row['ATR']
 
-                sl = entry - atr*1.8 if buy else entry + atr*1.8
-                tgt = entry + atr*1.6 if buy else entry - atr*1.6
+                # SAFE SL / TARGET
+                sl = entry - atr*2.5 if buy else entry + atr*2.5
+                tgt = entry + atr*2.0 if buy else entry - atr*2.0
 
                 status = "OPEN"
 
-                future = df.iloc[i+1:i+15]
+                future = df.iloc[i+1:i+20]
 
                 for _, f in future.iterrows():
 
@@ -203,6 +194,8 @@ def engine(stock, raw, date):
                     "STATUS": status
                 })
 
+                last_signal = row.name
+
         return results
 
     except:
@@ -213,7 +206,6 @@ def engine(stock, raw, date):
 # =========================================================
 tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
 
-# ================= LIVE =================
 with tab1:
 
     if st.button("RUN LIVE SCAN"):
@@ -232,16 +224,10 @@ with tab1:
 
         if not df.empty:
             st.dataframe(df)
-
-            st.download_button(
-                "📥 LIVE EXCEL",
-                to_excel(df),
-                file_name=f"LIVE_{now.strftime('%Y%m%d_%H%M')}.xlsx"
-            )
+            st.download_button("📥 LIVE EXCEL", to_excel(df), file_name="LIVE.xlsx")
         else:
             st.warning("NO SIGNALS")
 
-# ================= BACKTEST =================
 with tab2:
 
     d = st.date_input("Select Date", now.date()-timedelta(days=1))
@@ -269,10 +255,7 @@ with tab2:
 
             st.success(f"WINS: {wins} | LOSSES: {losses}")
 
-            st.download_button(
-                "📥 BACKTEST EXCEL",
-                to_excel(df),
-                file_name=f"BACKTEST_{d}.xlsx"
-            )
+            st.download_button("📥 BACKTEST EXCEL", to_excel(df), file_name="BACKTEST.xlsx")
+
         else:
             st.warning("NO DATA")
