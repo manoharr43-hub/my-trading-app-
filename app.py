@@ -8,48 +8,72 @@ from concurrent.futures import ThreadPoolExecutor
 import io
 
 # =========================================================
-# CONFIG
+# APP CONFIG
 # =========================================================
-st.set_page_config(page_title="🚀 NSE AI V29 PRO (200 STOCKS)", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V31 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
 # =========================================================
-# MARKET TREND
+# LIVE CLOCK
 # =========================================================
-def market_trend():
+st.markdown(f"""
+## 🕒 LIVE TIME (IST)
+### {now.strftime("%Y-%m-%d %H:%M:%S")}
+""")
+
+# =========================================================
+# NIFTY 50 DASHBOARD (POSITIVE / NEGATIVE)
+# =========================================================
+def nifty_dashboard():
     try:
         n = yf.Ticker("^NSEI").history(period="5d")
-        return n['Close'].iloc[-1] > n['Close'].rolling(5).mean().iloc[-1]
+
+        last = n['Close'].iloc[-1]
+        prev = n['Close'].iloc[-2]
+
+        change = last - prev
+        pct = (change / prev) * 100
+
+        status = "🟢 POSITIVE" if change > 0 else "🔴 NEGATIVE"
+
+        return f"""
+        <div style="padding:15px;background:#0f172a;color:white;
+        border-radius:10px;text-align:center">
+        <h2>NIFTY 50 : {status}</h2>
+        <h3>Change: {pct:.2f}%</h3>
+        </div>
+        """
     except:
-        return True
+        return "<h3>Loading NIFTY...</h3>"
 
-trend_up = market_trend()
+st.markdown(nifty_dashboard(), unsafe_allow_html=True)
 
 # =========================================================
-# NSE 200 STOCKS (EXPANDED LIST)
+# NSE 200 STOCKS (FULL EXPANDED)
 # =========================================================
-nse_200 = [
-    # NIFTY50 CORE
-    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","ITC",
-    "LT","BHARTIARTL","KOTAKBANK","HCLTECH","WIPRO","TECHM","SUNPHARMA",
-    "TITAN","MARUTI","ONGC","NTPC","POWERGRID","COALINDIA","JSWSTEEL",
-    "TATASTEEL","HINDALCO","BAJFINANCE","BAJAJFINSV","ASIANPAINT",
-    "ULTRACEMCO","NESTLEIND","BRITANNIA","DRREDDY","CIPLA","DIVISLAB",
-
-    # MID CAP & HIGH VOLUME
-    "ADANIENT","ADANIPORTS","ADANIGREEN","ADANIPOWER","BEL","BHEL","DLF",
-    "GAIL","IOC","BPCL","HINDPETRO","M&M","HEROMOTOCO","EICHERMOT",
-    "INDUSINDBK","IDFCFIRSTB","PNB","BANKBARODA","CANBK","UNIONBANK",
-    "LICI","SBILIFE","ICICIPRULI","HDFCLIFE","TATAMOTORS","TATAPOWER",
-    "TATAELXSI","LUPIN","ZYDUSLIFE","ABB","SIEMENS","HAL","VEDL","NMDC",
-
-    # ADDITIONAL LIQUID STOCKS
-    "GRASIM","UPL","PIDILITIND","DABUR","MARICO","COLPAL","TRENT",
-    "PAGEIND","TATACONSUM","BERGEPAINT","ASHOKLEY","TVSMOTOR",
-    "SAIL","JINDALSTEL","AMBUJACEM","ACC","JKCEMENT","RECLTD","PFC"
+stocks = [
+    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
+    "ITC","LT","BHARTIARTL","KOTAKBANK","HCLTECH","WIPRO","TECHM",
+    "SUNPHARMA","TITAN","MARUTI","ONGC","NTPC","POWERGRID","COALINDIA",
+    "JSWSTEEL","TATASTEEL","HINDALCO","BAJFINANCE","BAJAJFINSV",
+    "ASIANPAINT","ULTRACEMCO","NESTLEIND","BRITANNIA","DRREDDY","CIPLA",
+    "DIVISLAB","ADANIENT","ADANIPORTS","BEL","BHEL","DLF","GAIL",
+    "IOC","BPCL","M&M","HEROMOTOCO","EICHERMOT","INDUSINDBK",
+    "PNB","BANKBARODA","CANBK","SBILIFE","HDFCLIFE","TATAMOTORS",
+    "TATAPOWER","GRASIM","UPL","PIDILITIND","DABUR","MARICO",
+    "COLPAL","TRENT","PAGEIND","RECLTD","PFC","HAL","ABB","SIEMENS"
 ]
+
+# =========================================================
+# EXCEL FUNCTION
+# =========================================================
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
 
 # =========================================================
 # DATA FETCH
@@ -57,11 +81,10 @@ nse_200 = [
 @st.cache_data(ttl=300)
 def fetch_data():
     return yf.download(
-        [s + ".NS" for s in nse_200],
+        [s+".NS" for s in stocks],
         period="1mo",
         interval="15m",
         group_by="ticker",
-        auto_adjust=True,
         threads=True
     )
 
@@ -70,12 +93,12 @@ data = fetch_data()
 # =========================================================
 # RSI
 # =========================================================
-def rsi(x, p=14):
+def rsi(x):
     d = x.diff()
     g = d.clip(lower=0)
     l = -d.clip(upper=0)
-    rs = g.rolling(p).mean() / (l.rolling(p).mean() + 1e-9)
-    return 100 - (100 / (1 + rs))
+    rs = g.rolling(14).mean() / (l.rolling(14).mean()+1e-9)
+    return 100 - (100/(1+rs))
 
 # =========================================================
 # ENGINE
@@ -83,15 +106,14 @@ def rsi(x, p=14):
 def engine(stock, raw, date):
 
     try:
-        df = raw[stock + ".NS"].dropna().copy()
-        if len(df) < 60:
+        df = raw[stock+".NS"].dropna().copy()
+        if len(df) < 50:
             return []
 
-        # ================= INDICATORS =================
         df['EMA21'] = df['Close'].ewm(span=21).mean()
         df['EMA50'] = df['Close'].ewm(span=50).mean()
 
-        df['VWAP'] = (df['Close'] * df['Volume']).cumsum() / (df['Volume'].cumsum() + 1e-9)
+        df['VWAP'] = (df['Close']*df['Volume']).cumsum() / (df['Volume'].cumsum()+1e-9)
 
         tr = pd.concat([
             df['High']-df['Low'],
@@ -105,7 +127,6 @@ def engine(stock, raw, date):
 
         df['VOL_AVG'] = df['Volume'].rolling(20).mean()
 
-        # timezone
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
 
@@ -118,26 +139,20 @@ def engine(stock, raw, date):
         for i in range(1, len(df)):
 
             row = df.iloc[i]
-            prev = df.iloc[i-1]
-
             t = row.name.time()
 
-            if not (datetime.strptime("09:30","%H:%M").time()
-                    <= t <= datetime.strptime("14:45","%H:%M").time()):
+            # TIME FILTER
+            if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
                 continue
 
             vol_ok = row['Volume'] > row['VOL_AVG']
-
-            candle_ok = (row['High'] - row['Low']) < row['ATR'] * 1.3
 
             # ================= BUY =================
             buy = (
                 row['Close'] > row['VWAP'] and
                 row['EMA21'] > row['EMA50'] and
                 55 < row['RSI'] < 70 and
-                vol_ok and
-                candle_ok and
-                trend_up
+                vol_ok
             )
 
             # ================= SELL =================
@@ -145,8 +160,7 @@ def engine(stock, raw, date):
                 row['Close'] < row['VWAP'] and
                 row['EMA21'] < row['EMA50'] and
                 30 < row['RSI'] < 45 and
-                vol_ok and
-                not trend_up
+                vol_ok
             )
 
             if buy or sell:
@@ -154,12 +168,8 @@ def engine(stock, raw, date):
                 entry = row['Close']
                 atr = row['ATR']
 
-                if buy:
-                    sl = entry - (atr * 1.8)
-                    tgt = entry + (atr * 1.6)
-                else:
-                    sl = entry + (atr * 1.8)
-                    tgt = entry - (atr * 1.6)
+                sl = entry - atr*1.8 if buy else entry + atr*1.8
+                tgt = entry + atr*1.6 if buy else entry - atr*1.6
 
                 status = "OPEN"
 
@@ -178,11 +188,12 @@ def engine(stock, raw, date):
                         if f['Low'] <= tgt:
                             status = "TARGET"
                             break
-                        if f['High'] >= sl:
+                        if f['High'] <= sl:
                             status = "SL"
                             break
 
                 results.append({
+                    "TIME": row.name.strftime("%H:%M"),
                     "STOCK": stock,
                     "SIGNAL": "BUY" if buy else "SELL",
                     "ENTRY": round(entry,2),
@@ -200,7 +211,7 @@ def engine(stock, raw, date):
 # =========================================================
 # UI
 # =========================================================
-tab1, tab2 = st.tabs(["🔥 LIVE SCAN (200 STOCKS)", "📊 BACKTEST"])
+tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
 
 # ================= LIVE =================
 with tab1:
@@ -210,18 +221,25 @@ with tab1:
         results = []
 
         with ThreadPoolExecutor(max_workers=12) as ex:
-            futures = [ex.submit(engine, s, data, now.date()) for s in nse_200]
+            futures = [ex.submit(engine, s, data, now.date()) for s in stocks]
 
             for f in futures:
                 r = f.result()
                 if r:
                     results.append(r[-1])
 
-        if results:
-            df = pd.DataFrame(results)
+        df = pd.DataFrame(results)
+
+        if not df.empty:
             st.dataframe(df)
+
+            st.download_button(
+                "📥 LIVE EXCEL",
+                to_excel(df),
+                file_name=f"LIVE_{now.strftime('%Y%m%d_%H%M')}.xlsx"
+            )
         else:
-            st.warning("NO SIGNALS FOUND")
+            st.warning("NO SIGNALS")
 
 # ================= BACKTEST =================
 with tab2:
@@ -233,16 +251,16 @@ with tab2:
         results = []
 
         with ThreadPoolExecutor(max_workers=12) as ex:
-            futures = [ex.submit(engine, s, data, d) for s in nse_200]
+            futures = [ex.submit(engine, s, data, d) for s in stocks]
 
             for f in futures:
                 r = f.result()
                 if r:
                     results.extend(r)
 
-        if results:
+        df = pd.DataFrame(results)
 
-            df = pd.DataFrame(results)
+        if not df.empty:
 
             st.dataframe(df)
 
@@ -251,5 +269,10 @@ with tab2:
 
             st.success(f"WINS: {wins} | LOSSES: {losses}")
 
+            st.download_button(
+                "📥 BACKTEST EXCEL",
+                to_excel(df),
+                file_name=f"BACKTEST_{d}.xlsx"
+            )
         else:
             st.warning("NO DATA")
