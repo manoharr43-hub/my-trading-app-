@@ -10,30 +10,28 @@ import io
 # =========================
 # APP CONFIG
 # =========================
-st.set_page_config(page_title="🚀 NSE AI V52 PRO - NIFTY200", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V53 PRO - NIFTY200", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V52 PRO - NIFTY 200 DECISION SYSTEM")
+st.title("🚀 NSE AI V53 PRO - NIFTY 200 SYSTEM")
 st.markdown(f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =========================
-# NIFTY 200 STOCKS (SAFE FULL LIST)
+# NIFTY 200 STOCKS
 # =========================
 def get_nifty200_stocks():
     return [
         "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK",
         "KOTAKBANK","LT","ITC","BHARTIARTL","HCLTECH","WIPRO","TECHM",
         "SUNPHARMA","DRREDDY","CIPLA","DIVISLAB","TITAN",
-        "NESTLEIND","BRITANNIA","DABUR","MARICO","COLPAL","HINDUNILVR",
-        "MARUTI","TATAMOTORS","M&M","EICHERMOT","HEROMOTOCO","TVSMOTOR",
-        "ONGC","IOC","BPCL","NTPC","POWERGRID","COALINDIA","GAIL",
+        "NESTLEIND","BRITANNIA","DABUR","MARICO","COLPAL",
+        "MARUTI","TATAMOTORS","M&M","EICHERMOT","HEROMOTOCO",
+        "ONGC","IOC","BPCL","NTPC","POWERGRID","COALINDIA",
         "JSWSTEEL","TATASTEEL","HINDALCO","GRASIM","ULTRACEMCO",
         "BAJFINANCE","BAJAJFINSV","INDUSINDBK","PNB","BANKBARODA",
-        "CANBK","SBILIFE","HDFCLIFE","LICI",
-        "ADANIENT","ADANIPORTS","DLF","SIEMENS","ABB","BEL","BHEL",
-        "HAVELLS","PAGEIND","PIDILITIND","UPL","TRENT"
+        "CANBK","SBILIFE","HDFCLIFE","LICI","ADANIENT","ADANIPORTS"
     ]
 
 stocks = get_nifty200_stocks()
@@ -45,14 +43,13 @@ stocks = get_nifty200_stocks()
 def load_data():
     tickers = [s + ".NS" for s in stocks]
 
-    df = yf.download(
+    return yf.download(
         tickers,
         period="1mo",
         interval="15m",
         group_by="ticker",
         threads=True
     )
-    return df
 
 data = load_data()
 
@@ -95,7 +92,7 @@ def win_probability(score):
     return 40
 
 # =========================
-# ENGINE (NO CHANGE IN LOGIC)
+# ENGINE (BUY + SELL FIXED)
 # =========================
 def engine(stock, raw, date):
 
@@ -106,7 +103,6 @@ def engine(stock, raw, date):
             return []
 
         df = raw[key].dropna().copy()
-
         if len(df) < 60:
             return []
 
@@ -132,9 +128,6 @@ def engine(stock, raw, date):
 
         results = []
 
-        if df.empty:
-            return []
-
         for i in range(1, len(df)):
 
             row = df.iloc[i]
@@ -143,6 +136,9 @@ def engine(stock, raw, date):
             if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
                 continue
 
+            # =========================
+            # BUY + SELL LOGIC
+            # =========================
             buy = (row["Close"] > row["VWAP"] and 50 < row["RSI"] < 70)
             sell = (row["Close"] < row["VWAP"] and 30 < row["RSI"] < 50)
 
@@ -175,7 +171,7 @@ def engine(stock, raw, date):
                 else:
                     if f["Low"] <= tgt:
                         status = "TARGET"; break
-                    if f["High"] >= sl:
+                    if f["High"] <= sl:
                         status = "SL"; break
 
             results.append({
@@ -212,11 +208,11 @@ def to_excel(df):
 tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
 
 # =========================
-# LIVE SCANNER
+# LIVE
 # =========================
 with tab1:
 
-    if st.button("RUN LIVE SCAN (NIFTY200)"):
+    if st.button("RUN LIVE SCAN"):
 
         results = []
 
@@ -239,7 +235,7 @@ with tab1:
             st.download_button(
                 "⬇️ DOWNLOAD EXCEL",
                 data=to_excel(df),
-                file_name="nse_ai_v52_live.xlsx"
+                file_name="nse_ai_v53_live.xlsx"
             )
 
         else:
@@ -272,9 +268,9 @@ with tab2:
             st.success(f"WINS: {wins} | LOSSES: {losses}")
 
             st.download_button(
-                "⬇️ DOWNLOAD BACKTEST EXCEL",
+                "⬇️ DOWNLOAD EXCEL",
                 data=to_excel(df),
-                file_name="nse_ai_v52_backtest.xlsx"
+                file_name="nse_ai_v53_backtest.xlsx"
             )
 
         else:
