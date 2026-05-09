@@ -10,12 +10,12 @@ import io
 # =========================
 # APP CONFIG
 # =========================
-st.set_page_config(page_title="🚀 NSE AI V56 PRO", layout="wide")
+st.set_page_config(page_title="🚀 NSE AI V57 PRO", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V56 PRO - NSE 200 BIG MOVE SYSTEM")
+st.title("🚀 NSE AI V57 PRO - NSE 200 BIG MOVE SYSTEM")
 st.markdown(f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =========================
@@ -149,8 +149,9 @@ def engine(stock, raw, date):
 
         sell = (
             row["Close"] < row["VWAP"] and
-            30 <= row["RSI"] <= 45 and
-            big_score > 60
+            row["EMA21"] < row["VWAP"] and
+            30 <= row["RSI"] <= 50 and
+            big_score > 55
         )
 
         if not (buy or sell):
@@ -230,7 +231,7 @@ with tab1:
 
             st.dataframe(df)
 
-            st.download_button("⬇️ DOWNLOAD", to_excel(df), "v56_live.xlsx")
+            st.download_button("⬇️ DOWNLOAD", to_excel(df), "v57_live.xlsx")
         else:
             st.warning("NO SIGNALS")
 
@@ -242,19 +243,4 @@ with tab2:
 
         results = []
         with ThreadPoolExecutor(max_workers=10) as ex:
-            for r in ex.map(lambda s: engine(s, data, d), stocks):
-                results.extend(r)
-
-        df = pd.DataFrame(results)
-
-        if not df.empty:
-            st.dataframe(df)
-
-            wins = len(df[df["STATUS"] == "TARGET"])
-            losses = len(df[df["STATUS"] == "SL"])
-
-            st.success(f"WINS: {wins} | LOSSES: {losses}")
-
-            st.download_button("⬇️ DOWNLOAD", to_excel(df), "v56_backtest.xlsx")
-        else:
-            st.warning("NO DATA")
+            for r in ex.map(lambda s: engine(s
