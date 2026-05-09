@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -12,26 +11,25 @@ import io
 # APP CONFIG
 # =========================
 st.set_page_config(
-    page_title="🚀 NSE AI V57 ULTRA PRO",
+    page_title="🚀 NSE AI V58 MEGA PRO",
     layout="wide"
 )
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V57 ULTRA PRO")
+st.title("🚀 NSE AI V58 MEGA PRO")
 st.markdown(
     f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 )
 
 # =========================
-# NSE TOP 200 STOCKS
+# NSE TOP STOCKS
 # =========================
 def get_stocks():
 
     return [
 
-        # NIFTY
         "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK",
         "SBIN","AXISBANK","KOTAKBANK","LT","ITC",
         "BHARTIARTL","HCLTECH","WIPRO","TECHM",
@@ -46,54 +44,26 @@ def get_stocks():
         "NESTLEIND","DABUR","MARICO","COLPAL",
         "GODREJCP","TATACONSUM","SBILIFE",
         "HDFCLIFE","ICICIPRULI","LICI",
-
-        # BANKS
         "PNB","BANKBARODA","CANBK","FEDERALBNK",
         "IDFCFIRSTB","AUBANK","RBLBANK",
         "UNIONBANK","INDIANB","YESBANK",
-
-        # PHARMA
         "ALKEM","BIOCON","LUPIN","AUROPHARMA",
         "GLENMARK","TORNTPHARM","ZYDUSLIFE",
-
-        # IT
         "LTIM","PERSISTENT","COFORGE",
         "KPITTECH","TATAELXSI","MPHASIS",
-
-        # AUTO
         "ASHOKLEY","TVSMOTOR","BALKRISIND",
         "MOTHERSON","EXIDEIND","MRF",
-
-        # METAL
         "SAIL","NMDC","VEDL","JINDALSTEL",
-
-        # ENERGY
         "IOC","BPCL","HINDPETRO","GAIL",
-        "IGL","PETRONET",
-
-        # CEMENT
-        "ACC","AMBUJACEM","DALBHARAT",
-
-        # REALTY
-        "DLF","GODREJPROP","OBEROIRLTY",
-
-        # DEFENCE
-        "HAL","BEL","BDL","MAZDOCK",
-
-        # RAILWAY
-        "IRCTC","RVNL","IRFC","RAILTEL",
-
-        # CAPITAL GOODS
-        "ABB","BHEL","HAVELLS","POLYCAB",
-
-        # RETAIL
-        "TRENT","DMART",
-
-        # SPECIAL
+        "IGL","PETRONET","ACC","AMBUJACEM",
+        "DALBHARAT","DLF","GODREJPROP",
+        "OBEROIRLTY","HAL","BEL","BDL",
+        "MAZDOCK","IRCTC","RVNL","IRFC",
+        "RAILTEL","ABB","BHEL","HAVELLS",
+        "POLYCAB","TRENT","DMART",
         "SUZLON","NHPC","SJVN","HFCL",
-        "NBCC","IRB","IDEA","BHEL",
-        "TATAPOWER","ADANIGREEN",
-        "ADANIPOWER","RVNL"
+        "NBCC","IRB","IDEA","TATAPOWER",
+        "ADANIGREEN","ADANIPOWER"
     ]
 
 stocks = get_stocks()
@@ -160,9 +130,7 @@ def big_move_engine(row, prev_row):
 
     score = 0
 
-    # =========================
     # VOLUME
-    # =========================
     vol_ratio = (
         row["Volume"]
         /
@@ -178,40 +146,30 @@ def big_move_engine(row, prev_row):
     elif vol_ratio > 1.5:
         score += 15
 
-    # =========================
     # VWAP
-    # =========================
     if row["Close"] > row["VWAP"]:
         score += 25
     else:
         score -= 25
 
-    # =========================
     # EMA
-    # =========================
     if row["Close"] > row["EMA21"]:
         score += 20
     else:
         score -= 20
 
-    # =========================
     # RSI
-    # =========================
     if row["RSI"] > 60:
         score += 15
 
     elif row["RSI"] < 40:
         score -= 15
 
-    # =========================
     # ATR
-    # =========================
     if row["ATR"] > prev_row["ATR"]:
         score += 10
 
-    # =========================
     # BREAKOUT
-    # =========================
     if row["Close"] > prev_row["High"]:
         score += 10
 
@@ -221,7 +179,7 @@ def big_move_engine(row, prev_row):
     return score, round(vol_ratio, 2)
 
 # =========================
-# ENGINE
+# MAIN ENGINE
 # =========================
 def engine(stock, raw, date):
 
@@ -292,19 +250,15 @@ def engine(stock, raw, date):
     results = []
 
     # =========================
-    # MAIN LOOP
+    # LOOP
     # =========================
     for i in range(1, len(df)):
 
         row = df.iloc[i]
-
         prev_row = df.iloc[i - 1]
 
         t = row.name.time()
 
-        # =========================
-        # MARKET TIME
-        # =========================
         if not (
             datetime.strptime(
                 "09:30",
@@ -373,9 +327,6 @@ def engine(stock, raw, date):
         if not (buy or sell):
             continue
 
-        # =========================
-        # SIGNAL
-        # =========================
         signal = (
             "BUY"
             if buy
@@ -390,24 +341,18 @@ def engine(stock, raw, date):
         if pd.isna(atr):
             continue
 
-        # =========================
         # TARGET / SL
-        # =========================
         if buy:
 
             sl = entry - atr * 2.2
-
             tgt = entry + atr * 2.5
 
         else:
 
             sl = entry + atr * 2.2
-
             tgt = entry - atr * 2.5
 
-        # =========================
-        # R:R
-        # =========================
+        # RISK REWARD
         rr = (
             abs(tgt - entry)
             /
@@ -458,9 +403,6 @@ def engine(stock, raw, date):
         else:
             action = "SELL"
 
-        # =========================
-        # RESULT
-        # =========================
         results.append({
 
             "TIME":
@@ -521,17 +463,13 @@ def to_excel(df):
         )
 
         workbook = writer.book
-
         worksheet = writer.sheets["RESULT"]
 
         header_format = workbook.add_format({
 
             "bold": True,
-
             "font_color": "white",
-
             "bg_color": "#0A4E8A",
-
             "border": 1
         })
 
@@ -557,7 +495,7 @@ tab1, tab2 = st.tabs([
 ])
 
 # =========================
-# LIVE
+# LIVE SCAN
 # =========================
 with tab1:
 
@@ -587,51 +525,46 @@ with tab1:
 
         if not df.empty:
 
-            df = df.sort_values(
+            # BUY TOP
+            buy_df = df[
+                df["SIGNAL"] == "BUY"
+            ].sort_values(
                 "BIG_MOVE_SCORE",
                 ascending=False
             )
 
-            # =========================
-            # TOP PANELS
-            # =========================
-            top_buy = df[
-                df["SIGNAL"] == "BUY"
-            ].head(5)
-
-            top_sell = df[
+            # SELL TOP
+            sell_df = df[
                 df["SIGNAL"] == "SELL"
-            ].head(5)
+            ].sort_values(
+                "BIG_MOVE_SCORE"
+            )
 
             c1, c2 = st.columns(2)
 
             with c1:
                 st.subheader("🚀 TOP BUY")
-                st.dataframe(top_buy)
+                st.dataframe(
+                    buy_df.head(10)
+                )
 
             with c2:
                 st.subheader("🔻 TOP SELL")
-                st.dataframe(top_sell)
+                st.dataframe(
+                    sell_df.head(10)
+                )
 
-            # =========================
-            # FULL TABLE
-            # =========================
-            st.subheader(
-                "📊 ALL SIGNALS"
-            )
+            st.subheader("📊 ALL SIGNALS")
 
             st.dataframe(df)
 
-            # =========================
-            # DOWNLOAD
-            # =========================
             st.download_button(
 
                 "⬇️ DOWNLOAD LIVE EXCEL",
 
                 to_excel(df),
 
-                "NSE_AI_V57_LIVE.xlsx",
+                "NSE_AI_V58_LIVE.xlsx",
 
                 mime=(
                     "application/"
@@ -708,9 +641,6 @@ with tab2:
                 2
             )
 
-            # =========================
-            # METRICS
-            # =========================
             c1, c2, c3 = st.columns(3)
 
             c1.metric(
@@ -728,21 +658,15 @@ with tab2:
                 f"{accuracy}%"
             )
 
-            # =========================
-            # TABLE
-            # =========================
             st.dataframe(df)
 
-            # =========================
-            # DOWNLOAD
-            # =========================
             st.download_button(
 
                 "⬇️ DOWNLOAD BACKTEST EXCEL",
 
                 to_excel(df),
 
-                "NSE_AI_V57_BACKTEST.xlsx",
+                "NSE_AI_V58_BACKTEST.xlsx",
 
                 mime=(
                     "application/"
@@ -757,4 +681,3 @@ with tab2:
             st.warning(
                 "NO BACKTEST SIGNALS FOUND"
             )
-```
