@@ -19,7 +19,7 @@ st.title("🚀 NSE AI V57 PRO - NSE 200 BIG MOVE SYSTEM")
 st.markdown(f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # =========================
-# NSE TOP 200 STOCKS (CLEAN SET)
+# NSE TOP 200 STOCKS
 # =========================
 def get_stocks():
     return [
@@ -72,10 +72,8 @@ def vwap(df):
 # BIG MOVE ENGINE
 # =========================
 def big_move_engine(row, prev_row):
-
     vol_ratio = row["Volume"] / (row["VOL_AVG"] + 1e-9)
     volume_score = 1 if vol_ratio > 2 else 0
-
     vwap_break = 1 if row["Close"] > row["VWAP"] else 0
     atr_expand = 1 if row["ATR"] > prev_row["ATR"] else 0
     rsi_mom = 1 if row["RSI"] > 55 else 0
@@ -88,16 +86,13 @@ def big_move_engine(row, prev_row):
         rsi_mom * 15 +
         breakout * 10
     )
-
     return score, vol_ratio
 
 # =========================
 # ENGINE
 # =========================
 def engine(stock, raw, date):
-
     key = stock + ".NS"
-
     if key not in raw.columns.get_level_values(0):
         return []
 
@@ -128,10 +123,8 @@ def engine(stock, raw, date):
     results = []
 
     for i in range(1, len(df)):
-
         row = df.iloc[i]
         prev_row = df.iloc[i-1]
-
         t = row.name.time()
 
         if not (datetime.strptime("09:30","%H:%M").time() <= t <= datetime.strptime("14:45","%H:%M").time()):
@@ -213,34 +206,27 @@ def to_excel(df):
 tab1, tab2 = st.tabs(["🔥 LIVE SCANNER", "📊 BACKTEST"])
 
 with tab1:
-
     if st.button("RUN LIVE SCAN"):
-
         results = []
         with ThreadPoolExecutor(max_workers=10) as ex:
             for r in ex.map(lambda s: engine(s, data, now.date()), stocks):
                 results.extend(r)
 
         df = pd.DataFrame(results)
-
         if not df.empty:
             df = df.sort_values("BIG_MOVE_SCORE", ascending=False)
-
             st.subheader("🚀 TOP BIG MOVE STOCKS")
             st.dataframe(df.head(10))
-
             st.dataframe(df)
-
             st.download_button("⬇️ DOWNLOAD", to_excel(df), "v57_live.xlsx")
         else:
             st.warning("NO SIGNALS")
 
 with tab2:
-
     d = st.date_input("Select Date", now.date() - timedelta(days=1))
-
     if st.button("RUN BACKTEST"):
-
         results = []
         with ThreadPoolExecutor(max_workers=10) as ex:
-            for r in ex.map(lambda s: engine(s
+            for r in ex.map(lambda s: engine(s, data, d), stocks):
+                results.extend(r)
+
