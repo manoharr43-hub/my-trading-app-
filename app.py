@@ -11,20 +11,20 @@ import io
 # APP CONFIG
 # =========================
 st.set_page_config(
-    page_title="🚀 NSE AI V60 INSTITUTIONAL",
+    page_title="🚀 NSE AI V58 MEGA PRO",
     layout="wide"
 )
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V60 INSTITUTIONAL")
+st.title("🚀 NSE AI V58 MEGA PRO")
 st.markdown(
     f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 )
 
 # =========================
-# NSE STOCKS
+# NSE TOP STOCKS
 # =========================
 def get_stocks():
 
@@ -64,7 +64,6 @@ def get_stocks():
         "SUZLON","NHPC","SJVN","HFCL",
         "NBCC","IRB","IDEA","TATAPOWER",
         "ADANIGREEN","ADANIPOWER"
-
     ]
 
 stocks = get_stocks()
@@ -78,20 +77,12 @@ def load_data():
     tickers = [s + ".NS" for s in stocks]
 
     return yf.download(
-
         tickers=tickers,
-
         period="10d",
-
         interval="15m",
-
         group_by="ticker",
-
         auto_adjust=True,
-
-        threads=True,
-
-        progress=False
+        threads=True
     )
 
 data = load_data()
@@ -121,9 +112,9 @@ def rsi(series, period=14):
 def vwap(df):
 
     tp = (
-        df["High"]
-        + df["Low"]
-        + df["Close"]
+        df["High"] +
+        df["Low"] +
+        df["Close"]
     ) / 3
 
     return (
@@ -133,109 +124,19 @@ def vwap(df):
     )
 
 # =========================
-# SUPERTREND
-# =========================
-def supertrend(df, period=10, multiplier=3):
-
-    hl2 = (
-        df["High"]
-        + df["Low"]
-    ) / 2
-
-    tr1 = df["High"] - df["Low"]
-
-    tr2 = abs(
-        df["High"]
-        - df["Close"].shift()
-    )
-
-    tr3 = abs(
-        df["Low"]
-        - df["Close"].shift()
-    )
-
-    tr = pd.concat(
-        [tr1, tr2, tr3],
-        axis=1
-    ).max(axis=1)
-
-    atr = tr.rolling(period).mean()
-
-    upperband = hl2 + (multiplier * atr)
-
-    lowerband = hl2 - (multiplier * atr)
-
-    st_line = pd.Series(index=df.index, dtype="float64")
-
-    direction = pd.Series(index=df.index, dtype="int")
-
-    st_line.iloc[0] = upperband.iloc[0]
-
-    direction.iloc[0] = 1
-
-    for i in range(1, len(df)):
-
-        if df["Close"].iloc[i] > st_line.iloc[i - 1]:
-
-            st_line.iloc[i] = lowerband.iloc[i]
-
-            direction.iloc[i] = 1
-
-        else:
-
-            st_line.iloc[i] = upperband.iloc[i]
-
-            direction.iloc[i] = -1
-
-    return st_line, direction
-
-# =========================
-# MARKET TREND
-# =========================
-@st.cache_data(ttl=300)
-def market_trend():
-
-    nifty = yf.download(
-
-        "^NSEI",
-
-        period="5d",
-
-        interval="15m",
-
-        progress=False
-    )
-
-    nifty["EMA50"] = (
-        nifty["Close"]
-        .ewm(span=50)
-        .mean()
-    )
-
-    latest = nifty.iloc[-1]
-
-    if latest["Close"] > latest["EMA50"]:
-
-        return "BULLISH"
-
-    return "BEARISH"
-
-trend = market_trend()
-
-# =========================
 # BIG MOVE ENGINE
 # =========================
 def big_move_engine(row, prev_row):
 
     score = 0
 
+    # VOLUME
     vol_ratio = (
         row["Volume"]
         /
         (row["VOL_AVG"] + 1e-9)
     )
 
-    # VOLUME
     if vol_ratio > 3:
         score += 35
 
@@ -285,13 +186,11 @@ def engine(stock, raw, date):
     key = stock + ".NS"
 
     if key not in raw.columns.get_level_values(0):
-
         return []
 
     df = raw[key].dropna().copy()
 
     if len(df) < 60:
-
         return []
 
     # =========================
@@ -332,15 +231,9 @@ def engine(stock, raw, date):
     df["ATR"] = tr.rolling(14).mean()
 
     # =========================
-    # SUPERTREND
-    # =========================
-    df["SUPERTREND"], df["ST_DIR"] = supertrend(df)
-
-    # =========================
     # TIMEZONE
     # =========================
     if df.index.tz is None:
-
         df.index = df.index.tz_localize("UTC")
 
     df.index = df.index.tz_convert(IST)
@@ -362,13 +255,11 @@ def engine(stock, raw, date):
     for i in range(1, len(df)):
 
         row = df.iloc[i]
-
         prev_row = df.iloc[i - 1]
 
         t = row.name.time()
 
         if not (
-
             datetime.strptime(
                 "09:30",
                 "%H:%M"
@@ -381,19 +272,20 @@ def engine(stock, raw, date):
                 "%H:%M"
             ).time()
         ):
-
             continue
 
         # =========================
         # SCORE
         # =========================
-        big_score, vol_ratio = big_move_engine(
-            row,
-            prev_row
+        big_score, vol_ratio = (
+            big_move_engine(
+                row,
+                prev_row
+            )
         )
 
         # =========================
-        # SUPER BUY
+        # BUY
         # =========================
         buy = (
 
@@ -409,27 +301,11 @@ def engine(stock, raw, date):
 
             and
 
-            row["ST_DIR"] == 1
-
-            and
-
             big_score >= 60
-
-            and
-
-            row["Close"] > row["Open"]
-
-            and
-
-            vol_ratio > 1.5
-
-            and
-
-            trend == "BULLISH"
         )
 
         # =========================
-        # SUPER SELL
+        # SELL
         # =========================
         sell = (
 
@@ -445,33 +321,17 @@ def engine(stock, raw, date):
 
             and
 
-            row["ST_DIR"] == -1
-
-            and
-
             big_score <= -40
-
-            and
-
-            row["Close"] < row["Open"]
-
-            and
-
-            vol_ratio > 1.5
-
-            and
-
-            trend == "BEARISH"
         )
 
         if not (buy or sell):
-
             continue
 
         signal = (
             "BUY"
             if buy
-            else "SELL"
+            else
+            "SELL"
         )
 
         entry = row["Close"]
@@ -479,67 +339,25 @@ def engine(stock, raw, date):
         atr = row["ATR"]
 
         if pd.isna(atr):
-
             continue
 
-        # =========================
         # TARGET / SL
-        # =========================
         if buy:
 
             sl = entry - atr * 2.2
-
             tgt = entry + atr * 2.5
 
         else:
 
             sl = entry + atr * 2.2
-
             tgt = entry - atr * 2.5
 
-        # =========================
         # RISK REWARD
-        # =========================
         rr = (
             abs(tgt - entry)
             /
             (abs(entry - sl) + 1e-9)
         )
-
-        # =========================
-        # AI CONFIDENCE
-        # =========================
-        ai_confidence = 0
-
-        if row["Close"] > row["VWAP"]:
-            ai_confidence += 20
-
-        if row["Close"] > row["EMA21"]:
-            ai_confidence += 20
-
-        if row["RSI"] > 55:
-            ai_confidence += 15
-
-        if vol_ratio > 2:
-            ai_confidence += 20
-
-        if row["ST_DIR"] == 1:
-            ai_confidence += 25
-
-        ai_confidence = min(ai_confidence, 100)
-
-        # =========================
-        # HIT PROBABILITY
-        # =========================
-        probability = (
-            ai_confidence
-            +
-            (vol_ratio * 5)
-            +
-            (rr * 10)
-        )
-
-        probability = min(probability, 95)
 
         # =========================
         # BACKTEST
@@ -553,53 +371,38 @@ def engine(stock, raw, date):
             if buy:
 
                 if f["High"] >= tgt:
-
                     status = "TARGET"
-
                     break
 
                 if f["Low"] <= sl:
-
                     status = "SL"
-
                     break
 
             else:
 
                 if f["Low"] <= tgt:
-
                     status = "TARGET"
-
                     break
 
                 if f["High"] >= sl:
-
                     status = "SL"
-
                     break
 
         # =========================
         # ACTION
         # =========================
         if big_score >= 90:
-
             action = "STRONG BUY"
 
-        elif big_score <= -90:
-
+        elif big_score <= -70:
             action = "STRONG SELL"
 
         elif buy:
-
             action = "BUY"
 
         else:
-
             action = "SELL"
 
-        # =========================
-        # RESULTS
-        # =========================
         results.append({
 
             "TIME":
@@ -632,24 +435,8 @@ def engine(stock, raw, date):
             "BIG_MOVE_SCORE":
             round(big_score, 2),
 
-            "AI_CONFIDENCE":
-            round(ai_confidence, 2),
-
-            "HIT_PROBABILITY":
-            round(probability, 2),
-
             "VOLUME_RATIO":
             round(vol_ratio, 2),
-
-            "SUPERTREND":
-            "BUY"
-            if row["ST_DIR"] == 1
-            else "SELL",
-
-            "CANDLE":
-            "GREEN"
-            if row["Close"] > row["Open"]
-            else "RED",
 
             "STATUS":
             status
@@ -665,34 +452,24 @@ def to_excel(df):
     output = io.BytesIO()
 
     with pd.ExcelWriter(
-
         output,
-
         engine="xlsxwriter"
-
     ) as writer:
 
         df.to_excel(
-
             writer,
-
             index=False,
-
             sheet_name="RESULT"
         )
 
         workbook = writer.book
-
         worksheet = writer.sheets["RESULT"]
 
         header_format = workbook.add_format({
 
             "bold": True,
-
             "font_color": "white",
-
             "bg_color": "#0A4E8A",
-
             "border": 1
         })
 
@@ -713,26 +490,14 @@ def to_excel(df):
 # UI
 # =========================
 tab1, tab2 = st.tabs([
-
     "🔥 LIVE SCANNER",
-
     "📊 BACKTEST"
 ])
 
 # =========================
-# LIVE SCANNER
+# LIVE SCAN
 # =========================
 with tab1:
-
-    st.subheader("📈 MARKET TREND")
-
-    if trend == "BULLISH":
-
-        st.success(f"🚀 MARKET TREND: {trend}")
-
-    else:
-
-        st.error(f"🔻 MARKET TREND: {trend}")
 
     if st.button("RUN LIVE SCAN"):
 
@@ -760,83 +525,46 @@ with tab1:
 
         if not df.empty:
 
-            # =========================
-            # BUY
-            # =========================
+            # BUY TOP
             buy_df = df[
                 df["SIGNAL"] == "BUY"
             ].sort_values(
-
-                "AI_CONFIDENCE",
-
+                "BIG_MOVE_SCORE",
                 ascending=False
             )
 
-            # =========================
-            # SELL
-            # =========================
+            # SELL TOP
             sell_df = df[
                 df["SIGNAL"] == "SELL"
             ].sort_values(
-
                 "BIG_MOVE_SCORE"
             )
 
-            # =========================
-            # DASHBOARD
-            # =========================
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
 
-            c1.metric(
-                "🚀 TOTAL BUY",
-                len(buy_df)
-            )
+            with c1:
+                st.subheader("🚀 TOP BUY")
+                st.dataframe(
+                    buy_df.head(10)
+                )
 
-            c2.metric(
-                "🔻 TOTAL SELL",
-                len(sell_df)
-            )
+            with c2:
+                st.subheader("🔻 TOP SELL")
+                st.dataframe(
+                    sell_df.head(10)
+                )
 
-            c3.metric(
-                "📈 TOTAL SIGNALS",
-                len(df)
-            )
-
-            # =========================
-            # TOP BUY
-            # =========================
-            st.subheader("🚀 TOP BUY")
-
-            st.dataframe(
-                buy_df.head(10)
-            )
-
-            # =========================
-            # TOP SELL
-            # =========================
-            st.subheader("🔻 TOP SELL")
-
-            st.dataframe(
-                sell_df.head(10)
-            )
-
-            # =========================
-            # ALL SIGNALS
-            # =========================
             st.subheader("📊 ALL SIGNALS")
 
             st.dataframe(df)
 
-            # =========================
-            # EXCEL
-            # =========================
             st.download_button(
 
                 "⬇️ DOWNLOAD LIVE EXCEL",
 
                 to_excel(df),
 
-                "NSE_AI_V60_LIVE.xlsx",
+                "NSE_AI_V58_LIVE.xlsx",
 
                 mime=(
                     "application/"
@@ -858,9 +586,7 @@ with tab1:
 with tab2:
 
     d = st.date_input(
-
         "SELECT DATE",
-
         now.date() - timedelta(days=1)
     )
 
@@ -940,7 +666,7 @@ with tab2:
 
                 to_excel(df),
 
-                "NSE_AI_V60_BACKTEST.xlsx",
+                "NSE_AI_V58_BACKTEST.xlsx",
 
                 mime=(
                     "application/"
