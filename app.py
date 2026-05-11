@@ -1,5 +1,5 @@
 # ============================================
-# 🚀 NSE AI V60 INSTITUTIONAL PRO
+# 🚀 NSE AI V60 INSTITUTIONAL PRO MAX
 # ============================================
 
 import streamlit as st
@@ -12,22 +12,37 @@ from concurrent.futures import ThreadPoolExecutor
 import io
 
 # ============================================
-# APP CONFIG
+# PAGE CONFIG
 # ============================================
 
 st.set_page_config(
-    page_title="🚀 NSE AI V60 INSTITUTIONAL PRO",
+    page_title="🚀 NSE AI V60 INSTITUTIONAL PRO MAX",
     layout="wide"
 )
 
+# ============================================
+# TIME
+# ============================================
+
 IST = pytz.timezone("Asia/Kolkata")
+
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V60 INSTITUTIONAL PRO")
+# ============================================
+# TITLE
+# ============================================
+
+st.title("🚀 NSE AI V60 INSTITUTIONAL PRO MAX")
 
 st.markdown(
     f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 )
+
+# ============================================
+# AUTO REFRESH
+# ============================================
+
+st.caption("🔄 Refresh page for latest scan")
 
 # ============================================
 # STOCK LIST
@@ -93,11 +108,13 @@ def load_data():
 
         interval="15m",
 
-        group_by="ticker",
-
         auto_adjust=True,
 
-        threads=True
+        group_by="ticker",
+
+        threads=True,
+
+        progress=False
     )
 
     return data
@@ -148,15 +165,27 @@ def vwap(df):
 
 def supertrend(df, period=10, multiplier=3):
 
-    hl2 = (df["High"] + df["Low"]) / 2
+    hl2 = (
+        df["High"] +
+        df["Low"]
+    ) / 2
 
-    tr1 = abs(df["High"] - df["Low"])
+    tr1 = abs(
+        df["High"] - df["Low"]
+    )
 
-    tr2 = abs(df["High"] - df["Close"].shift())
+    tr2 = abs(
+        df["High"] - df["Close"].shift()
+    )
 
-    tr3 = abs(df["Low"] - df["Close"].shift())
+    tr3 = abs(
+        df["Low"] - df["Close"].shift()
+    )
 
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    tr = pd.concat(
+        [tr1, tr2, tr3],
+        axis=1
+    ).max(axis=1)
 
     atr = tr.rolling(period).mean()
 
@@ -168,17 +197,17 @@ def supertrend(df, period=10, multiplier=3):
 
     for i in range(1, len(df)):
 
-        if df["Close"].iloc[i] > upperband.iloc[i-1]:
+        if df["Close"].iloc[i] > upperband.iloc[i - 1]:
 
             trend.append(True)
 
-        elif df["Close"].iloc[i] < lowerband.iloc[i-1]:
+        elif df["Close"].iloc[i] < lowerband.iloc[i - 1]:
 
             trend.append(False)
 
         else:
 
-            trend.append(trend[i-1])
+            trend.append(trend[i - 1])
 
     return pd.Series(trend, index=df.index)
 
@@ -196,28 +225,38 @@ def big_move_engine(row, prev_row):
         (row["VOL_AVG"] + 1e-9)
     )
 
-    # VOLUME BLAST
+    # VOLUME
+
     if vol_ratio > 3:
+
         score += 35
 
     elif vol_ratio > 2:
+
         score += 25
 
     elif vol_ratio > 1.5:
+
         score += 15
 
     # VWAP
+
     if row["Close"] > row["VWAP"]:
+
         score += 20
+
     else:
+
         score -= 20
 
     # EMA ALIGNMENT
+
     if (
         row["EMA9"] >
         row["EMA21"] >
         row["EMA50"]
     ):
+
         score += 25
 
     elif (
@@ -225,26 +264,37 @@ def big_move_engine(row, prev_row):
         row["EMA21"] <
         row["EMA50"]
     ):
+
         score -= 25
 
     # RSI
+
     if row["RSI"] > 65:
+
         score += 20
 
     elif row["RSI"] < 35:
+
         score -= 20
 
     # BREAKOUT
+
     if row["Close"] > prev_row["High"]:
+
         score += 15
 
     if row["Close"] < prev_row["Low"]:
+
         score -= 15
 
     # SUPERTREND
+
     if row["SUPERTREND"]:
+
         score += 10
+
     else:
+
         score -= 10
 
     return score, round(vol_ratio, 2)
@@ -259,6 +309,10 @@ def engine(stock, raw, date):
 
     try:
 
+        if key not in raw.columns.get_level_values(0):
+
+            return []
+
         df = raw[key].dropna().copy()
 
     except:
@@ -266,6 +320,7 @@ def engine(stock, raw, date):
         return []
 
     if len(df) < 60:
+
         return []
 
     # ============================================
@@ -305,13 +360,13 @@ def engine(stock, raw, date):
         df["High"] - df["Low"],
 
         abs(
-            df["High"]
-            - df["Close"].shift()
+            df["High"] -
+            df["Close"].shift()
         ),
 
         abs(
-            df["Low"]
-            - df["Close"].shift()
+            df["Low"] -
+            df["Close"].shift()
         )
 
     ], axis=1).max(axis=1)
@@ -371,7 +426,7 @@ def engine(stock, raw, date):
             continue
 
         # ============================================
-        # BIG SCORE
+        # SCORE
         # ============================================
 
         big_score, vol_ratio = big_move_engine(
@@ -454,6 +509,7 @@ def engine(stock, raw, date):
         )
 
         if not (buy or sell):
+
             continue
 
         signal = (
@@ -468,10 +524,11 @@ def engine(stock, raw, date):
         atr = row["ATR"]
 
         if pd.isna(atr):
+
             continue
 
         # ============================================
-        # TARGET / SL
+        # SL / TARGET
         # ============================================
 
         if buy:
@@ -641,9 +698,9 @@ def to_excel(df):
 
 try:
 
-    nifty = yf.download(
+    nifty = yf.Ticker("^NSEI")
 
-        "^NSEI",
+    hist = nifty.history(
 
         period="5d",
 
@@ -652,31 +709,80 @@ try:
         auto_adjust=True
     )
 
-    mood = "🟢 BULLISH"
+    if hist.empty:
 
-    if nifty["Close"].iloc[-1] < nifty["Close"].rolling(20).mean().iloc[-1]:
+        st.warning("⚠️ NIFTY DATA NOT AVAILABLE")
 
-        mood = "🔴 BEARISH"
+    else:
 
-    st.info(f"📈 MARKET MOOD: {mood}")
+        hist.dropna(inplace=True)
 
-except:
+        hist["EMA20"] = (
+            hist["Close"]
+            .ewm(span=20)
+            .mean()
+        )
 
-    st.warning("Market Mood Unavailable")
+        latest_close = hist["Close"].iloc[-1]
+
+        latest_ema = hist["EMA20"].iloc[-1]
+
+        prev_close = hist["Close"].iloc[-2]
+
+        change = round(
+
+            (
+                (
+                    latest_close -
+                    prev_close
+                )
+                /
+                prev_close
+            ) * 100,
+
+            2
+        )
+
+        if latest_close > latest_ema:
+
+            mood = "🟢 BULLISH"
+
+        else:
+
+            mood = "🔴 BEARISH"
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "📈 MARKET MOOD",
+            mood
+        )
+
+        c2.metric(
+            "📊 NIFTY",
+            round(latest_close, 2)
+        )
+
+        c3.metric(
+            "⚡ CHANGE %",
+            f"{change}%"
+        )
+
+except Exception as e:
+
+    st.error(f"Market Mood Error: {e}")
 
 # ============================================
-# UI TABS
+# TABS
 # ============================================
 
 tab1, tab2 = st.tabs([
-
     "🔥 LIVE SCANNER",
-
     "📊 BACKTEST"
 ])
 
 # ============================================
-# LIVE SCANNER
+# LIVE SCAN
 # ============================================
 
 with tab1:
@@ -705,12 +811,20 @@ with tab1:
 
         if not df.empty:
 
+            # ============================================
+            # BUY
+            # ============================================
+
             buy_df = df[
                 df["SIGNAL"] == "BUY"
             ].sort_values(
                 "BIG_MOVE_SCORE",
                 ascending=False
             )
+
+            # ============================================
+            # SELL
+            # ============================================
 
             sell_df = df[
                 df["SIGNAL"] == "SELL"
@@ -725,7 +839,8 @@ with tab1:
                 st.subheader("🚀 TOP BUY")
 
                 st.dataframe(
-                    buy_df.head(10)
+                    buy_df.head(10),
+                    use_container_width=True
                 )
 
             with c2:
@@ -733,39 +848,57 @@ with tab1:
                 st.subheader("🔻 TOP SELL")
 
                 st.dataframe(
-                    sell_df.head(10)
+                    sell_df.head(10),
+                    use_container_width=True
                 )
 
             # ============================================
-            # TOP GAINERS / LOSERS
+            # MOMENTUM
             # ============================================
 
-            g1, g2 = st.columns(2)
+            m1, m2 = st.columns(2)
 
-            with g1:
+            with m1:
 
                 st.subheader("📈 TOP MOMENTUM")
 
                 st.dataframe(
+
                     df.sort_values(
                         "BIG_MOVE_SCORE",
                         ascending=False
-                    ).head(5)
+                    ).head(5),
+
+                    use_container_width=True
                 )
 
-            with g2:
+            with m2:
 
                 st.subheader("📉 TOP WEAK STOCKS")
 
                 st.dataframe(
+
                     df.sort_values(
                         "BIG_MOVE_SCORE"
-                    ).head(5)
+                    ).head(5),
+
+                    use_container_width=True
                 )
+
+            # ============================================
+            # FULL DATA
+            # ============================================
 
             st.subheader("📊 ALL SIGNALS")
 
-            st.dataframe(df)
+            st.dataframe(
+                df,
+                use_container_width=True
+            )
+
+            # ============================================
+            # DOWNLOAD
+            # ============================================
 
             st.download_button(
 
@@ -786,7 +919,7 @@ with tab1:
         else:
 
             st.warning(
-                "NO LIVE SIGNALS FOUND"
+                "⚠️ NO LIVE SIGNALS FOUND"
             )
 
 # ============================================
@@ -796,9 +929,7 @@ with tab1:
 with tab2:
 
     d = st.date_input(
-
         "📅 SELECT DATE",
-
         now.date() - timedelta(days=1)
     )
 
@@ -868,7 +999,10 @@ with tab2:
                 f"{accuracy}%"
             )
 
-            st.dataframe(df)
+            st.dataframe(
+                df,
+                use_container_width=True
+            )
 
             st.download_button(
 
@@ -889,5 +1023,5 @@ with tab2:
         else:
 
             st.warning(
-                "NO BACKTEST SIGNALS FOUND"
+                "⚠️ NO BACKTEST SIGNALS FOUND"
             )
