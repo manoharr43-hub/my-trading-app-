@@ -1,14 +1,3 @@
-# =========================================================
-# 🚀 NSE AI V60 INSTITUTIONAL PRO FINAL FIXED VERSION
-# NO VALUE ERROR
-# NIFTY FILTER FIXED
-# DAILY VWAP FIXED
-# EMA50 FILTER ADDED
-# RSI CROSSOVER ADDED
-# STRONG CANDLE FILTER
-# BETTER SL/TARGET
-# =========================================================
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -18,26 +7,25 @@ import pytz
 from concurrent.futures import ThreadPoolExecutor
 import io
 
-# =========================================================
-# PAGE CONFIG
-# =========================================================
+# =========================
+# APP CONFIG
+# =========================
 st.set_page_config(
-    page_title="🚀 NSE AI V60 INSTITUTIONAL PRO",
+    page_title="🚀 NSE AI V58 MEGA PRO",
     layout="wide"
 )
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE AI V60 INSTITUTIONAL PRO")
-
+st.title("🚀 NSE AI V58 MEGA PRO")
 st.markdown(
     f"🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 )
 
-# =========================================================
-# STOCK LIST
-# =========================================================
+# =========================
+# NSE TOP STOCKS
+# =========================
 def get_stocks():
 
     return [
@@ -80,52 +68,28 @@ def get_stocks():
 
 stocks = get_stocks()
 
-# =========================================================
-# LOAD STOCK DATA
-# =========================================================
+# =========================
+# LOAD DATA
+# =========================
 @st.cache_data(ttl=300)
 def load_data():
 
     tickers = [s + ".NS" for s in stocks]
 
-    data = yf.download(
+    return yf.download(
         tickers=tickers,
-        period="15d",
+        period="10d",
         interval="15m",
         group_by="ticker",
         auto_adjust=True,
         threads=True
     )
 
-    return data
-
-# =========================================================
-# LOAD NIFTY DATA
-# =========================================================
-@st.cache_data(ttl=300)
-def load_nifty():
-
-    nifty = yf.download(
-        "^NSEI",
-        period="10d",
-        interval="15m",
-        auto_adjust=True
-    )
-
-    nifty["EMA21"] = (
-        nifty["Close"]
-        .ewm(span=21)
-        .mean()
-    )
-
-    return nifty
-
 data = load_data()
-nifty_data = load_nifty()
 
-# =========================================================
+# =========================
 # RSI
-# =========================================================
+# =========================
 def rsi(series, period=14):
 
     delta = series.diff()
@@ -142,12 +106,10 @@ def rsi(series, period=14):
 
     return 100 - (100 / (1 + rs))
 
-# =========================================================
-# DAILY VWAP
-# =========================================================
+# =========================
+# VWAP
+# =========================
 def vwap(df):
-
-    df = df.copy()
 
     tp = (
         df["High"] +
@@ -155,36 +117,26 @@ def vwap(df):
         df["Close"]
     ) / 3
 
-    df["TPV"] = tp * df["Volume"]
-
-    df["DATE"] = df.index.date
-
     return (
-
-        df.groupby("DATE")["TPV"].cumsum()
-
+        (tp * df["Volume"]).cumsum()
         /
-
-        (
-            df.groupby("DATE")["Volume"].cumsum()
-            + 1e-9
-        )
+        (df["Volume"].cumsum() + 1e-9)
     )
 
-# =========================================================
+# =========================
 # BIG MOVE ENGINE
-# =========================================================
+# =========================
 def big_move_engine(row, prev_row):
 
     score = 0
 
+    # VOLUME
     vol_ratio = (
         row["Volume"]
         /
         (row["VOL_AVG"] + 1e-9)
     )
 
-    # VOLUME
     if vol_ratio > 3:
         score += 35
 
@@ -201,7 +153,7 @@ def big_move_engine(row, prev_row):
         score -= 25
 
     # EMA
-    if row["EMA21"] > row["EMA50"]:
+    if row["Close"] > row["EMA21"]:
         score += 20
     else:
         score -= 20
@@ -226,434 +178,275 @@ def big_move_engine(row, prev_row):
 
     return score, round(vol_ratio, 2)
 
-# =========================================================
+# =========================
 # MAIN ENGINE
-# =========================================================
+# =========================
 def engine(stock, raw, date):
 
     key = stock + ".NS"
 
-    try:
-
-        if key not in raw.columns.get_level_values(0):
-            return []
-
-        df = raw[key].dropna().copy()
-
-        if len(df) < 60:
-            return []
-
-        # =================================================
-        # INDICATORS
-        # =================================================
-        df["EMA21"] = (
-            df["Close"]
-            .ewm(span=21)
-            .mean()
-        )
-
-        df["EMA50"] = (
-            df["Close"]
-            .ewm(span=50)
-            .mean()
-        )
-
-        df["VWAP"] = vwap(df)
-
-        df["RSI"] = rsi(df["Close"])
-
-        df["VOL_AVG"] = (
-            df["Volume"]
-            .rolling(20)
-            .mean()
-        )
-
-        tr = pd.concat([
-
-            df["High"] - df["Low"],
-
-            abs(
-                df["High"]
-                - df["Close"].shift()
-            ),
-
-            abs(
-                df["Low"]
-                - df["Close"].shift()
-            )
-
-        ], axis=1).max(axis=1)
-
-        df["ATR"] = tr.rolling(14).mean()
-
-        # =================================================
-        # TIMEZONE
-        # =================================================
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-
-        df.index = df.index.tz_convert(IST)
-
-        # =================================================
-        # DATE FILTER
-        # =================================================
-        df = df[
-            df.index.date
-            ==
-            pd.to_datetime(date).date()
-        ]
-
-        if len(df) == 0:
-            return []
-
-        # =================================================
-        # NIFTY FILTER
-        # =================================================
-        nifty = nifty_data.copy()
-
-        if nifty.index.tz is None:
-            nifty.index = nifty.index.tz_localize("UTC")
-
-        nifty.index = nifty.index.tz_convert(IST)
-
-        nifty = nifty[
-            nifty.index.date
-            ==
-            pd.to_datetime(date).date()
-        ]
-
-        if len(nifty) == 0:
-            return []
-
-        nifty_last = nifty.iloc[-1]
-
-        nifty_close = float(
-            nifty_last["Close"]
-        )
-
-        nifty_ema21 = float(
-            nifty_last["EMA21"]
-        )
-
-        results = []
-
-        # =================================================
-        # LOOP
-        # =================================================
-        for i in range(1, len(df)):
-
-            row = df.iloc[i]
-            prev_row = df.iloc[i - 1]
-
-            t = row.name.time()
-
-            if not (
-                datetime.strptime(
-                    "09:30",
-                    "%H:%M"
-                ).time()
-
-                <= t <=
-
-                datetime.strptime(
-                    "14:45",
-                    "%H:%M"
-                ).time()
-            ):
-                continue
-
-            # =============================================
-            # BIG MOVE
-            # =============================================
-            big_score, vol_ratio = (
-                big_move_engine(
-                    row,
-                    prev_row
-                )
-            )
-
-            # =============================================
-            # STRONG CANDLE
-            # =============================================
-            body = abs(
-                row["Close"] - row["Open"]
-            )
-
-            candle_range = (
-                row["High"] - row["Low"]
-            )
-
-            body_ratio = (
-                body /
-                (candle_range + 1e-9)
-            )
-
-            # =============================================
-            # OVEREXTENDED FILTER
-            # =============================================
-            move_percent = (
-
-                abs(
-                    row["Close"]
-                    - prev_row["Close"]
-                )
-
-                /
-
-                (
-                    prev_row["Close"]
-                    + 1e-9
-                )
-
-            ) * 100
-
-            # =============================================
-            # BUY
-            # =============================================
-            buy = (
-
-                row["Close"]
-                >
-                row["VWAP"]
-
-                and
-
-                row["EMA21"]
-                >
-                row["EMA50"]
-
-                and
-
-                row["RSI"]
-                > 55
-
-                and
-
-                prev_row["RSI"]
-                <= 55
-
-                and
-
-                body_ratio
-                > 0.6
-
-                and
-
-                move_percent
-                < 3
-
-                and
-
-                big_score
-                >= 60
-
-                and
-
-                nifty_close
-                >
-                nifty_ema21
-            )
-
-            # =============================================
-            # SELL
-            # =============================================
-            sell = (
-
-                row["Close"]
-                <
-                row["VWAP"]
-
-                and
-
-                row["EMA21"]
-                <
-                row["EMA50"]
-
-                and
-
-                row["RSI"]
-                < 45
-
-                and
-
-                prev_row["RSI"]
-                >= 45
-
-                and
-
-                body_ratio
-                > 0.6
-
-                and
-
-                move_percent
-                < 3
-
-                and
-
-                big_score
-                <= -40
-
-                and
-
-                nifty_close
-                <
-                nifty_ema21
-            )
-
-            if not (buy or sell):
-                continue
-
-            signal = (
-                "BUY"
-                if buy
-                else
-                "SELL"
-            )
-
-            entry = row["Close"]
-
-            atr = row["ATR"]
-
-            if pd.isna(atr):
-                continue
-
-            # =============================================
-            # SL / TARGET
-            # =============================================
-            if buy:
-
-                sl = entry - atr * 1.8
-                tgt = entry + atr * 3
-
-            else:
-
-                sl = entry + atr * 1.8
-                tgt = entry - atr * 3
-
-            rr = (
-                abs(tgt - entry)
-                /
-                (
-                    abs(entry - sl)
-                    + 1e-9
-                )
-            )
-
-            # =============================================
-            # BACKTEST
-            # =============================================
-            future = df.iloc[i+1:i+20]
-
-            status = "OPEN"
-
-            for _, f in future.iterrows():
-
-                if buy:
-
-                    if f["High"] >= tgt:
-                        status = "TARGET"
-                        break
-
-                    if f["Low"] <= sl:
-                        status = "SL"
-                        break
-
-                else:
-
-                    if f["Low"] <= tgt:
-                        status = "TARGET"
-                        break
-
-                    if f["High"] >= sl:
-                        status = "SL"
-                        break
-
-            # =============================================
-            # ACTION
-            # =============================================
-            if big_score >= 100:
-                action = "EXPLOSIVE BUY"
-
-            elif big_score >= 90:
-                action = "STRONG BUY"
-
-            elif big_score <= -90:
-                action = "PANIC SELL"
-
-            elif big_score <= -70:
-                action = "STRONG SELL"
-
-            elif buy:
-                action = "BUY"
-
-            else:
-                action = "SELL"
-
-            # =============================================
-            # CONFIDENCE
-            # =============================================
-            confidence = min(
-                100,
-                max(
-                    0,
-                    abs(big_score)
-                )
-            )
-
-            results.append({
-
-                "TIME":
-                row.name.strftime("%H:%M"),
-
-                "STOCK":
-                stock,
-
-                "ACTION":
-                action,
-
-                "SIGNAL":
-                signal,
-
-                "ENTRY":
-                round(entry, 2),
-
-                "SL":
-                round(sl, 2),
-
-                "TARGET":
-                round(tgt, 2),
-
-                "R:R":
-                round(rr, 2),
-
-                "RSI":
-                round(row["RSI"], 2),
-
-                "BIG_MOVE_SCORE":
-                round(big_score, 2),
-
-                "CONFIDENCE":
-                confidence,
-
-                "VOLUME_RATIO":
-                round(vol_ratio, 2),
-
-                "STATUS":
-                status
-            })
-
-        return results
-
-    except Exception as e:
-
-        print(f"ERROR IN {stock}: {e}")
-
+    if key not in raw.columns.get_level_values(0):
         return []
 
-# =========================================================
-# EXCEL EXPORT
-# =========================================================
+    df = raw[key].dropna().copy()
+
+    if len(df) < 60:
+        return []
+
+    # =========================
+    # INDICATORS
+    # =========================
+    df["EMA21"] = (
+        df["Close"]
+        .ewm(span=21)
+        .mean()
+    )
+
+    df["VWAP"] = vwap(df)
+
+    df["RSI"] = rsi(df["Close"])
+
+    df["VOL_AVG"] = (
+        df["Volume"]
+        .rolling(20)
+        .mean()
+    )
+
+    tr = pd.concat([
+
+        df["High"] - df["Low"],
+
+        abs(
+            df["High"]
+            - df["Close"].shift()
+        ),
+
+        abs(
+            df["Low"]
+            - df["Close"].shift()
+        )
+
+    ], axis=1).max(axis=1)
+
+    df["ATR"] = tr.rolling(14).mean()
+
+    # =========================
+    # TIMEZONE
+    # =========================
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+
+    df.index = df.index.tz_convert(IST)
+
+    # =========================
+    # DATE FILTER
+    # =========================
+    df = df[
+        df.index.date
+        ==
+        pd.to_datetime(date).date()
+    ]
+
+    results = []
+
+    # =========================
+    # LOOP
+    # =========================
+    for i in range(1, len(df)):
+
+        row = df.iloc[i]
+        prev_row = df.iloc[i - 1]
+
+        t = row.name.time()
+
+        if not (
+            datetime.strptime(
+                "09:30",
+                "%H:%M"
+            ).time()
+
+            <= t <=
+
+            datetime.strptime(
+                "14:45",
+                "%H:%M"
+            ).time()
+        ):
+            continue
+
+        # =========================
+        # SCORE
+        # =========================
+        big_score, vol_ratio = (
+            big_move_engine(
+                row,
+                prev_row
+            )
+        )
+
+        # =========================
+        # BUY
+        # =========================
+        buy = (
+
+            row["Close"] > row["VWAP"]
+
+            and
+
+            row["Close"] > row["EMA21"]
+
+            and
+
+            row["RSI"] > 55
+
+            and
+
+            big_score >= 60
+        )
+
+        # =========================
+        # SELL
+        # =========================
+        sell = (
+
+            row["Close"] < row["VWAP"]
+
+            and
+
+            row["Close"] < row["EMA21"]
+
+            and
+
+            row["RSI"] < 45
+
+            and
+
+            big_score <= -40
+        )
+
+        if not (buy or sell):
+            continue
+
+        signal = (
+            "BUY"
+            if buy
+            else
+            "SELL"
+        )
+
+        entry = row["Close"]
+
+        atr = row["ATR"]
+
+        if pd.isna(atr):
+            continue
+
+        # TARGET / SL
+        if buy:
+
+            sl = entry - atr * 2.2
+            tgt = entry + atr * 2.5
+
+        else:
+
+            sl = entry + atr * 2.2
+            tgt = entry - atr * 2.5
+
+        # RISK REWARD
+        rr = (
+            abs(tgt - entry)
+            /
+            (abs(entry - sl) + 1e-9)
+        )
+
+        # =========================
+        # BACKTEST
+        # =========================
+        future = df.iloc[i+1:i+20]
+
+        status = "OPEN"
+
+        for _, f in future.iterrows():
+
+            if buy:
+
+                if f["High"] >= tgt:
+                    status = "TARGET"
+                    break
+
+                if f["Low"] <= sl:
+                    status = "SL"
+                    break
+
+            else:
+
+                if f["Low"] <= tgt:
+                    status = "TARGET"
+                    break
+
+                if f["High"] >= sl:
+                    status = "SL"
+                    break
+
+        # =========================
+        # ACTION
+        # =========================
+        if big_score >= 90:
+            action = "STRONG BUY"
+
+        elif big_score <= -70:
+            action = "STRONG SELL"
+
+        elif buy:
+            action = "BUY"
+
+        else:
+            action = "SELL"
+
+        results.append({
+
+            "TIME":
+            row.name.strftime("%H:%M"),
+
+            "STOCK":
+            stock,
+
+            "ACTION":
+            action,
+
+            "SIGNAL":
+            signal,
+
+            "ENTRY":
+            round(entry, 2),
+
+            "SL":
+            round(sl, 2),
+
+            "TARGET":
+            round(tgt, 2),
+
+            "R:R":
+            round(rr, 2),
+
+            "RSI":
+            round(row["RSI"], 2),
+
+            "BIG_MOVE_SCORE":
+            round(big_score, 2),
+
+            "VOLUME_RATIO":
+            round(vol_ratio, 2),
+
+            "STATUS":
+            status
+        })
+
+    return results
+
+# =========================
+# EXCEL
+# =========================
 def to_excel(df):
 
     output = io.BytesIO()
@@ -670,7 +463,6 @@ def to_excel(df):
         )
 
         workbook = writer.book
-
         worksheet = writer.sheets["RESULT"]
 
         header_format = workbook.add_format({
@@ -694,17 +486,17 @@ def to_excel(df):
 
     return output.getvalue()
 
-# =========================================================
-# TABS
-# =========================================================
+# =========================
+# UI
+# =========================
 tab1, tab2 = st.tabs([
     "🔥 LIVE SCANNER",
     "📊 BACKTEST"
 ])
 
-# =========================================================
-# LIVE SCANNER
-# =========================================================
+# =========================
+# LIVE SCAN
+# =========================
 with tab1:
 
     if st.button("RUN LIVE SCAN"):
@@ -733,7 +525,7 @@ with tab1:
 
         if not df.empty:
 
-            # BUY
+            # BUY TOP
             buy_df = df[
                 df["SIGNAL"] == "BUY"
             ].sort_values(
@@ -741,47 +533,30 @@ with tab1:
                 ascending=False
             )
 
-            # SELL
+            # SELL TOP
             sell_df = df[
                 df["SIGNAL"] == "SELL"
             ].sort_values(
                 "BIG_MOVE_SCORE"
             )
 
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
 
-            c1.metric(
-                "🚀 BUY SIGNALS",
-                len(buy_df)
-            )
+            with c1:
+                st.subheader("🚀 TOP BUY")
+                st.dataframe(
+                    buy_df.head(10)
+                )
 
-            c2.metric(
-                "🔻 SELL SIGNALS",
-                len(sell_df)
-            )
-
-            c3.metric(
-                "📊 TOTAL SIGNALS",
-                len(df)
-            )
-
-            st.subheader("🚀 TOP BUY")
-            st.dataframe(
-                buy_df.head(10),
-                use_container_width=True
-            )
-
-            st.subheader("🔻 TOP SELL")
-            st.dataframe(
-                sell_df.head(10),
-                use_container_width=True
-            )
+            with c2:
+                st.subheader("🔻 TOP SELL")
+                st.dataframe(
+                    sell_df.head(10)
+                )
 
             st.subheader("📊 ALL SIGNALS")
-            st.dataframe(
-                df,
-                use_container_width=True
-            )
+
+            st.dataframe(df)
 
             st.download_button(
 
@@ -789,7 +564,7 @@ with tab1:
 
                 to_excel(df),
 
-                "NSE_AI_V60_LIVE.xlsx",
+                "NSE_AI_V58_LIVE.xlsx",
 
                 mime=(
                     "application/"
@@ -802,12 +577,12 @@ with tab1:
         else:
 
             st.warning(
-                "❌ NO LIVE SIGNALS FOUND"
+                "NO LIVE SIGNALS FOUND"
             )
 
-# =========================================================
+# =========================
 # BACKTEST
-# =========================================================
+# =========================
 with tab2:
 
     d = st.date_input(
@@ -883,10 +658,7 @@ with tab2:
                 f"{accuracy}%"
             )
 
-            st.dataframe(
-                df,
-                use_container_width=True
-            )
+            st.dataframe(df)
 
             st.download_button(
 
@@ -894,7 +666,7 @@ with tab2:
 
                 to_excel(df),
 
-                "NSE_AI_V60_BACKTEST.xlsx",
+                "NSE_AI_V58_BACKTEST.xlsx",
 
                 mime=(
                     "application/"
@@ -907,5 +679,5 @@ with tab2:
         else:
 
             st.warning(
-                "❌ NO BACKTEST SIGNALS FOUND"
+                "NO BACKTEST SIGNALS FOUND"
             )
