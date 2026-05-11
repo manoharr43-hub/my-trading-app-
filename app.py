@@ -1,5 +1,6 @@
 # ============================================
-# 🚀 NSE AI V60 INSTITUTIONAL PRO MAX
+# 🚀 NSE AI V61 INSTITUTIONAL PRO MAX
+# OLD CODE DISTURB KAKUNDA UPGRADED VERSION
 # ============================================
 
 import streamlit as st
@@ -16,7 +17,7 @@ import io
 # ============================================
 
 st.set_page_config(
-    page_title="🚀 NSE AI V60 INSTITUTIONAL PRO MAX",
+    page_title="🚀 NSE AI V61 INSTITUTIONAL PRO MAX",
     layout="wide"
 )
 
@@ -29,18 +30,29 @@ IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
 # ============================================
+# MARKET STATUS
+# ============================================
+
+market_open = (
+    datetime.strptime("09:15", "%H:%M").time()
+    <= now.time() <=
+    datetime.strptime("15:30", "%H:%M").time()
+)
+
+# ============================================
 # TITLE
 # ============================================
 
-st.title("🚀 NSE AI V60 INSTITUTIONAL PRO MAX")
+st.title("🚀 NSE AI V61 INSTITUTIONAL PRO MAX")
 
 st.markdown(
     f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 )
 
-# ============================================
-# AUTO REFRESH
-# ============================================
+if market_open:
+    st.success("🟢 MARKET LIVE")
+else:
+    st.error("🔴 MARKET CLOSED")
 
 st.caption("🔄 Refresh page for latest scan")
 
@@ -104,7 +116,7 @@ def load_data():
 
         tickers=tickers,
 
-        period="10d",
+        period="20d",
 
         interval="15m",
 
@@ -165,51 +177,44 @@ def vwap(df):
 
 def supertrend(df, period=10, multiplier=3):
 
-    hl2 = (
-        df["High"] +
-        df["Low"]
-    ) / 2
+    hl2 = (df["High"] + df["Low"]) / 2
 
-    tr1 = abs(
-        df["High"] - df["Low"]
-    )
+    tr1 = df["High"] - df["Low"]
 
-    tr2 = abs(
-        df["High"] - df["Close"].shift()
-    )
+    tr2 = abs(df["High"] - df["Close"].shift())
 
-    tr3 = abs(
-        df["Low"] - df["Close"].shift()
-    )
+    tr3 = abs(df["Low"] - df["Close"].shift())
 
-    tr = pd.concat(
-        [tr1, tr2, tr3],
-        axis=1
-    ).max(axis=1)
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
     atr = tr.rolling(period).mean()
 
-    upperband = hl2 + (multiplier * atr)
+    upperband = hl2 + multiplier * atr
+    lowerband = hl2 - multiplier * atr
 
-    lowerband = hl2 - (multiplier * atr)
+    st_line = pd.Series(index=df.index, dtype='float64')
+    trend = pd.Series(index=df.index, dtype='bool')
 
-    trend = [True]
+    for i in range(len(df)):
 
-    for i in range(1, len(df)):
+        if i == 0:
 
-        if df["Close"].iloc[i] > upperband.iloc[i - 1]:
+            st_line.iloc[i] = upperband.iloc[i]
+            trend.iloc[i] = True
 
-            trend.append(True)
+            continue
 
-        elif df["Close"].iloc[i] < lowerband.iloc[i - 1]:
+        if df["Close"].iloc[i] > st_line.iloc[i-1]:
 
-            trend.append(False)
+            trend.iloc[i] = True
+            st_line.iloc[i] = lowerband.iloc[i]
 
         else:
 
-            trend.append(trend[i - 1])
+            trend.iloc[i] = False
+            st_line.iloc[i] = upperband.iloc[i]
 
-    return pd.Series(trend, index=df.index)
+    return trend
 
 # ============================================
 # BIG MOVE ENGINE
@@ -225,7 +230,9 @@ def big_move_engine(row, prev_row):
         (row["VOL_AVG"] + 1e-9)
     )
 
+    # ============================================
     # VOLUME
+    # ============================================
 
     if vol_ratio > 3:
 
@@ -239,17 +246,49 @@ def big_move_engine(row, prev_row):
 
         score += 15
 
-    # VWAP
+    # ============================================
+    # VWAP DISTANCE
+    # ============================================
 
-    if row["Close"] > row["VWAP"]:
+    vwap_distance = (
+        (
+            row["Close"] - row["VWAP"]
+        )
+        /
+        row["VWAP"]
+    ) * 100
+
+    if vwap_distance > 1:
+
+        score += 30
+
+    elif vwap_distance > 0.5:
 
         score += 20
 
-    else:
+    elif vwap_distance < -1:
+
+        score -= 30
+
+    elif vwap_distance < -0.5:
 
         score -= 20
 
+    # ============================================
+    # VWAP TREND
+    # ============================================
+
+    if row["VWAP"] > prev_row["VWAP"]:
+
+        score += 10
+
+    else:
+
+        score -= 10
+
+    # ============================================
     # EMA ALIGNMENT
+    # ============================================
 
     if (
         row["EMA9"] >
@@ -267,35 +306,49 @@ def big_move_engine(row, prev_row):
 
         score -= 25
 
+    # ============================================
     # RSI
+    # ============================================
 
-    if row["RSI"] > 65:
+    if row["RSI"] > 70:
 
-        score += 20
+        score += 25
 
-    elif row["RSI"] < 35:
-
-        score -= 20
-
-    # BREAKOUT
-
-    if row["Close"] > prev_row["High"]:
+    elif row["RSI"] > 60:
 
         score += 15
 
-    if row["Close"] < prev_row["Low"]:
+    elif row["RSI"] < 30:
+
+        score -= 25
+
+    elif row["RSI"] < 40:
 
         score -= 15
 
+    # ============================================
+    # BREAKOUT
+    # ============================================
+
+    if row["Close"] > prev_row["High"]:
+
+        score += 20
+
+    if row["Close"] < prev_row["Low"]:
+
+        score -= 20
+
+    # ============================================
     # SUPERTREND
+    # ============================================
 
     if row["SUPERTREND"]:
 
-        score += 10
+        score += 15
 
     else:
 
-        score -= 10
+        score -= 15
 
     return score, round(vol_ratio, 2)
 
@@ -319,7 +372,7 @@ def engine(stock, raw, date):
 
         return []
 
-    if len(df) < 60:
+    if len(df) < 100:
 
         return []
 
@@ -351,7 +404,7 @@ def engine(stock, raw, date):
 
     df["VOL_AVG"] = (
         df["Volume"]
-        .rolling(20)
+        .rolling(20, min_periods=1)
         .mean()
     )
 
@@ -426,6 +479,28 @@ def engine(stock, raw, date):
             continue
 
         # ============================================
+        # VWAP CROSS
+        # ============================================
+
+        vwap_cross_up = (
+
+            prev_row["Close"] < prev_row["VWAP"]
+
+            and
+
+            row["Close"] > row["VWAP"]
+        )
+
+        vwap_cross_down = (
+
+            prev_row["Close"] > prev_row["VWAP"]
+
+            and
+
+            row["Close"] < row["VWAP"]
+        )
+
+        # ============================================
         # SCORE
         # ============================================
 
@@ -464,11 +539,15 @@ def engine(stock, raw, date):
 
             and
 
-            vol_ratio > 1.8
+            vol_ratio > 1.5
 
             and
 
-            big_score >= 70
+            vwap_cross_up
+
+            and
+
+            big_score >= 55
         )
 
         # ============================================
@@ -501,11 +580,15 @@ def engine(stock, raw, date):
 
             and
 
-            vol_ratio > 1.8
+            vol_ratio > 1.5
 
             and
 
-            big_score <= -70
+            vwap_cross_down
+
+            and
+
+            big_score <= -55
         )
 
         if not (buy or sell):
@@ -647,381 +730,3 @@ def engine(stock, raw, date):
         })
 
     return results
-
-# ============================================
-# EXCEL
-# ============================================
-
-def to_excel(df):
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(
-        output,
-        engine="xlsxwriter"
-    ) as writer:
-
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name="RESULT"
-        )
-
-        workbook = writer.book
-
-        worksheet = writer.sheets["RESULT"]
-
-        header_format = workbook.add_format({
-
-            "bold": True,
-            "font_color": "white",
-            "bg_color": "#0A4E8A",
-            "border": 1
-        })
-
-        for col_num, value in enumerate(df.columns.values):
-
-            worksheet.write(
-                0,
-                col_num,
-                value,
-                header_format
-            )
-
-        worksheet.set_column("A:Z", 18)
-
-    return output.getvalue()
-
-# ============================================
-# MARKET MOOD
-# ============================================
-
-try:
-
-    nifty = yf.Ticker("^NSEI")
-
-    hist = nifty.history(
-
-        period="5d",
-
-        interval="15m",
-
-        auto_adjust=True
-    )
-
-    if hist.empty:
-
-        st.warning("⚠️ NIFTY DATA NOT AVAILABLE")
-
-    else:
-
-        hist.dropna(inplace=True)
-
-        hist["EMA20"] = (
-            hist["Close"]
-            .ewm(span=20)
-            .mean()
-        )
-
-        latest_close = hist["Close"].iloc[-1]
-
-        latest_ema = hist["EMA20"].iloc[-1]
-
-        prev_close = hist["Close"].iloc[-2]
-
-        change = round(
-
-            (
-                (
-                    latest_close -
-                    prev_close
-                )
-                /
-                prev_close
-            ) * 100,
-
-            2
-        )
-
-        if latest_close > latest_ema:
-
-            mood = "🟢 BULLISH"
-
-        else:
-
-            mood = "🔴 BEARISH"
-
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "📈 MARKET MOOD",
-            mood
-        )
-
-        c2.metric(
-            "📊 NIFTY",
-            round(latest_close, 2)
-        )
-
-        c3.metric(
-            "⚡ CHANGE %",
-            f"{change}%"
-        )
-
-except Exception as e:
-
-    st.error(f"Market Mood Error: {e}")
-
-# ============================================
-# TABS
-# ============================================
-
-tab1, tab2 = st.tabs([
-    "🔥 LIVE SCANNER",
-    "📊 BACKTEST"
-])
-
-# ============================================
-# LIVE SCAN
-# ============================================
-
-with tab1:
-
-    if st.button("🚀 RUN LIVE SCAN"):
-
-        results = []
-
-        with ThreadPoolExecutor(max_workers=5) as ex:
-
-            for r in ex.map(
-
-                lambda s:
-                engine(
-                    s,
-                    data,
-                    now.date()
-                ),
-
-                stocks
-            ):
-
-                results.extend(r)
-
-        df = pd.DataFrame(results)
-
-        if not df.empty:
-
-            # ============================================
-            # BUY
-            # ============================================
-
-            buy_df = df[
-                df["SIGNAL"] == "BUY"
-            ].sort_values(
-                "BIG_MOVE_SCORE",
-                ascending=False
-            )
-
-            # ============================================
-            # SELL
-            # ============================================
-
-            sell_df = df[
-                df["SIGNAL"] == "SELL"
-            ].sort_values(
-                "BIG_MOVE_SCORE"
-            )
-
-            c1, c2 = st.columns(2)
-
-            with c1:
-
-                st.subheader("🚀 TOP BUY")
-
-                st.dataframe(
-                    buy_df.head(10),
-                    use_container_width=True
-                )
-
-            with c2:
-
-                st.subheader("🔻 TOP SELL")
-
-                st.dataframe(
-                    sell_df.head(10),
-                    use_container_width=True
-                )
-
-            # ============================================
-            # MOMENTUM
-            # ============================================
-
-            m1, m2 = st.columns(2)
-
-            with m1:
-
-                st.subheader("📈 TOP MOMENTUM")
-
-                st.dataframe(
-
-                    df.sort_values(
-                        "BIG_MOVE_SCORE",
-                        ascending=False
-                    ).head(5),
-
-                    use_container_width=True
-                )
-
-            with m2:
-
-                st.subheader("📉 TOP WEAK STOCKS")
-
-                st.dataframe(
-
-                    df.sort_values(
-                        "BIG_MOVE_SCORE"
-                    ).head(5),
-
-                    use_container_width=True
-                )
-
-            # ============================================
-            # FULL DATA
-            # ============================================
-
-            st.subheader("📊 ALL SIGNALS")
-
-            st.dataframe(
-                df,
-                use_container_width=True
-            )
-
-            # ============================================
-            # DOWNLOAD
-            # ============================================
-
-            st.download_button(
-
-                "⬇️ DOWNLOAD LIVE EXCEL",
-
-                to_excel(df),
-
-                "NSE_AI_V60_LIVE.xlsx",
-
-                mime=(
-                    "application/"
-                    "vnd.openxmlformats-"
-                    "officedocument."
-                    "spreadsheetml.sheet"
-                )
-            )
-
-        else:
-
-            st.warning(
-                "⚠️ NO LIVE SIGNALS FOUND"
-            )
-
-# ============================================
-# BACKTEST
-# ============================================
-
-with tab2:
-
-    d = st.date_input(
-        "📅 SELECT DATE",
-        now.date() - timedelta(days=1)
-    )
-
-    if st.button("📊 RUN BACKTEST"):
-
-        results = []
-
-        with ThreadPoolExecutor(max_workers=5) as ex:
-
-            for r in ex.map(
-
-                lambda s:
-                engine(
-                    s,
-                    data,
-                    d
-                ),
-
-                stocks
-            ):
-
-                results.extend(r)
-
-        df = pd.DataFrame(results)
-
-        if not df.empty:
-
-            wins = len(
-                df[
-                    df["STATUS"]
-                    == "TARGET"
-                ]
-            )
-
-            losses = len(
-                df[
-                    df["STATUS"]
-                    == "SL"
-                ]
-            )
-
-            accuracy = round(
-
-                (
-                    wins
-                    /
-                    (wins + losses + 1e-9)
-                ) * 100,
-
-                2
-            )
-
-            c1, c2, c3 = st.columns(3)
-
-            c1.metric(
-                "🎯 WINS",
-                wins
-            )
-
-            c2.metric(
-                "❌ LOSSES",
-                losses
-            )
-
-            c3.metric(
-                "📈 ACCURACY %",
-                f"{accuracy}%"
-            )
-
-            st.dataframe(
-                df,
-                use_container_width=True
-            )
-
-            st.download_button(
-
-                "⬇️ DOWNLOAD BACKTEST EXCEL",
-
-                to_excel(df),
-
-                "NSE_AI_V60_BACKTEST.xlsx",
-
-                mime=(
-                    "application/"
-                    "vnd.openxmlformats-"
-                    "officedocument."
-                    "spreadsheetml.sheet"
-                )
-            )
-
-        else:
-
-            st.warning(
-                "⚠️ NO BACKTEST SIGNALS FOUND"
-            )
