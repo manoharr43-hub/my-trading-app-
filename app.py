@@ -6,8 +6,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
-
 from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor
@@ -67,21 +65,7 @@ def get_stocks():
         "PNB","BANKBARODA","CANBK","FEDERALBNK",
         "IDFCFIRSTB","AUBANK","RBLBANK",
         "UNIONBANK","INDIANB","YESBANK",
-        "ALKEM","BIOCON","LUPIN","AUROPHARMA",
-        "GLENMARK","TORNTPHARM","ZYDUSLIFE",
-        "LTIM","PERSISTENT","COFORGE",
-        "KPITTECH","TATAELXSI","MPHASIS",
-        "ASHOKLEY","TVSMOTOR","BALKRISIND",
-        "MOTHERSON","EXIDEIND","MRF",
-        "SAIL","NMDC","VEDL","JINDALSTEL",
-        "IOC","BPCL","HINDPETRO","GAIL",
-        "IGL","PETRONET","ACC","AMBUJACEM",
-        "DALBHARAT","DLF","GODREJPROP",
-        "OBEROIRLTY","HAL","BEL","BDL",
-        "MAZDOCK","IRCTC","RVNL","IRFC",
-        "RAILTEL","ABB","BHEL","HAVELLS",
-        "POLYCAB","TRENT","DMART",
-        "SUZLON","NHPC","SJVN","HFCL",
+        "HAL","BEL","RVNL","IRFC","RAILTEL",
         "NBCC","IRB","IDEA","TATAPOWER",
         "ADANIGREEN","ADANIPOWER"
     ]
@@ -170,7 +154,100 @@ def vwap(df):
     )
 
 # ============================================
-# SMART MONEY
+# CUSTOM SUPERTREND
+# ============================================
+
+def supertrend(df, period=10, multiplier=3):
+
+    hl2 = (
+        df["High"] +
+        df["Low"]
+    ) / 2
+
+    tr1 = abs(
+        df["High"] - df["Low"]
+    )
+
+    tr2 = abs(
+        df["High"] -
+        df["Close"].shift()
+    )
+
+    tr3 = abs(
+        df["Low"] -
+        df["Close"].shift()
+    )
+
+    tr = pd.concat(
+        [tr1, tr2, tr3],
+        axis=1
+    ).max(axis=1)
+
+    atr = tr.rolling(period).mean()
+
+    upperband = hl2 + (
+        multiplier * atr
+    )
+
+    lowerband = hl2 - (
+        multiplier * atr
+    )
+
+    final_upper = upperband.copy()
+
+    final_lower = lowerband.copy()
+
+    trend = [True]
+
+    for i in range(1, len(df)):
+
+        if (
+            df["Close"].iloc[i]
+            >
+            final_upper.iloc[i - 1]
+        ):
+
+            trend.append(True)
+
+        elif (
+            df["Close"].iloc[i]
+            <
+            final_lower.iloc[i - 1]
+        ):
+
+            trend.append(False)
+
+        else:
+
+            trend.append(
+                trend[i - 1]
+            )
+
+            if trend[i]:
+
+                final_lower.iloc[i] = max(
+
+                    final_lower.iloc[i],
+
+                    final_lower.iloc[i - 1]
+                )
+
+            else:
+
+                final_upper.iloc[i] = min(
+
+                    final_upper.iloc[i],
+
+                    final_upper.iloc[i - 1]
+                )
+
+    return pd.Series(
+        trend,
+        index=df.index
+    )
+
+# ============================================
+# LIQUIDITY GRAB
 # ============================================
 
 def liquidity_grab(row, prev_row):
@@ -211,9 +288,14 @@ def fair_value_gap(df):
 
         bearish = current_high < prev2_low
 
-        fvg.append(bullish or bearish)
+        fvg.append(
+            bullish or bearish
+        )
 
-    return pd.Series(fvg, index=df.index)
+    return pd.Series(
+        fvg,
+        index=df.index
+    )
 
 # ============================================
 # BIG MOVE ENGINE
@@ -265,25 +347,17 @@ def big_move_engine(row, prev_row):
     # ============================================
 
     if (
-
         row["EMA9"] >
-
         row["EMA21"] >
-
         row["EMA50"]
-
     ):
 
         score += 25
 
     elif (
-
         row["EMA9"] <
-
         row["EMA21"] <
-
         row["EMA50"]
-
     ):
 
         score -= 25
@@ -360,11 +434,8 @@ try:
     hist.dropna(inplace=True)
 
     hist["EMA20"] = (
-
         hist["Close"]
-
         .ewm(span=20)
-
         .mean()
     )
 
@@ -388,7 +459,10 @@ try:
         2
     )
 
-    market_trend = latest_close > latest_ema
+    market_trend = (
+        latest_close >
+        latest_ema
+    )
 
     mood = (
 
@@ -509,23 +583,7 @@ def engine(stock, raw, date):
     # SUPERTREND
     # ============================================
 
-    st_data = ta.supertrend(
-
-        high=df["High"],
-
-        low=df["Low"],
-
-        close=df["Close"],
-
-        length=10,
-
-        multiplier=3
-    )
-
-    df["SUPERTREND"] = (
-
-        st_data["SUPERT_10_3.0"] > 0
-    )
+    df["SUPERTREND"] = supertrend(df)
 
     # ============================================
     # SMART MONEY
@@ -548,7 +606,7 @@ def engine(stock, raw, date):
     df["FVG"] = fair_value_gap(df)
 
     # ============================================
-    # ORB
+    # TIMEZONE
     # ============================================
 
     if df.index.tz is None:
@@ -556,6 +614,10 @@ def engine(stock, raw, date):
         df.index = df.index.tz_localize("UTC")
 
     df.index = df.index.tz_convert(IST)
+
+    # ============================================
+    # ORB
+    # ============================================
 
     orb_high = df.between_time(
         "09:15",
@@ -719,10 +781,6 @@ def engine(stock, raw, date):
 
             continue
 
-        # ============================================
-        # SIGNAL
-        # ============================================
-
         signal = (
             "BUY"
             if buy
@@ -784,7 +842,7 @@ def engine(stock, raw, date):
             confidence = "LOW"
 
         # ============================================
-        # STATUS
+        # BACKTEST
         # ============================================
 
         future = df.iloc[i+1:i+20]
