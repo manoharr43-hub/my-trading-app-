@@ -1,11 +1,13 @@
 # ============================================
-# 🚀 NSE AI V60 INSTITUTIONAL PRO MAX
+# 🚀 NSE AI V70 SMART MONEY PRO MAX
 # ============================================
 
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import pandas_ta as ta
+
 from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +18,7 @@ import io
 # ============================================
 
 st.set_page_config(
-    page_title="🚀 NSE AI V60 INSTITUTIONAL PRO MAX",
+    page_title="🚀 NSE AI V70 SMART MONEY PRO",
     layout="wide"
 )
 
@@ -32,17 +34,13 @@ now = datetime.now(IST)
 # TITLE
 # ============================================
 
-st.title("🚀 NSE AI V60 INSTITUTIONAL PRO MAX")
+st.title("🚀 NSE AI V70 SMART MONEY PRO")
 
 st.markdown(
     f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 )
 
-# ============================================
-# AUTO REFRESH
-# ============================================
-
-st.caption("🔄 Refresh page for latest scan")
+st.caption("🔄 Refresh page for latest institutional scan")
 
 # ============================================
 # STOCK LIST
@@ -104,7 +102,7 @@ def load_data():
 
         tickers=tickers,
 
-        period="10d",
+        period="15d",
 
         interval="15m",
 
@@ -142,7 +140,7 @@ def rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 # ============================================
-# VWAP
+# DAILY VWAP RESET
 # ============================================
 
 def vwap(df):
@@ -153,63 +151,69 @@ def vwap(df):
         df["Close"]
     ) / 3
 
+    day = df.index.date
+
     return (
-        (tp * df["Volume"]).cumsum()
+
+        (tp * df["Volume"])
+        .groupby(day)
+        .cumsum()
+
         /
-        (df["Volume"].cumsum() + 1e-9)
+
+        (
+            df["Volume"]
+            .groupby(day)
+            .cumsum()
+            + 1e-9
+        )
     )
 
 # ============================================
-# SUPERTREND
+# SMART MONEY
 # ============================================
 
-def supertrend(df, period=10, multiplier=3):
+def liquidity_grab(row, prev_row):
 
-    hl2 = (
-        df["High"] +
-        df["Low"]
-    ) / 2
+    if (
 
-    tr1 = abs(
-        df["High"] - df["Low"]
-    )
+        row["Low"] < prev_row["Low"]
 
-    tr2 = abs(
-        df["High"] - df["Close"].shift()
-    )
+        and
 
-    tr3 = abs(
-        df["Low"] - df["Close"].shift()
-    )
+        row["Close"] > prev_row["Low"]
 
-    tr = pd.concat(
-        [tr1, tr2, tr3],
-        axis=1
-    ).max(axis=1)
+    ):
 
-    atr = tr.rolling(period).mean()
+        return True
 
-    upperband = hl2 + (multiplier * atr)
+    return False
 
-    lowerband = hl2 - (multiplier * atr)
+# ============================================
+# FAIR VALUE GAP
+# ============================================
 
-    trend = [True]
+def fair_value_gap(df):
 
-    for i in range(1, len(df)):
+    fvg = [False, False]
 
-        if df["Close"].iloc[i] > upperband.iloc[i - 1]:
+    for i in range(2, len(df)):
 
-            trend.append(True)
+        prev2_high = df["High"].iloc[i - 2]
 
-        elif df["Close"].iloc[i] < lowerband.iloc[i - 1]:
+        prev2_low = df["Low"].iloc[i - 2]
 
-            trend.append(False)
+        current_low = df["Low"].iloc[i]
 
-        else:
+        current_high = df["High"].iloc[i]
 
-            trend.append(trend[i - 1])
+        bullish = current_low > prev2_high
 
-    return pd.Series(trend, index=df.index)
+        bearish = current_high < prev2_low
+
+        fvg.append(bullish or bearish)
+
+    return pd.Series(fvg, index=df.index)
 
 # ============================================
 # BIG MOVE ENGINE
@@ -220,12 +224,17 @@ def big_move_engine(row, prev_row):
     score = 0
 
     vol_ratio = (
+
         row["Volume"]
+
         /
+
         (row["VOL_AVG"] + 1e-9)
     )
 
+    # ============================================
     # VOLUME
+    # ============================================
 
     if vol_ratio > 3:
 
@@ -239,7 +248,9 @@ def big_move_engine(row, prev_row):
 
         score += 15
 
+    # ============================================
     # VWAP
+    # ============================================
 
     if row["Close"] > row["VWAP"]:
 
@@ -249,25 +260,37 @@ def big_move_engine(row, prev_row):
 
         score -= 20
 
+    # ============================================
     # EMA ALIGNMENT
+    # ============================================
 
     if (
+
         row["EMA9"] >
+
         row["EMA21"] >
+
         row["EMA50"]
+
     ):
 
         score += 25
 
     elif (
+
         row["EMA9"] <
+
         row["EMA21"] <
+
         row["EMA50"]
+
     ):
 
         score -= 25
 
+    # ============================================
     # RSI
+    # ============================================
 
     if row["RSI"] > 65:
 
@@ -277,7 +300,9 @@ def big_move_engine(row, prev_row):
 
         score -= 20
 
+    # ============================================
     # BREAKOUT
+    # ============================================
 
     if row["Close"] > prev_row["High"]:
 
@@ -287,17 +312,115 @@ def big_move_engine(row, prev_row):
 
         score -= 15
 
+    # ============================================
     # SUPERTREND
+    # ============================================
 
     if row["SUPERTREND"]:
 
-        score += 10
+        score += 15
 
     else:
 
-        score -= 10
+        score -= 15
+
+    # ============================================
+    # SMART MONEY
+    # ============================================
+
+    if row["LIQUIDITY_GRAB"]:
+
+        score += 15
+
+    if row["FVG"]:
+
+        score += 10
 
     return score, round(vol_ratio, 2)
+
+# ============================================
+# MARKET MOOD
+# ============================================
+
+market_trend = True
+
+try:
+
+    nifty = yf.Ticker("^NSEI")
+
+    hist = nifty.history(
+
+        period="5d",
+
+        interval="15m",
+
+        auto_adjust=True
+    )
+
+    hist.dropna(inplace=True)
+
+    hist["EMA20"] = (
+
+        hist["Close"]
+
+        .ewm(span=20)
+
+        .mean()
+    )
+
+    latest_close = hist["Close"].iloc[-1]
+
+    latest_ema = hist["EMA20"].iloc[-1]
+
+    prev_close = hist["Close"].iloc[-2]
+
+    change = round(
+
+        (
+            (
+                latest_close -
+                prev_close
+            )
+            /
+            prev_close
+        ) * 100,
+
+        2
+    )
+
+    market_trend = latest_close > latest_ema
+
+    mood = (
+
+        "🟢 BULLISH"
+
+        if market_trend
+
+        else
+
+        "🔴 BEARISH"
+    )
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "📈 MARKET MOOD",
+        mood
+    )
+
+    c2.metric(
+        "📊 NIFTY",
+        round(latest_close, 2)
+    )
+
+    c3.metric(
+        "⚡ CHANGE %",
+        f"{change}%"
+    )
+
+except Exception as e:
+
+    st.error(f"Market Mood Error: {e}")
 
 # ============================================
 # ENGINE
@@ -355,6 +478,15 @@ def engine(stock, raw, date):
         .mean()
     )
 
+    df["RS"] = (
+        df["Close"]
+        .pct_change(10)
+    )
+
+    # ============================================
+    # ATR
+    # ============================================
+
     tr = pd.concat([
 
         df["High"] - df["Low"],
@@ -373,10 +505,50 @@ def engine(stock, raw, date):
 
     df["ATR"] = tr.rolling(14).mean()
 
-    df["SUPERTREND"] = supertrend(df)
+    # ============================================
+    # SUPERTREND
+    # ============================================
+
+    st_data = ta.supertrend(
+
+        high=df["High"],
+
+        low=df["Low"],
+
+        close=df["Close"],
+
+        length=10,
+
+        multiplier=3
+    )
+
+    df["SUPERTREND"] = (
+
+        st_data["SUPERT_10_3.0"] > 0
+    )
 
     # ============================================
-    # TIMEZONE
+    # SMART MONEY
+    # ============================================
+
+    liq = [False]
+
+    for i in range(1, len(df)):
+
+        liq.append(
+
+            liquidity_grab(
+                df.iloc[i],
+                df.iloc[i - 1]
+            )
+        )
+
+    df["LIQUIDITY_GRAB"] = liq
+
+    df["FVG"] = fair_value_gap(df)
+
+    # ============================================
+    # ORB
     # ============================================
 
     if df.index.tz is None:
@@ -384,6 +556,16 @@ def engine(stock, raw, date):
         df.index = df.index.tz_localize("UTC")
 
     df.index = df.index.tz_convert(IST)
+
+    orb_high = df.between_time(
+        "09:15",
+        "09:30"
+    )["High"].max()
+
+    orb_low = df.between_time(
+        "09:15",
+        "09:30"
+    )["Low"].min()
 
     # ============================================
     # DATE FILTER
@@ -410,6 +592,7 @@ def engine(stock, raw, date):
         t = row.name.time()
 
         if not (
+
             datetime.strptime(
                 "09:30",
                 "%H:%M"
@@ -460,7 +643,7 @@ def engine(stock, raw, date):
 
             and
 
-            row["SUPERTREND"] == True
+            row["SUPERTREND"]
 
             and
 
@@ -468,7 +651,19 @@ def engine(stock, raw, date):
 
             and
 
-            big_score >= 70
+            big_score >= 75
+
+            and
+
+            row["Close"] > orb_high
+
+            and
+
+            row["RS"] > 0
+
+            and
+
+            market_trend
         )
 
         # ============================================
@@ -497,7 +692,7 @@ def engine(stock, raw, date):
 
             and
 
-            row["SUPERTREND"] == False
+            not row["SUPERTREND"]
 
             and
 
@@ -505,12 +700,28 @@ def engine(stock, raw, date):
 
             and
 
-            big_score <= -70
+            big_score <= -75
+
+            and
+
+            row["Close"] < orb_low
+
+            and
+
+            row["RS"] < 0
+
+            and
+
+            not market_trend
         )
 
         if not (buy or sell):
 
             continue
+
+        # ============================================
+        # SIGNAL
+        # ============================================
 
         signal = (
             "BUY"
@@ -528,29 +739,52 @@ def engine(stock, raw, date):
             continue
 
         # ============================================
-        # SL / TARGET
+        # SL TARGET
         # ============================================
 
         if buy:
 
             sl = entry - atr * 2
 
-            tgt = entry + atr * 3
+            tgt = entry + atr * 4
 
         else:
 
             sl = entry + atr * 2
 
-            tgt = entry - atr * 3
+            tgt = entry - atr * 4
 
         rr = (
+
             abs(tgt - entry)
+
             /
+
             (abs(entry - sl) + 1e-9)
         )
 
         # ============================================
-        # BACKTEST
+        # CONFIDENCE
+        # ============================================
+
+        if abs(big_score) >= 110:
+
+            confidence = "EXTREME"
+
+        elif abs(big_score) >= 95:
+
+            confidence = "HIGH"
+
+        elif abs(big_score) >= 75:
+
+            confidence = "MEDIUM"
+
+        else:
+
+            confidence = "LOW"
+
+        # ============================================
+        # STATUS
         # ============================================
 
         future = df.iloc[i+1:i+20]
@@ -591,13 +825,13 @@ def engine(stock, raw, date):
         # ACTION
         # ============================================
 
-        if big_score >= 90:
+        if big_score >= 100:
 
-            action = "STRONG BUY"
+            action = "🔥 STRONG BUY"
 
-        elif big_score <= -90:
+        elif big_score <= -100:
 
-            action = "STRONG SELL"
+            action = "🔻 STRONG SELL"
 
         elif buy:
 
@@ -606,6 +840,10 @@ def engine(stock, raw, date):
         else:
 
             action = "SELL"
+
+        # ============================================
+        # RESULTS
+        # ============================================
 
         results.append({
 
@@ -641,6 +879,9 @@ def engine(stock, raw, date):
 
             "VOLUME_RATIO":
             round(vol_ratio, 2),
+
+            "CONFIDENCE":
+            confidence,
 
             "STATUS":
             status
@@ -693,86 +934,6 @@ def to_excel(df):
     return output.getvalue()
 
 # ============================================
-# MARKET MOOD
-# ============================================
-
-try:
-
-    nifty = yf.Ticker("^NSEI")
-
-    hist = nifty.history(
-
-        period="5d",
-
-        interval="15m",
-
-        auto_adjust=True
-    )
-
-    if hist.empty:
-
-        st.warning("⚠️ NIFTY DATA NOT AVAILABLE")
-
-    else:
-
-        hist.dropna(inplace=True)
-
-        hist["EMA20"] = (
-            hist["Close"]
-            .ewm(span=20)
-            .mean()
-        )
-
-        latest_close = hist["Close"].iloc[-1]
-
-        latest_ema = hist["EMA20"].iloc[-1]
-
-        prev_close = hist["Close"].iloc[-2]
-
-        change = round(
-
-            (
-                (
-                    latest_close -
-                    prev_close
-                )
-                /
-                prev_close
-            ) * 100,
-
-            2
-        )
-
-        if latest_close > latest_ema:
-
-            mood = "🟢 BULLISH"
-
-        else:
-
-            mood = "🔴 BEARISH"
-
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "📈 MARKET MOOD",
-            mood
-        )
-
-        c2.metric(
-            "📊 NIFTY",
-            round(latest_close, 2)
-        )
-
-        c3.metric(
-            "⚡ CHANGE %",
-            f"{change}%"
-        )
-
-except Exception as e:
-
-    st.error(f"Market Mood Error: {e}")
-
-# ============================================
 # TABS
 # ============================================
 
@@ -793,27 +954,33 @@ with tab1:
 
         with ThreadPoolExecutor(max_workers=5) as ex:
 
-            for r in ex.map(
+            futures = []
 
-                lambda s:
-                engine(
-                    s,
-                    data,
-                    now.date()
-                ),
+            for s in stocks:
 
-                stocks
-            ):
+                futures.append(
 
-                results.extend(r)
+                    ex.submit(
+                        engine,
+                        s,
+                        data,
+                        now.date()
+                    )
+                )
+
+            for f in futures:
+
+                try:
+
+                    results.extend(f.result())
+
+                except Exception as e:
+
+                    st.error(e)
 
         df = pd.DataFrame(results)
 
         if not df.empty:
-
-            # ============================================
-            # BUY
-            # ============================================
 
             buy_df = df[
                 df["SIGNAL"] == "BUY"
@@ -821,10 +988,6 @@ with tab1:
                 "BIG_MOVE_SCORE",
                 ascending=False
             )
-
-            # ============================================
-            # SELL
-            # ============================================
 
             sell_df = df[
                 df["SIGNAL"] == "SELL"
@@ -852,43 +1015,6 @@ with tab1:
                     use_container_width=True
                 )
 
-            # ============================================
-            # MOMENTUM
-            # ============================================
-
-            m1, m2 = st.columns(2)
-
-            with m1:
-
-                st.subheader("📈 TOP MOMENTUM")
-
-                st.dataframe(
-
-                    df.sort_values(
-                        "BIG_MOVE_SCORE",
-                        ascending=False
-                    ).head(5),
-
-                    use_container_width=True
-                )
-
-            with m2:
-
-                st.subheader("📉 TOP WEAK STOCKS")
-
-                st.dataframe(
-
-                    df.sort_values(
-                        "BIG_MOVE_SCORE"
-                    ).head(5),
-
-                    use_container_width=True
-                )
-
-            # ============================================
-            # FULL DATA
-            # ============================================
-
             st.subheader("📊 ALL SIGNALS")
 
             st.dataframe(
@@ -896,17 +1022,13 @@ with tab1:
                 use_container_width=True
             )
 
-            # ============================================
-            # DOWNLOAD
-            # ============================================
-
             st.download_button(
 
                 "⬇️ DOWNLOAD LIVE EXCEL",
 
                 to_excel(df),
 
-                "NSE_AI_V60_LIVE.xlsx",
+                "NSE_AI_V70_LIVE.xlsx",
 
                 mime=(
                     "application/"
@@ -939,19 +1061,29 @@ with tab2:
 
         with ThreadPoolExecutor(max_workers=5) as ex:
 
-            for r in ex.map(
+            futures = []
 
-                lambda s:
-                engine(
-                    s,
-                    data,
-                    d
-                ),
+            for s in stocks:
 
-                stocks
-            ):
+                futures.append(
 
-                results.extend(r)
+                    ex.submit(
+                        engine,
+                        s,
+                        data,
+                        d
+                    )
+                )
+
+            for f in futures:
+
+                try:
+
+                    results.extend(f.result())
+
+                except Exception as e:
+
+                    st.error(e)
 
         df = pd.DataFrame(results)
 
@@ -1010,7 +1142,7 @@ with tab2:
 
                 to_excel(df),
 
-                "NSE_AI_V60_BACKTEST.xlsx",
+                "NSE_AI_V70_BACKTEST.xlsx",
 
                 mime=(
                     "application/"
