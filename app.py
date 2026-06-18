@@ -1,12 +1,11 @@
 # ============================================
-# 🚀 NSE PRO CHoCH Institutional Scanner V5
+# 🚀 NSE PRO CHoCH Institutional Scanner V6
 # ============================================
 
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 from datetime import datetime
 import pytz
 import io
@@ -17,12 +16,12 @@ from concurrent.futures import ThreadPoolExecutor
 # PAGE CONFIG
 # ============================================
 
-st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V5", layout="wide")
+st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V6", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE PRO CHoCH Institutional Scanner V5")
+st.title("🚀 NSE PRO CHoCH Institutional Scanner V6")
 st.markdown(f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ============================================
@@ -99,7 +98,7 @@ def run_scan():
     return pd.DataFrame(results)
 
 # ============================================
-# CHART PREVIEW FUNCTION
+# CHART PREVIEW FUNCTION (NO PLOTLY)
 # ============================================
 
 def show_chart(symbol):
@@ -107,14 +106,9 @@ def show_chart(symbol):
     if df.empty:
         st.warning("⚠️ Chart data not available.")
         return
-    ema20 = df["Close"].ewm(span=20).mean()
-    ema50 = df["Close"].ewm(span=50).mean()
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Candles"))
-    fig.add_trace(go.Scatter(x=df.index, y=ema20, mode='lines', name='EMA20', line=dict(color='cyan', width=1.5)))
-    fig.add_trace(go.Scatter(x=df.index, y=ema50, mode='lines', name='EMA50', line=dict(color='orange', width=1.5)))
-    fig.update_layout(title=f"{symbol} — 15m CHoCH/BOS Chart", xaxis_title="Time", yaxis_title="Price", template="plotly_dark", height=500)
-    st.plotly_chart(fig, use_container_width=True)
+    df["EMA20"] = df["Close"].ewm(span=20).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+    st.line_chart(df[["Close","EMA20","EMA50"]])
 
 # ============================================
 # UI BUTTON
@@ -132,6 +126,6 @@ if st.button("🚀 RUN NSE500 CHoCH SCAN"):
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df.to_excel(writer, index=False, sheet_name="CHoCH_Signals")
-        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V5.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V6.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.warning("⚠️ No CHoCH/BOS signals found.")
