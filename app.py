@@ -1,816 +1,504 @@
-# =========================================================
-# 🚀 NSE PRO INSTITUTIONAL SCANNER V10
-# PART 1
-# =========================================================
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
 import io
 import time
 from datetime import datetime
-import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# =========================================================
+# --------------------------------------------------
 # PAGE CONFIG
-# =========================================================
-
+# --------------------------------------------------
 st.set_page_config(
-    page_title="🚀 NSE PRO INSTITUTIONAL SCANNER V10",
+    page_title="NSE PRO INSTITUTIONAL SCANNER V10",
+    page_icon="🚀",
     layout="wide"
 )
 
-IST = pytz.timezone("Asia/Kolkata")
-now = datetime.now(IST)
+# --------------------------------------------------
+# DARK THEME CSS
+# --------------------------------------------------
+st.markdown("""
+<style>
 
+.stApp{
+    background-color:#050816;
+    color:white;
+}
+
+h1,h2,h3,h4{
+    color:white;
+}
+
+[data-testid="stSidebar"]{
+    background:#1d1f2b;
+}
+
+.stButton>button{
+    background:#0f62fe;
+    color:white;
+    border-radius:10px;
+    height:50px;
+    width:100%;
+    font-weight:bold;
+}
+
+.signal-box{
+    background:#0f172a;
+    padding:15px;
+    border-radius:12px;
+    border:1px solid #334155;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# --------------------------------------------------
+# HEADER
+# --------------------------------------------------
 st.title("🚀 NSE PRO INSTITUTIONAL SCANNER V10")
-st.caption(f"Live Time : {now.strftime('%d-%m-%Y %H:%M:%S')}")
 
-# =========================================================
-# SIDEBAR
-# =========================================================
+st.caption(
+    f"Live Time : {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}"
+)
 
-with st.sidebar:
+# --------------------------------------------------
+# SIDEBAR SETTINGS
+# --------------------------------------------------
+st.sidebar.header("⚙ Scanner Settings")
 
-    st.header("⚙ Scanner Settings")
+timeframe = st.sidebar.selectbox(
+    "Timeframe",
+    ["5m","15m","30m","1h","1d"],
+    index=1
+)
 
-    interval = st.selectbox(
-        "Timeframe",
-        ["15m", "30m", "1h"],
-        index=0
-    )
+period = st.sidebar.selectbox(
+    "Period",
+    ["5d","1mo","3mo","6mo"],
+    index=1
+)
 
-    period = st.selectbox(
-        "Period",
-        ["5d", "1mo", "3mo"],
-        index=0
-    )
+min_ai_score = st.sidebar.slider(
+    "Minimum AI Score",
+    0,
+    100,
+    30
+)
 
-    min_ai_score = st.slider(
-        "Minimum AI Score",
-        0,
-        100,
-        60
-    )
+min_rvol = st.sidebar.slider(
+    "Minimum RVOL",
+    0.5,
+    5.0,
+    1.2,
+    0.1
+)
 
-    rvol_filter = st.slider(
-        "Minimum RVOL",
-        1.0,
-        5.0,
-        1.5
-    )
+# --------------------------------------------------
+# NSE SYMBOLS
+# --------------------------------------------------
+NSE_SYMBOLS = [
 
-# =========================================================
-# NSE500 LIST
-# =========================================================
+    "RELIANCE.NS",
+    "TCS.NS",
+    "INFY.NS",
+    "HDFCBANK.NS",
+    "ICICIBANK.NS",
+    "SBIN.NS",
+    "LT.NS",
+    "ITC.NS",
+    "AXISBANK.NS",
+    "KOTAKBANK.NS",
+    "BAJFINANCE.NS",
+    "ASIANPAINT.NS",
+    "SUNPHARMA.NS",
+    "MARUTI.NS",
+    "TITAN.NS",
+    "ULTRACEMCO.NS",
+    "WIPRO.NS",
+    "NTPC.NS",
+    "POWERGRID.NS",
+    "TATAMOTORS.NS",
 
-@st.cache_data(ttl=86400)
-def load_nse500():
+    # ADD MORE NSE500 SYMBOLS HERE
+]# --------------------------------------------------
+# RSI CALCULATION
+# --------------------------------------------------
+def calculate_rsi(df, period=14):
 
-    try:
+    delta = df["Close"].diff()
 
-        url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
-
-        df = pd.read_csv(url)
-
-        stocks = sorted(
-            df["Symbol"]
-            .dropna()
-            .unique()
-            .tolist()
-        )
-
-        return stocks
-
-    except:
-
-        return [
-            "RELIANCE",
-            "TCS",
-            "INFY",
-            "HDFCBANK",
-            "ICICIBANK",
-            "SBIN",
-            "LT",
-            "ITC"
-        ]
-
-stocks = load_nse500()
-
-# =========================================================
-# INDICATORS
-# =========================================================
-
-def calculate_rsi(close, period=14):
-
-    delta = close.diff()
-
-    gain = delta.clip(lower=0)
-
-    loss = -delta.clip(upper=0)
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
 
     avg_gain = gain.rolling(period).mean()
-
     avg_loss = loss.rolling(period).mean()
 
     rs = avg_gain / avg_loss
 
     rsi = 100 - (100 / (1 + rs))
 
-    return rsi
+    return float(rsi.iloc[-1])
 
 
+# --------------------------------------------------
+# VWAP
+# --------------------------------------------------
 def calculate_vwap(df):
 
-    tp = (
+    typical_price = (
         df["High"] +
         df["Low"] +
         df["Close"]
     ) / 3
 
     vwap = (
-        (tp * df["Volume"]).cumsum()
-        /
-        df["Volume"].cumsum()
-    )
+        typical_price * df["Volume"]
+    ).cumsum() / df["Volume"].cumsum()
 
-    return vwap
+    return float(vwap.iloc[-1])
 
 
+# --------------------------------------------------
+# ATR
+# --------------------------------------------------
 def calculate_atr(df, period=14):
 
     high_low = df["High"] - df["Low"]
 
-    high_close = abs(
-        df["High"] -
-        df["Close"].shift()
+    high_close = np.abs(
+        df["High"] - df["Close"].shift()
     )
 
-    low_close = abs(
-        df["Low"] -
-        df["Close"].shift()
+    low_close = np.abs(
+        df["Low"] - df["Close"].shift()
     )
 
     tr = pd.concat(
-        [
-            high_low,
-            high_close,
-            low_close
-        ],
+        [high_low, high_close, low_close],
         axis=1
     ).max(axis=1)
 
     atr = tr.rolling(period).mean()
 
-    return atr
+    return float(atr.iloc[-1])
 
 
+# --------------------------------------------------
+# RVOL
+# --------------------------------------------------
 def calculate_rvol(df):
 
-    avg_vol = df["Volume"].rolling(20).mean()
+    current_volume = df["Volume"].iloc[-1]
 
-    rvol = (
-        df["Volume"] /
-        avg_vol
+    avg_volume = (
+        df["Volume"]
+        .rolling(20)
+        .mean()
+        .iloc[-1]
     )
 
-    return rvol
+    if avg_volume == 0:
+        return 0
 
-# =========================================================
-# DATA DOWNLOAD
-# =========================================================
+    return float(
+        current_volume / avg_volume
+    )
 
-@st.cache_data(ttl=300)
-def get_data(symbol):
+
+# --------------------------------------------------
+# EMA
+# --------------------------------------------------
+def ema(series, period):
+
+    return series.ewm(
+        span=period,
+        adjust=False
+    ).mean()
+
+
+# --------------------------------------------------
+# AI SCORE
+# --------------------------------------------------
+def calculate_ai_score(
+    close,
+    ema20,
+    ema50,
+    rsi,
+    rvol,
+    vwap,
+    atr_pct
+):
+
+    score = 0
+
+    # Trend
+    if close > ema20:
+        score += 20
+
+    if close > ema50:
+        score += 20
+
+    # Momentum
+    if rsi > 50:
+        score += 15
+
+    if rsi > 60:
+        score += 10
+
+    # Volume
+    if rvol > 1.2:
+        score += 15
+
+    if rvol > 2:
+        score += 10
+
+    # VWAP
+    if close > vwap:
+        score += 5
+
+    # Volatility
+    if atr_pct > 2:
+        score += 5
+
+    return min(score, 100)
+
+
+# --------------------------------------------------
+# SCAN SINGLE STOCK
+# --------------------------------------------------
+def scan_stock(symbol):
 
     try:
 
         df = yf.download(
-            f"{symbol}.NS",
-            interval=interval,
+            symbol,
             period=period,
-            auto_adjust=True,
-            progress=False
+            interval=timeframe,
+            progress=False,
+            auto_adjust=True
         )
 
         if df.empty:
             return None
 
-        return df
-
-    except:
-        return None# =========================================================
-# PART 2
-# CHOCH + BOS + AI ENGINE
-# =========================================================
-
-def detect_structure(df, window=8):
-
-    try:
-
         if len(df) < 50:
             return None
 
-        swing_high = (
-            df["High"]
-            .rolling(window, center=True)
-            .max()
-        )
-
-        swing_low = (
-            df["Low"]
-            .rolling(window, center=True)
-            .min()
-        )
-
-        last_high = float(
-            swing_high.ffill().iloc[-2]
-        )
-
-        last_low = float(
-            swing_low.ffill().iloc[-2]
-        )
-
-        close = float(
-            df["Close"].iloc[-1]
-        )
-
-        ema20 = (
-            df["Close"]
-            .ewm(span=20)
-            .mean()
-            .iloc[-1]
-        )
-
-        ema50 = (
-            df["Close"]
-            .ewm(span=50)
-            .mean()
-            .iloc[-1]
-        )
-
-        bullish_trend = ema20 > ema50
-
-        # BOS UP
-
-        if close > last_high and bullish_trend:
-            return "BOS 📈"
-
-        # BOS DOWN
-
-        if close < last_low and not bullish_trend:
-            return "BOS 📉"
-
-        # Bullish CHOCH
-
-        if close > last_high and not bullish_trend:
-            return "CHOCH 🔄 Bullish"
-
-        # Bearish CHOCH
-
-        if close < last_low and bullish_trend:
-            return "CHOCH 🔄 Bearish"
-
-        return None
-
-    except:
-        return None
-
-
-# =========================================================
-# AI SCORE
-# =========================================================
-
-def calculate_ai_score(df, signal):
-
-    score = 0
-
-    try:
-
         close = float(df["Close"].iloc[-1])
 
-        ema20 = (
-            df["Close"]
-            .ewm(span=20)
-            .mean()
-            .iloc[-1]
+        rsi = calculate_rsi(df)
+
+        vwap = calculate_vwap(df)
+
+        atr = calculate_atr(df)
+
+        rvol = calculate_rvol(df)
+
+        ema20 = float(
+            ema(df["Close"],20).iloc[-1]
         )
 
-        ema50 = (
-            df["Close"]
-            .ewm(span=50)
-            .mean()
-            .iloc[-1]
+        ema50 = float(
+            ema(df["Close"],50).iloc[-1]
         )
 
-        rsi = calculate_rsi(
-            df["Close"]
-        ).iloc[-1]
-
-        vwap = calculate_vwap(df).iloc[-1]
-
-        rvol = calculate_rvol(df).iloc[-1]
-
-        # Trend
-
-        if ema20 > ema50:
-            score += 20
-
-        # RSI
-
-        if rsi > 60:
-            score += 20
-
-        # VWAP
-
-        if close > vwap:
-            score += 20
-
-        # RVOL
-
-        if rvol > 1.5:
-            score += 20
-
-        # Signal
-
-        if signal is not None:
-            score += 20
-
-        return int(score)
-
-    except:
-        return 0
-
-
-# =========================================================
-# INSTITUTIONAL SIGNAL
-# =========================================================
-
-def generate_signal(df):
-
-    try:
-
-        signal = detect_structure(df)
-
-        if signal is None:
-            return None
-
-        close = float(df["Close"].iloc[-1])
-
-        ema20 = (
-            df["Close"]
-            .ewm(span=20)
-            .mean()
-            .iloc[-1]
-        )
-
-        ema50 = (
-            df["Close"]
-            .ewm(span=50)
-            .mean()
-            .iloc[-1]
-        )
-
-        rsi = calculate_rsi(
-            df["Close"]
-        ).iloc[-1]
-
-        vwap = calculate_vwap(df).iloc[-1]
-
-        rvol = calculate_rvol(df).iloc[-1]
-
-        atr = calculate_atr(df).iloc[-1]
+        atr_pct = (
+            atr / close
+        ) * 100
 
         ai_score = calculate_ai_score(
-            df,
-            signal
+            close,
+            ema20,
+            ema50,
+            rsi,
+            rvol,
+            vwap,
+            atr_pct
         )
-
-        direction = "NEUTRAL"
-
-        # BUY CONDITIONS
 
         if (
-            ema20 > ema50
-            and rsi > 60
-            and close > vwap
-            and rvol > 1.5
+            ai_score >= min_ai_score
+            and
+            rvol >= min_rvol
         ):
 
-            direction = "BUY 🟢"
+            signal = "BUY"
 
-        # SELL CONDITIONS
+            if rsi > 70:
+                signal = "STRONG BUY"
 
-        elif (
-            ema20 < ema50
-            and rsi < 40
-            and close < vwap
-            and rvol > 1.5
-        ):
-
-            direction = "SELL 🔴"
-
-        stoploss = round(
-            close - atr,
-            2
-        )
-
-        target = round(
-            close + (atr * 2),
-            2
-        )
-
-        return {
-
-            "Signal": signal,
-
-            "Direction": direction,
-
-            "Close": round(close, 2),
-
-            "EMA20": round(ema20, 2),
-
-            "EMA50": round(ema50, 2),
-
-            "RSI": round(rsi, 2),
-
-            "VWAP": round(vwap, 2),
-
-            "RVOL": round(rvol, 2),
-
-            "ATR": round(atr, 2),
-
-            "AI Score": ai_score,
-
-            "Target": target,
-
-            "Stoploss": stoploss
-
-        }
+            return {
+                "Symbol": symbol,
+                "Price": round(close,2),
+                "RSI": round(rsi,2),
+                "RVOL": round(rvol,2),
+                "ATR%": round(atr_pct,2),
+                "VWAP": round(vwap,2),
+                "AI Score": ai_score,
+                "Signal": signal
+            }
 
     except:
-
         return None
 
+    return None
 
-# =========================================================
-# SINGLE STOCK ANALYSIS
-# =========================================================
 
-def analyze_stock(symbol):
-
-    try:
-
-        df = get_data(symbol)
-
-        if df is None:
-            return None
-
-        result = generate_signal(df)
-
-        if result is None:
-            return None
-
-        result["Stock"] = symbol
-
-        return result
-
-    except:
-
-        return None# =========================================================
-# PART 3
-# NSE500 SCANNER + BACKTEST + EXCEL
-# =========================================================
-
-def scan_all_stocks():
+# --------------------------------------------------
+# MULTI THREAD SCANNER
+# --------------------------------------------------
+def run_scanner():
 
     results = []
-
-    progress = st.progress(0)
-
-    total = len(stocks)
 
     with ThreadPoolExecutor(max_workers=15) as executor:
 
         futures = {
             executor.submit(
-                analyze_stock,
+                scan_stock,
                 symbol
             ): symbol
-            for symbol in stocks
-        }
 
-        completed = 0
+            for symbol in NSE_SYMBOLS
+        }
 
         for future in as_completed(futures):
 
-            completed += 1
+            result = future.result()
 
-            progress.progress(
-                completed / total
+            if result:
+                results.append(result)
+
+    return results# --------------------------------------------------
+# RUN SCANNER BUTTON
+# --------------------------------------------------
+st.markdown("---")
+
+scan_button = st.button(
+    "🚀 RUN INSTITUTIONAL SCAN"
+)
+
+# --------------------------------------------------
+# SCAN
+# --------------------------------------------------
+if scan_button:
+
+    start_time = time.time()
+
+    with st.spinner("Scanning NSE Stocks..."):
+
+        results = run_scanner()
+
+    end_time = time.time()
+
+    scan_time = round(
+        end_time - start_time,
+        2
+    )
+
+    # ------------------------------------------
+    # RESULTS FOUND
+    # ------------------------------------------
+    if len(results) > 0:
+
+        df_results = pd.DataFrame(results)
+
+        df_results = df_results.sort_values(
+            by="AI Score",
+            ascending=False
+        )
+
+        # --------------------------------------
+        # METRICS
+        # --------------------------------------
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "Signals Found",
+            len(df_results)
+        )
+
+        c2.metric(
+            "Top AI Score",
+            int(df_results["AI Score"].max())
+        )
+
+        c3.metric(
+            "Scan Time",
+            f"{scan_time}s"
+        )
+
+        st.markdown("---")
+
+        # --------------------------------------
+        # TOP 10 SIGNALS
+        # --------------------------------------
+        st.subheader(
+            "🔥 Top Institutional Signals"
+        )
+
+        st.dataframe(
+            df_results,
+            use_container_width=True
+        )
+
+        # --------------------------------------
+        # STRONG BUY ONLY
+        # --------------------------------------
+        strong_buy = df_results[
+            df_results["Signal"]
+            ==
+            "STRONG BUY"
+        ]
+
+        if len(strong_buy) > 0:
+
+            st.subheader(
+                "🚀 Strong Buy Stocks"
             )
 
-            try:
+            st.dataframe(
+                strong_buy,
+                use_container_width=True
+            )
 
-                result = future.result()
-
-                if result:
-
-                    if (
-                        result["AI Score"]
-                        >= min_ai_score
-                        and
-                        result["RVOL"]
-                        >= rvol_filter
-                    ):
-
-                        results.append(result)
-
-            except:
-                pass
-
-    progress.empty()
-
-    return pd.DataFrame(results)
-
-
-# =========================================================
-# BACKTEST
-# =========================================================
-
-def run_backtest(symbol):
-
-    df = get_data(symbol)
-
-    if df is None:
-        return None
-
-    trades = []
-
-    for i in range(60, len(df)):
-
-        sub = df.iloc[:i + 1]
-
-        result = generate_signal(sub)
-
-        if result is None:
-            continue
-
-        entry = float(
-            sub["Close"].iloc[-1]
+        # --------------------------------------
+        # CSV EXPORT
+        # --------------------------------------
+        csv = (
+            df_results
+            .to_csv(index=False)
+            .encode("utf-8")
         )
 
-        atr = float(
-            calculate_atr(sub).iloc[-1]
+        st.download_button(
+            label="📥 Download Results CSV",
+            data=csv,
+            file_name="NSE_V10_SCAN.csv",
+            mime="text/csv"
         )
 
-        stoploss = entry - atr
-
-        target = entry + (atr * 2)
-
-        future_close = float(
-            df["Close"].iloc[
-                min(
-                    i + 5,
-                    len(df) - 1
-                )
-            ]
-        )
-
-        outcome = "LOSS"
-
-        if future_close >= target:
-            outcome = "WIN"
-
-        trades.append({
-
-            "Date":
-            str(sub.index[-1]),
-
-            "Entry":
-            round(entry, 2),
-
-            "Target":
-            round(target, 2),
-
-            "Stoploss":
-            round(stoploss, 2),
-
-            "Exit":
-            round(future_close, 2),
-
-            "Result":
-            outcome
-
-        })
-
-    bt = pd.DataFrame(trades)
-
-    return bt
-
-
-# =========================================================
-# DASHBOARD
-# =========================================================
-
-st.divider()
-
-if st.button("🚀 RUN NSE500 INSTITUTIONAL SCAN"):
-
-    with st.spinner(
-        "Scanning NSE500..."
-    ):
-
-        results_df = scan_all_stocks()
-
-    if results_df.empty:
+    # ------------------------------------------
+    # NO RESULTS
+    # ------------------------------------------
+    else:
 
         st.warning(
             "No Institutional Signals Found"
         )
 
-    else:
-
-        st.success(
-            f"{len(results_df)} Signals Found"
+        st.info(
+            "Try lowering AI Score or RVOL filters."
         )
 
-        results_df = (
-            results_df
-            .sort_values(
-                "AI Score",
-                ascending=False
-            )
-        )
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
+st.markdown("---")
 
-        # =====================
-        # METRICS
-        # =====================
-
-        c1, c2, c3, c4 = st.columns(4)
-
-        c1.metric(
-            "Signals",
-            len(results_df)
-        )
-
-        c2.metric(
-            "Top AI Score",
-            int(
-                results_df[
-                    "AI Score"
-                ].max()
-            )
-        )
-
-        c3.metric(
-            "Average RSI",
-            round(
-                results_df[
-                    "RSI"
-                ].mean(),
-                2
-            )
-        )
-
-        c4.metric(
-            "Average RVOL",
-            round(
-                results_df[
-                    "RVOL"
-                ].mean(),
-                2
-            )
-        )
-
-        st.dataframe(
-            results_df,
-            use_container_width=True
-        )
-
-        # =====================
-        # EXCEL DOWNLOAD
-        # =====================
-
-        excel_buffer = io.BytesIO()
-
-        with pd.ExcelWriter(
-            excel_buffer,
-            engine="xlsxwriter"
-        ) as writer:
-
-            results_df.to_excel(
-                writer,
-                index=False,
-                sheet_name="Scanner"
-            )
-
-        st.download_button(
-            "📥 Download Scanner Excel",
-            excel_buffer.getvalue(),
-            file_name="NSE_V10_Scanner.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        # =====================
-        # STOCK SELECT
-        # =====================
-
-        selected_stock = st.selectbox(
-            "Select Stock For Backtest",
-            results_df["Stock"]
-        )
-
-        if st.button(
-            "📈 RUN BACKTEST"
-        ):
-
-            bt = run_backtest(
-                selected_stock
-            )
-
-            if bt is None or bt.empty:
-
-                st.warning(
-                    "No Backtest Data"
-                )
-
-            else:
-
-                wins = len(
-                    bt[
-                        bt["Result"]
-                        == "WIN"
-                    ]
-                )
-
-                losses = len(
-                    bt[
-                        bt["Result"]
-                        == "LOSS"
-                    ]
-                )
-
-                total_trades = len(bt)
-
-                win_rate = round(
-                    (
-                        wins
-                        /
-                        total_trades
-                    ) * 100,
-                    2
-                )
-
-                st.subheader(
-                    f"📊 Backtest : {selected_stock}"
-                )
-
-                a, b, c = st.columns(3)
-
-                a.metric(
-                    "Trades",
-                    total_trades
-                )
-
-                b.metric(
-                    "Wins",
-                    wins
-                )
-
-                c.metric(
-                    "Win Rate %",
-                    win_rate
-                )
-
-                st.dataframe(
-                    bt,
-                    use_container_width=True
-                )
-
-                backtest_excel = io.BytesIO()
-
-                with pd.ExcelWriter(
-                    backtest_excel,
-                    engine="xlsxwriter"
-                ) as writer:
-
-                    bt.to_excel(
-                        writer,
-                        index=False,
-                        sheet_name="Backtest"
-                    )
-
-                st.download_button(
-                    "📥 Download Backtest",
-                    backtest_excel.getvalue(),
-                    file_name=f"{selected_stock}_Backtest.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-# =========================================================
-# END OF V10
-# =========================================================
+st.caption(
+    "NSE PRO Institutional Scanner V10 | "
+    "RSI + VWAP + RVOL + ATR + AI Score"
+)
