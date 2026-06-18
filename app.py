@@ -1,5 +1,5 @@
 # ============================================
-# 🚀 NSE PRO CHoCH Institutional Scanner V6
+# 🚀 NSE PRO CHoCH Institutional Scanner V7
 # ============================================
 
 import streamlit as st
@@ -16,17 +16,36 @@ from concurrent.futures import ThreadPoolExecutor
 # PAGE CONFIG
 # ============================================
 
-st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V6", layout="wide")
+st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V7", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE PRO CHoCH Institutional Scanner V6")
+st.title("🚀 NSE PRO CHoCH Institutional Scanner V7")
 st.markdown(f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ============================================
-# LOAD NSE500 STOCKS
+# SIDEBAR SETTINGS
 # ============================================
+
+with st.sidebar:
+    st.header("⚙️ Settings")
+    sensitivity = st.slider("🔍 Sensitivity (Rolling Window)", 3, 15, 8)
+    sector_choice = st.selectbox("🏦 Sector Filter", ["All", "Banking", "IT", "Pharma", "Energy", "Auto", "FMCG"])
+    st.caption("Adjust sensitivity for CHoCH/BOS detection and choose sector focus.")
+
+# ============================================
+# SECTOR STOCKS
+# ============================================
+
+sector_stocks = {
+    "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
+    "IT": ["TCS","INFY","WIPRO","HCLTECH","TECHM"],
+    "Pharma": ["SUNPHARMA","CIPLA","DRREDDY","DIVISLAB"],
+    "Energy": ["RELIANCE","ONGC","BPCL","NTPC"],
+    "Auto": ["TATAMOTORS","M&M","EICHERMOT","HEROMOTOCO"],
+    "FMCG": ["ITC","HINDUNILVR","BRITANNIA","DABUR"]
+}
 
 @st.cache_data(ttl=86400)
 def load_nse500():
@@ -38,17 +57,17 @@ def load_nse500():
     except:
         return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK"]
 
-stocks = load_nse500()
+stocks = sector_stocks.get(sector_choice, load_nse500())
 
 # ============================================
 # CHoCH / BOS DETECTION ENGINE
 # ============================================
 
-def detect_character_change(df):
+def detect_character_change(df, window):
     if len(df) < 30:
         return None
-    df["Local_High"] = df["High"].rolling(8, center=True).max()
-    df["Local_Low"] = df["Low"].rolling(8, center=True).min()
+    df["Local_High"] = df["High"].rolling(window, center=True).max()
+    df["Local_Low"] = df["Low"].rolling(window, center=True).min()
     last_high = float(df["Local_High"].ffill().iloc[-2])
     last_low = float(df["Local_Low"].ffill().iloc[-2])
     close = float(df["Close"].iloc[-1])
@@ -81,7 +100,7 @@ def run_scan():
                 df = yf.download(f"{s}.NS", period="5d", interval="15m", auto_adjust=True, progress=False)
                 if df.empty:
                     continue
-                signal = detect_character_change(df)
+                signal = detect_character_change(df, sensitivity)
                 if signal:
                     results.append({
                         "Stock": s,
@@ -98,7 +117,7 @@ def run_scan():
     return pd.DataFrame(results)
 
 # ============================================
-# CHART PREVIEW FUNCTION (NO PLOTLY)
+# CHART PREVIEW FUNCTION
 # ============================================
 
 def show_chart(symbol):
@@ -111,11 +130,11 @@ def show_chart(symbol):
     st.line_chart(df[["Close","EMA20","EMA50"]])
 
 # ============================================
-# UI BUTTON
+# MAIN SCAN BUTTON
 # ============================================
 
-if st.button("🚀 RUN NSE500 CHoCH SCAN"):
-    st.info("🔍 Scanning all NSE500 stocks for CHoCH/BOS signals...")
+if st.button("🚀 RUN NSE PRO CHoCH SCAN"):
+    st.info(f"🔍 Scanning {sector_choice} stocks for CHoCH/BOS signals...")
     df = run_scan()
     if not df.empty:
         st.success(f"✅ {len(df)} CHoCH/BOS signals found!")
@@ -126,6 +145,6 @@ if st.button("🚀 RUN NSE500 CHoCH SCAN"):
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df.to_excel(writer, index=False, sheet_name="CHoCH_Signals")
-        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V6.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE_PRO_CHoCH_V7.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.warning("⚠️ No CHoCH/BOS signals found.")
