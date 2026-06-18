@@ -1,5 +1,5 @@
 # ============================================
-# 🚀 NSE PRO CHoCH Institutional Scanner V4
+# 🚀 NSE PRO CHoCH Institutional Scanner V5
 # ============================================
 
 import streamlit as st
@@ -17,12 +17,12 @@ from concurrent.futures import ThreadPoolExecutor
 # PAGE CONFIG
 # ============================================
 
-st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V4", layout="wide")
+st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V5", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE PRO CHoCH Institutional Scanner V4")
+st.title("🚀 NSE PRO CHoCH Institutional Scanner V5")
 st.markdown(f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ============================================
@@ -48,8 +48,8 @@ stocks = load_nse500()
 def detect_character_change(df):
     if len(df) < 30:
         return None
-    df["Local_High"] = df["High"].rolling(10, center=True).max()
-    df["Local_Low"] = df["Low"].rolling(10, center=True).min()
+    df["Local_High"] = df["High"].rolling(8, center=True).max()
+    df["Local_Low"] = df["Low"].rolling(8, center=True).min()
     last_high = float(df["Local_High"].ffill().iloc[-2])
     last_low = float(df["Local_Low"].ffill().iloc[-2])
     close = float(df["Close"].iloc[-1])
@@ -107,21 +107,13 @@ def show_chart(symbol):
     if df.empty:
         st.warning("⚠️ Chart data not available.")
         return
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        name="Candles"
-    )])
-    fig.update_layout(
-        title=f"{symbol} — 15m CHoCH/BOS Chart",
-        xaxis_title="Time",
-        yaxis_title="Price",
-        template="plotly_dark",
-        height=500
-    )
+    ema20 = df["Close"].ewm(span=20).mean()
+    ema50 = df["Close"].ewm(span=50).mean()
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Candles"))
+    fig.add_trace(go.Scatter(x=df.index, y=ema20, mode='lines', name='EMA20', line=dict(color='cyan', width=1.5)))
+    fig.add_trace(go.Scatter(x=df.index, y=ema50, mode='lines', name='EMA50', line=dict(color='orange', width=1.5)))
+    fig.update_layout(title=f"{symbol} — 15m CHoCH/BOS Chart", xaxis_title="Time", yaxis_title="Price", template="plotly_dark", height=500)
     st.plotly_chart(fig, use_container_width=True)
 
 # ============================================
@@ -140,6 +132,6 @@ if st.button("🚀 RUN NSE500 CHoCH SCAN"):
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df.to_excel(writer, index=False, sheet_name="CHoCH_Signals")
-        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V4.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V5.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.warning("⚠️ No CHoCH/BOS signals found.")
