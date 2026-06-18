@@ -1,11 +1,12 @@
 # ============================================
-# 🚀 NSE PRO CHoCH Institutional Scanner V3
+# 🚀 NSE PRO CHoCH Institutional Scanner V4
 # ============================================
 
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 from datetime import datetime
 import pytz
 import io
@@ -16,12 +17,12 @@ from concurrent.futures import ThreadPoolExecutor
 # PAGE CONFIG
 # ============================================
 
-st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V3", layout="wide")
+st.set_page_config(page_title="🚀 NSE PRO CHoCH Scanner V4", layout="wide")
 
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
 
-st.title("🚀 NSE PRO CHoCH Institutional Scanner V3")
+st.title("🚀 NSE PRO CHoCH Institutional Scanner V4")
 st.markdown(f"### 🕒 LIVE TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 # ============================================
@@ -98,6 +99,32 @@ def run_scan():
     return pd.DataFrame(results)
 
 # ============================================
+# CHART PREVIEW FUNCTION
+# ============================================
+
+def show_chart(symbol):
+    df = yf.download(f"{symbol}.NS", period="10d", interval="15m", auto_adjust=True, progress=False)
+    if df.empty:
+        st.warning("⚠️ Chart data not available.")
+        return
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        name="Candles"
+    )])
+    fig.update_layout(
+        title=f"{symbol} — 15m CHoCH/BOS Chart",
+        xaxis_title="Time",
+        yaxis_title="Price",
+        template="plotly_dark",
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# ============================================
 # UI BUTTON
 # ============================================
 
@@ -107,9 +134,12 @@ if st.button("🚀 RUN NSE500 CHoCH SCAN"):
     if not df.empty:
         st.success(f"✅ {len(df)} CHoCH/BOS signals found!")
         st.dataframe(df.sort_values("Signal"), use_container_width=True)
+        selected = st.selectbox("📊 Select stock to view chart:", df["Stock"].unique())
+        if selected:
+            show_chart(selected)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df.to_excel(writer, index=False, sheet_name="CHoCH_Signals")
-        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V3.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Excel Report", data=buffer.getvalue(), file_name="NSE500_CHoCH_Scanner_V4.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.warning("⚠️ No CHoCH/BOS signals found.")
