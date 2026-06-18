@@ -1,5 +1,5 @@
 # ============================================
-# 🚀 NSE PRO CHoCH Institutional Scanner V1
+# 🚀 NSE PRO CHoCH Institutional Scanner V2
 # ============================================
 
 import streamlit as st
@@ -9,6 +9,7 @@ import numpy as np
 from datetime import datetime
 import pytz
 import io
+import time
 
 # ============================================
 # PAGE CONFIG
@@ -66,15 +67,17 @@ def detect_character_change(df):
         return "Range ➖"
 
 # ============================================
-# SCAN FUNCTION
+# SCAN FUNCTION WITH PROGRESS BAR
 # ============================================
 
 def run_scan():
     results = []
-    for s in stocks:
+    progress = st.progress(0)
+    total = len(stocks)
+    for i, s in enumerate(stocks):
         try:
             df = yf.download(f"{s}.NS", period="10d", interval="15m", auto_adjust=True, progress=False)
-            if df.empty: 
+            if df.empty:
                 continue
             signal = detect_character_change(df)
             if signal and ("CHOCH" in signal or "BOS" in signal):
@@ -85,8 +88,11 @@ def run_scan():
                     "EMA20": round(float(df["Close"].ewm(span=20).mean().iloc[-1]), 2),
                     "EMA50": round(float(df["Close"].ewm(span=50).mean().iloc[-1]), 2)
                 })
-        except Exception as e:
+        except Exception:
             continue
+        progress.progress((i + 1) / total)
+        time.sleep(0.05)  # smooth animation
+    progress.empty()
     return pd.DataFrame(results)
 
 # ============================================
@@ -94,11 +100,11 @@ def run_scan():
 # ============================================
 
 if st.button("🚀 RUN NSE500 CHoCH SCAN"):
+    st.info("🔍 Scanning all NSE500 stocks for CHoCH/BOS signals...")
     df = run_scan()
     if not df.empty:
         st.subheader("🔥 Active CHoCH / BOS Signals (15m)")
         st.dataframe(df, use_container_width=True)
-        # Download Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df.to_excel(writer, index=False, sheet_name="CHoCH_Signals")
