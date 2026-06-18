@@ -110,4 +110,24 @@ def calculate_ai_score(close, ema20, ema50, rsi, rvol, vwap, atr_pct):
 # CHOCH & BOS Detection
 # --------------------------------------------------
 def detect_structure(df):
-    highs =
+    highs = df["High"].rolling(5).max()
+    lows = df["Low"].rolling(5).min()
+    choch, bos = None, None
+    # CHOCH
+    if df["Close"].iloc[-1] > highs.iloc[-2] and df["Close"].iloc[-2] < lows.iloc[-3]:
+        choch = "Bullish CHoCH"
+    elif df["Close"].iloc[-1] < lows.iloc[-2] and df["Close"].iloc[-2] > highs.iloc[-3]:
+        choch = "Bearish CHoCH"
+    # BOS
+    if df["Close"].iloc[-1] > highs.iloc[-2]:
+        bos = "Bullish BOS"
+    elif df["Close"].iloc[-1] < lows.iloc[-2]:
+        bos = "Bearish BOS"
+    return choch, bos
+
+# --------------------------------------------------
+# SCAN SINGLE STOCK
+# --------------------------------------------------
+def scan_stock(symbol):
+    try:
+        df = yf.download(symbol, period=period, interval=timeframe
