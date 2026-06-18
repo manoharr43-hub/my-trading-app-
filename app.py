@@ -64,4 +64,135 @@ def calculate_rsi(df, period=14):
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
     avg_gain = gain.rolling(period).mean()
-    avg_loss = loss
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return float(rsi.iloc[-1])
+
+def calculate_vwap(df):
+    typical_price = (df["High"]+df["Low"]+df["Close"]) / 3
+    vwap = (typical_price * df["Volume"]).cumsum() / df["Volume"].cumsum()
+    return float(vwap.iloc[-1])
+
+def calculate_atr(df, period=14):
+    high_low = df["High"] - df["Low"]
+    high_close = np.abs(df["High"] - df["Close"].shift())
+    low_close = np.abs(df["Low"] - df["Close"].shift())
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    return float(atr.iloc[-1])
+
+def calculate_rvol(df):
+    current_volume = df["Volume"].iloc[-1]
+    avg_volume = df["Volume"].rolling(20).mean().iloc[-1]
+    if avg_volume == 0: return 0
+    return float(current_volume / avg_volume)
+
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+# --------------------------------------------------
+# AI SCORE
+# --------------------------------------------------
+def calculate_ai_score(close, ema20, ema50, rsi, rvol, vwap, atr_pct):
+    score = 0
+    if close > ema20: score += 20
+    if close > ema50: score += 20
+    if rsi > 50: score += 15
+    if rsi > 60: score += 10
+    if rvol > 1.0: score += 15
+    if rvol > 2: score += 10
+    if close > vwap: score += 5
+    if atr_pct > 2: score += 5
+    return min(score, 100)
+
+# --------------------------------------------------
+# CHOCH & BOS Detection
+# --------------------------------------------------
+def detect_structure(df):
+    highs = df["High"].rolling(5).max()
+    lows = df["Low"].rolling(5).min()
+    choch, bos = None, None
+    if df["Close"].iloc[-1] > highs.iloc[-2] and df["Close"].iloc[-2] < lows.iloc[-3]:
+        choch = "Bullish CHoCH"
+    elif df["Close"].iloc[-1] < lows.iloc[-2] and df["Close"].iloc[-2] > highs.iloc[-3]:
+        choch = "Bearish CHoCH"
+    if df["Close"].iloc[-1] > highs.iloc[-2]:
+        bos = "Bullish BOS"
+    elif df["Close"].iloc[-1] < lows.iloc[-2]:
+        bos = "Bearish BOS"
+    return choch, bos
+
+# --------------------------------------------------
+# SCAN SINGLE STOCK
+# --------------------------------------------------
+def scan_stock(symbol):
+    try:
+        df = yf.download(
+            symbol,
+            period=period,
+            interval=timeframe,
+            progress=False,
+            auto_adjust=True
+        )
+        if df.empty or len(df) < 50: return None
+
+        close = float(df["Close"].iloc[-1])
+        rsi = calculate_rsi(df)
+        vwap = calculate_vwap(df)
+        atr = calculate_atr(df)
+        rvol = calculate_rvol(df)
+        ema20 = float(ema(df["Close"],20).iloc[-1])
+        ema50 = float(ema(df["Close"],50).iloc[-1])
+        atr_pct = (atr / close) * 100
+        ai_score = calculate_ai_score(close, ema20, ema50, rsi, rvol, vwap, atr_pct)
+        choch, bos = detect_structure(df)
+
+        if ai_score >= min_ai_score and rvol >= min_rvol:
+            signal = "BUY"
+            if rsi > 70: signal = "STRONG BUY"
+            if choch or bos: signal = f"{signal} | {choch or ''} {bos or ''}"
+            return {
+                "Symbol": symbol,"Price": round(close,2),"RSI": round(rsi,2),"RVOL": round(rvol,2),
+                "ATR%": round(atr_pct,2),"VWAP": round(vwap,2),"AI Score": ai_score,
+                "CHOCH": choch,"BOS": bos,"Signal": signal.strip()
+            }
+    except: return None
+    return None
+
+# --------------------------------------------------
+# MULTI THREAD SCANNER
+# --------------------------------------------------
+def run_scanner():
+    results = []
+    with ThreadPoolExecutor(max_workers=15) as executor:
+        futures = {executor.submit(scan_stock, symbol): symbol for symbol in NSE_SYMBOLS}
+        for future in as_completed(futures):
+            result = future.result()
+            if result: results.append(result)
+    return results
+
+# --------------------------------------------------
+# RUN SCANNER BUTTON
+# --------------------------------------------------
+st.markdown("---")
+scan_button = st.button("🚀 RUN INSTITUTIONAL SCAN", use_container_width=True)
+
+if scan_button:
+    start_time = time.time()
+    with st.spinner("Scanning NSE Stocks..."):
+        results = run_scanner()
+    end_time = time.time()
+    scan_time = round(end_time - start_time, 2)
+
+    if len(results) > 0:
+        df_results = pd.DataFrame(results).sort_values(by="AI Score", ascending=False)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Signals Found", len(df_results))
+        c2.metric("Top AI Score", int(df_results["AI Score"].max()))
+        c3.metric("Scan Time", f"{scan_time}s")
+        st.markdown("---")
+        st.subheader("🔥 Top Institutional Signals")
+        st.dataframe(df_results, use_container_width=True)
+
+        strong_buy =
