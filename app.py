@@ -25,7 +25,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("🚀 NSE AI PRO V11.10 - Institutional Ultimate")
-st.markdown("**Perfect Signal Time Tracker | RVOL System | Advanced SMC & CISD | XGBoost AI**")
+st.markdown("**Gap Tracking | VWAP Bounce | RVOL System | Advanced SMC & CISD | AI Visuals**")
 st.markdown("---")
 
 # Session State Memory
@@ -39,7 +39,7 @@ with st.sidebar:
     st.header("⚙️ Settings & Controls")
     auto_refresh = st.checkbox("🔄 Auto Refresh (Every 3 Mins)")
     interval = st.selectbox("Interval", ["5m","15m","30m","1h","1d"], index=1)
-    period = st.selectbox("Period", ["5d","1mo","3mo","6mo", "1y"], index=2) # 3mo default for better AI training
+    period = st.selectbox("Period", ["5d","1mo","3mo","6mo", "1y"], index=2)
     
     sector_stocks = {
         "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
@@ -67,7 +67,7 @@ def load_nse500():
         df = pd.read_csv(io.StringIO(response.text))
         return sorted(df["Symbol"].dropna().unique().tolist())
     except:
-        return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","TRAVELFOOD","SYRMA","SBICARD"]
+        return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT","AXISBANK","TATAMOTORS"]
 
 stocks = load_nse500()
 
@@ -250,6 +250,26 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     close = float(df["Close"].iloc[-1])
     score = 0
     
+    # 🆕 GAP CALCULATION LOGIC
+    gap_pct = 0.0
+    try:
+        if 'd' not in interval and 'wk' not in interval and 'mo' not in interval:
+            today_date = df.index[-1].date()
+            today_data = df[df.index.date == today_date]
+            prev_data = df[df.index.date < today_date]
+            if not today_data.empty and not prev_data.empty:
+                today_open = today_data['Open'].iloc[0]
+                prev_close = prev_data['Close'].iloc[-1]
+                gap_pct = ((today_open - prev_close) / prev_close) * 100
+        else:
+            if len(df) >= 2:
+                gap_pct = ((df['Open'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
+    except: pass
+
+    gap_str = f"{gap_pct:.2f}%"
+    if gap_pct >= 0.5: gap_str += " 🟢 Up"
+    elif gap_pct <= -0.5: gap_str += " 🔴 Down"
+
     stock_return = ((close - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
     rs_score = round(stock_return - nifty_return, 2) if nifty_return is not None else 0
     rs_status = "💪 Outperform" if rs_score > 0 else "📉 Underperform"
@@ -280,6 +300,21 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     elif rvol_val >= 1.5:
         rvol_str += " 🟢"
         
+    # 🆕 VWAP BOUNCE & LIQUIDITY LOGIC
+    try:
+        vwap_val = float(df["VWAP"].iloc[-1])
+        low_val = float(df["Low"].iloc[-1])
+        high_val = float(df["High"].iloc[-1])
+        
+        dist_to_vwap_low = abs(low_val - vwap_val) / vwap_val
+        dist_to_vwap_high = abs(high_val - vwap_val) / vwap_val
+        
+        if dist_to_vwap_low <= 0.005 and close > vwap_val and rvol_val >= 1.2:
+            alerts.append("💧 VWAP Bounce")
+        elif dist_to_vwap_high <= 0.005 and close < vwap_val and rvol_val >= 1.2:
+            alerts.append("🛑 VWAP Rejection")
+    except: pass
+
     rsi_val = float(df["RSI"].iloc[-1])
     if rsi_val > 70: alerts.append("🚨 RSI Overbought")
     elif rsi_val < 30: alerts.append("⚠️ RSI Oversold")
@@ -314,7 +349,6 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     elif brk_sig == "BEARISH": score -= 1
     if smc_structure in ["BOS 📈", "CHOCH 🐂"] or cisd_signal == "Bullish CISD 🚀": score += 1
 
-    # ALL IF-ELSE ON ONE LINE (Fixed Syntax)
     signal = "STRONG BUY" if score >= 4 else "BUY" if score >= 2 else "STRONG SELL" if score <= -4 else "SELL" if score <= -2 else "WAIT"
 
     target, stoploss = "-", "-"
@@ -335,7 +369,7 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
         elif close <= l52w * 1.03: status_52w = "🔴 Near Low"
 
     return [
-        exact_signal_time, symbol.replace('.NS', ''), round(close, 2), target, stoploss, smc_structure, cisd_signal, xgb_prediction, f"{xgb_confidence}%", alert_str, mtf_status, ai_trend, f"{ai_conf}%", f"{rs_score}% ({rs_status})",
+        exact_signal_time, symbol.replace('.NS', ''), round(close, 2), gap_str, target, stoploss, smc_structure, cisd_signal, xgb_prediction, f"{xgb_confidence}%", alert_str, mtf_status, ai_trend, f"{ai_conf}%", f"{rs_score}% ({rs_status})",
         round(float(df["Support_1"].iloc[-1]), 2), round(float(df["Resistance_1"].iloc[-1]), 2),
         round(h52w, 2) if h52w else "N/A", round(l52w, 2) if l52w else "N/A", status_52w,
         round(rsi_val, 2), brk_sig, macd_val, st_dir, vwap_sig, pattern, rvol_str, score, signal
@@ -343,8 +377,10 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
 
 def color_code(val):
     if isinstance(val, str):
-        if any(x in val for x in ["STRONG BUY", "BULLISH", "UP", "ABOVE", "Outperform", "🟢", "BOS 📈", "CHOCH 🐂", "Bullish CISD 🚀", "🔥"]): return 'color: green; font-weight: bold;'
-        if any(x in val for x in ["STRONG SELL", "BEARISH", "DOWN", "BELOW", "Underperform", "🔻", "🚨", "BOS 📉", "CHOCH 🐻", "Bearish CISD 🩸"]): return 'color: red; font-weight: bold;'
+        if any(x in val for x in ["STRONG BUY", "BULLISH", "UP", "ABOVE", "Outperform", "🟢", "BOS 📈", "CHOCH 🐂", "Bullish CISD 🚀", "🔥", "💧"]): 
+            return 'color: green; font-weight: bold;'
+        if any(x in val for x in ["STRONG SELL", "BEARISH", "DOWN", "BELOW", "Underperform", "🔻", "🚨", "BOS 📉", "CHOCH 🐻", "Bearish CISD 🩸", "🔴", "🛑"]): 
+            return 'color: red; font-weight: bold;'
     return ''
 
 # ==========================================
@@ -387,7 +423,7 @@ with tab1:
         if results:
             df_res = pd.DataFrame(
                 results, 
-                columns=["Signal Time", "Stock", "LTP", "Target", "Stoploss", "SMC Structure", "CISD (Early Signal)", "XGB Trend", "XGB Conf", "⚡ Alerts", "MTF Trend", "AI Trend", "Conf %", "RS vs NIFTY", "Support", "Resistance", "52W High", "52W Low", "52W Status", "RSI", "Breakout", "MACD", "Supertrend", "VWAP", "Pattern", "RVOL", "Score", "Signal"]
+                columns=["Signal Time", "Stock", "LTP", "Gap %", "Target", "Stoploss", "SMC Structure", "CISD (Early Signal)", "XGB Trend", "XGB Conf", "⚡ Alerts", "MTF Trend", "AI Trend", "Conf %", "RS vs NIFTY", "Support", "Resistance", "52W High", "52W Low", "52W Status", "RSI", "Breakout", "MACD", "Supertrend", "VWAP", "Pattern", "RVOL", "Score", "Signal"]
             )
             df_res = df_res.sort_values(by="Score", ascending=False)
             st.session_state.v11_master_data = df_res
@@ -409,6 +445,13 @@ with tab1:
                 with cols[i]:
                     st.metric(label=f"🟢 {row['Stock']} ({card_tag})", value=f"₹{row['LTP']}", delta=f"TGT: ₹{row['Target']}")
                     st.caption(f"**⏱️ {row['Signal Time']}** | **RVOL:** {row['RVOL']}")
+                    
+            st.markdown("### 📈 Top Stock Visual Chart")
+            top_symbol = top_stocks.iloc[0]['Stock']
+            st.info(f"**Live Chart Output for: {top_symbol}**")
+            chart_data = get_data(top_symbol, interval, period)
+            if not chart_data.empty:
+                st.line_chart(chart_data['Close'], use_container_width=True, height=250)
         else:
             st.info("ప్రస్తుతం ఎటువంటి Institutional STRONG BUY సిగ్నల్స్ లేవు.")
             
@@ -419,21 +462,24 @@ with tab1:
         ui_df['Target'] = ui_df['Target'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
         ui_df['Stoploss'] = ui_df['Stoploss'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
         
-        # 📥 Excel Download Logic
+        # APPLYING STYLES (Color Logic)
+        styled_df = ui_df.style.map(color_code)
+        
+        # 📥 Excel Download Logic with COLORS PRESERVED
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            final_df.to_excel(writer, index=False, sheet_name='Master_Report')
+            styled_df.to_excel(writer, index=False, sheet_name='Master_Report')
         excel_data = excel_buffer.getvalue()
         
         col1, col2 = st.columns([0.85, 0.15])
         with col2:
             st.download_button(
-                label="📥 Download Excel",
+                label="📥 Download Styled Excel",
                 data=excel_data,
                 file_name="NSE_AI_PRO_Master_Report.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
             
-        # UI DataFrame Display (Fixed applymap to map for latest pandas)
-        st.dataframe(ui_df.style.map(color_code), height=600, use_container_width=True)
+        # UI DataFrame Display 
+        st.dataframe(styled_df, height=600, use_container_width=True)
