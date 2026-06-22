@@ -80,6 +80,14 @@ def get_data(symbol, interval, period):
     except:
         return pd.DataFrame()
 
+# NEW CACHED FUNCTION FOR BULK DAILY DATA
+@st.cache_data(ttl=3600)
+def get_bulk_daily_data(stocks_list):
+    try:
+        return yf.download([f"{s}.NS" for s in stocks_list], period="1y", interval="1d", progress=False, auto_adjust=True)
+    except:
+        return pd.DataFrame()
+
 def predict_trend_ai(prices):
     if len(prices) < 20: return "Neutral", 0
     y = prices[-20:].values
@@ -183,7 +191,9 @@ def train_xgboost_predictor(df):
         X = df_ml[feature_cols].values.astype('float32')
         y = df_ml['Target_Direction'].values.astype('int32')
         
-        if len(np.unique(y[:-1])) < 2: return "Neutral", 0.0
+        # UPDATED ERROR HANDLING TO PREVENT CRASHES ON FLAT PRICES
+        if len(np.unique(y[:-1])) < 2: 
+            return "SIDEWAYS ➖", 50.0
         
         model = XGBClassifier(n_estimators=25, max_depth=4, learning_rate=0.05, eval_metric='logloss', random_state=42, n_jobs=1)
         model.fit(X[:-1], y[:-1])
@@ -242,7 +252,6 @@ def add_indicators(df, interval):
     df["Signal_Line"] = df["MACD_Line"].ewm(span=9, adjust=False).mean()
     
     tp = (df['High'] + df['Low'] + df['Close']) / 3
-    # CORRECTED IF CONDITION TO FIX SYNTAX ERROR
     if 'd' not in interval and 'wk' not in interval and 'mo' not in interval:
         df['Date'] = df.index.date
         df['VWAP'] = (df['Volume'] * tp).groupby(df['Date']).cumsum() / df['Volume'].groupby(df['Date']).cumsum()
@@ -324,12 +333,9 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     elif rvol_val >= 1.5:
         rvol_str += " 🟢"
 
-    # ==========================================
-    # NEWS BASED MOMENTUM CATCHER
-    # ==========================================
     if abs(gap_pct) >= 2.0 and rvol_val >= 3.0:
         alerts.append("📰 NEWS MOMENTUM 🚀")
-        score += 2 # Extra push for momentum stocks
+        score += 2
         
     try:
         vwap_val = float(df["VWAP"].iloc[-1])
@@ -426,22 +432,26 @@ with tab1:
 
         st.write("⚡ Executing Machine Learning Vectors and Liquidity Sweep Analytics...")
         high_52w_dict, low_52w_dict, daily_series_dict = {}, {}, {}
+        
+        # USING THE NEW CACHED BULK DATA FUNCTION
         try:
-            bulk_df = yf.download([f"{s}.NS" for s in selected_stocks], period="1y", interval="1d", progress=False, auto_adjust=True)
-            for s in selected_stocks:
-                t = f"{s}.NS"
-                try:
-                    if isinstance(bulk_df.columns, pd.MultiIndex):
-                        high_52w_dict[s], low_52w_dict[s], daily_series_dict[s] = bulk_df['High'][t].max(), bulk_df['Low'][t].min(), bulk_df['Close'][t].dropna()
-                    else:
-                        high_52w_dict[s], low_52w_dict[s], daily_series_dict[s] = bulk_df['High'].max(), bulk_df['Low'].min(), bulk_df['Close'].dropna()
-                except: pass
+            bulk_df = get_bulk_daily_data(selected_stocks)
+            if not bulk_df.empty:
+                for s in selected_stocks:
+                    t = f"{s}.NS"
+                    try:
+                        if isinstance(bulk_df.columns, pd.MultiIndex):
+                            high_52w_dict[s], low_52w_dict[s], daily_series_dict[s] = bulk_df['High'][t].max(), bulk_df['Low'][t].min(), bulk_df['Close'][t].dropna()
+                        else:
+                            high_52w_dict[s], low_52w_dict[s], daily_series_dict[s] = bulk_df['High'].max(), bulk_df['Low'].min(), bulk_df['Close'].dropna()
+                    except: pass
         except: pass
 
         progress = st.progress(0)
         results = []
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        # INCREASED MAX WORKERS TO 20 FOR FASTER PROCESSING
+        with ThreadPoolExecutor(max_workers=20) as executor:
             future_to_stock = {
                 executor.submit(process_stock_thread, sym, interval, period, high_52w_dict.get(sym), low_52w_dict.get(sym), nifty_return, daily_series_dict.get(sym)): sym for sym in selected_stocks
             }
@@ -492,10 +502,8 @@ with tab1:
         ui_df['Target'] = ui_df['Target'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
         ui_df['Stoploss'] = ui_df['Stoploss'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
         
-        # APPLYING STYLES (Color Logic)
         styled_df = ui_df.style.map(color_code)
         
-        # 📥 Excel Download Logic with COLORS PRESERVED
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             styled_df.to_excel(writer, index=False, sheet_name='Master_Report')
@@ -511,5 +519,4 @@ with tab1:
                 use_container_width=True
             )
             
-        # UI DataFrame Display 
         st.dataframe(styled_df, height=600, use_container_width=True)
