@@ -832,3 +832,472 @@ def calculate_ai_probability(
 
     except:
         return 0
+# ==========================================
+# STOCK PROCESSOR
+# ==========================================
+def process_stock(symbol, interval, period, nifty_return):
+
+    try:
+
+        df = get_data(
+            symbol,
+            interval,
+            period
+        )
+
+        if df.empty or len(df) < 30:
+            return None
+
+        # Indicators
+        df = add_indicators(df)
+        df = add_vwap(df)
+        df = add_atr(df)
+        df = add_supertrend(df)
+
+        close = float(
+            df["Close"].iloc[-1]
+        )
+
+        # RVOL
+        avg_vol = float(
+            df["AVG_VOL"].iloc[-1]
+        ) if pd.notna(
+            df["AVG_VOL"].iloc[-1]
+        ) else 0
+
+        current_vol = float(
+            df["Volume"].iloc[-1]
+        )
+
+        rvol = (
+            current_vol / avg_vol
+            if avg_vol > 0
+            else 0
+        )
+
+        # Relative Strength
+        rs_score = calculate_relative_strength(
+            df,
+            nifty_return
+        )
+
+        # Structure
+        structure = detect_structure(df)
+
+        # CISD
+        cisd = detect_cisd(df)
+
+        # Pattern
+        pattern = get_pattern(df)
+
+        # AI Trend
+        ai_trend, ai_conf = predict_trend_ai(
+            df["Close"]
+        )
+
+        # AI Probability
+        probability = calculate_ai_probability(
+            df,
+            rvol
+        )
+
+        alerts = []
+
+        # News Momentum
+        try:
+
+            prev_close = (
+                df["Close"]
+                .iloc[-2]
+            )
+
+            gap_pct = (
+                (close - prev_close)
+                /
+                prev_close
+            ) * 100
+
+            if (
+                abs(gap_pct) > 2
+                and
+                rvol > 3
+            ):
+                alerts.append(
+                    "📰 NEWS MOMENTUM"
+                )
+
+                probability += 10
+
+        except:
+            gap_pct = 0
+
+        # RVOL Alerts
+        if rvol > 3:
+            alerts.append(
+                "🔥 Massive RVOL"
+            )
+
+        elif rvol > 2:
+            alerts.append(
+                "🔥 High RVOL"
+            )
+
+        # VWAP
+        try:
+
+            if (
+                close >
+                df["VWAP"].iloc[-1]
+            ):
+                alerts.append(
+                    "💧 Above VWAP"
+                )
+
+        except:
+            pass
+
+        # Signal Logic
+        if probability >= 80:
+            signal = "STRONG BUY"
+
+        elif probability >= 60:
+            signal = "BUY"
+
+        elif probability <= 20:
+            signal = "STRONG SELL"
+
+        elif probability <= 40:
+            signal = "SELL"
+
+        else:
+            signal = "WAIT"
+
+        # ATR Target
+        atr = float(
+            df["ATR"].iloc[-1]
+        ) if pd.notna(
+            df["ATR"].iloc[-1]
+        ) else 0
+
+        target = "-"
+        stoploss = "-"
+
+        if atr > 0:
+
+            if signal in [
+                "BUY",
+                "STRONG BUY"
+            ]:
+
+                target = round(
+                    close + (atr * 3),
+                    2
+                )
+
+                stoploss = round(
+                    close - (atr * 1.5),
+                    2
+                )
+
+            elif signal in [
+                "SELL",
+                "STRONG SELL"
+            ]:
+
+                target = round(
+                    close - (atr * 3),
+                    2
+                )
+
+                stoploss = round(
+                    close + (atr * 1.5),
+                    2
+                )
+
+        return [
+
+            symbol,
+
+            round(close,2),
+
+            round(probability,2),
+
+            signal,
+
+            round(rs_score,2),
+
+            round(rvol,2),
+
+            structure,
+
+            cisd,
+
+            pattern,
+
+            ai_trend,
+
+            round(ai_conf,2),
+
+            round(gap_pct,2),
+
+            target,
+
+            stoploss,
+
+            ", ".join(alerts)
+
+        ]
+
+    except:
+        return None
+
+
+# ==========================================
+# MAIN SCANNER
+# ==========================================
+if run_scanner or auto_refresh:
+
+    st.info(
+        "⚡ Running Institutional Scanner..."
+    )
+
+    selected_stocks = (
+        stocks
+        if sector == "All NSE Stocks"
+        else sector_dict[sector]
+    )
+
+    nifty_return = get_nifty_return(
+        interval,
+        period
+    )
+
+    progress = st.progress(0)
+
+    results = []
+
+    with ThreadPoolExecutor(
+        max_workers=3
+    ) as executor:
+
+        futures = {
+
+            executor.submit(
+                process_stock,
+                stock,
+                interval,
+                period,
+                nifty_return
+            ): stock
+
+            for stock in selected_stocks
+
+        }
+
+        total = len(futures)
+
+        for idx, future in enumerate(
+            as_completed(futures)
+        ):
+
+            try:
+
+                res = future.result()
+
+                if res:
+                    results.append(res)
+
+            except:
+                pass
+
+            progress.progress(
+                (idx + 1)
+                /
+                total
+            )
+
+    # Create DataFrame
+    if results:
+
+        columns = [
+
+            "Stock",
+            "LTP",
+            "AI Probability",
+            "Signal",
+            "RS Score",
+            "RVOL",
+            "Structure",
+            "CISD",
+            "Pattern",
+            "AI Trend",
+            "AI Confidence",
+            "Gap %",
+            "Target",
+            "Stoploss",
+            "Alerts"
+
+        ]
+
+        df_res = pd.DataFrame(
+            results,
+            columns=columns
+        )
+
+        df_res = df_res.sort_values(
+            by="AI Probability",
+            ascending=False
+        )
+
+        st.session_state.master_data = df_res
+
+
+# ==========================================
+# DASHBOARD
+# ==========================================
+if not st.session_state.master_data.empty:
+
+    df_final = (
+        st.session_state.master_data
+    )
+
+    st.markdown(
+        "## 🏆 Top Institutional Picks"
+    )
+
+    top_buy = df_final[
+        df_final["Signal"]
+        ==
+        "STRONG BUY"
+    ]
+
+    if not top_buy.empty:
+
+        cols = st.columns(4)
+
+        for i, (_, row) in enumerate(
+            top_buy.head(4).iterrows()
+        ):
+
+            with cols[i]:
+
+                st.metric(
+                    row["Stock"],
+                    f"₹{row['LTP']}",
+                    f"{row['AI Probability']}%"
+                )
+
+    # Statistics
+    st.markdown(
+        "### 📊 Scanner Summary"
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "STRONG BUY",
+        len(
+            df_final[
+                df_final["Signal"]
+                ==
+                "STRONG BUY"
+            ]
+        )
+    )
+
+    c2.metric(
+        "BUY",
+        len(
+            df_final[
+                df_final["Signal"]
+                ==
+                "BUY"
+            ]
+        )
+    )
+
+    c3.metric(
+        "SELL",
+        len(
+            df_final[
+                df_final["Signal"]
+                ==
+                "SELL"
+            ]
+        )
+    )
+
+    c4.metric(
+        "STRONG SELL",
+        len(
+            df_final[
+                df_final["Signal"]
+                ==
+                "STRONG SELL"
+            ]
+        )
+    )
+
+    # Download Excel
+    excel_buffer = io.BytesIO()
+
+    with pd.ExcelWriter(
+        excel_buffer,
+        engine="openpyxl"
+    ) as writer:
+
+        df_final.to_excel(
+            writer,
+            index=False,
+            sheet_name="Scanner"
+        )
+
+    st.download_button(
+
+        "📥 Download Excel",
+
+        excel_buffer.getvalue(),
+
+        "NSE_AI_PRO_V11_11.xlsx",
+
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    )
+
+    # Data Table
+    st.markdown(
+        "### 📋 Full Scanner Output"
+    )
+
+    st.dataframe(
+        df_final,
+        use_container_width=True,
+        height=650
+    )
+
+    # Top Stock Chart
+    st.markdown(
+        "### 📈 Top Pick Chart"
+    )
+
+    try:
+
+        top_symbol = (
+            df_final
+            .iloc[0]["Stock"]
+        )
+
+        chart_df = get_data(
+            top_symbol,
+            interval,
+            period
+        )
+
+        if not chart_df.empty:
+
+            st.line_chart(
+                chart_df["Close"]
+            )
+
+    except:
+        pass
