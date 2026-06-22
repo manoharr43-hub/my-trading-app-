@@ -39,7 +39,7 @@ with st.sidebar:
     st.header("⚙️ Settings & Controls")
     auto_refresh = st.checkbox("🔄 Auto Refresh (Every 3 Mins)")
     interval = st.selectbox("Interval", ["5m","15m","30m","1h","1d"], index=1)
-    period = st.selectbox("Period", ["5d","1mo","3mo","6mo", "1y"], index=2) # 3mo default
+    period = st.selectbox("Period", ["5d","1mo","3mo","6mo", "1y"], index=2) # 3mo default for better AI training
     
     sector_stocks = {
         "Banking": ["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
@@ -314,4 +314,126 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     elif brk_sig == "BEARISH": score -= 1
     if smc_structure in ["BOS 📈", "CHOCH 🐂"] or cisd_signal == "Bullish CISD 🚀": score += 1
 
-    signal = "STRONG BUY" if score >= 4
+    # ALL IF-ELSE ON ONE LINE (Fixed Syntax)
+    signal = "STRONG BUY" if score >= 4 else "BUY" if score >= 2 else "STRONG SELL" if score <= -4 else "SELL" if score <= -2 else "WAIT"
+
+    target, stoploss = "-", "-"
+    try:
+        atr_val = float(df["ATR"].iloc[-1])
+        if pd.notna(atr_val) and atr_val > 0:
+            if signal in ["STRONG BUY", "BUY"]:
+                stoploss = round(close - (1.5 * atr_val), 2)
+                target = round(close + (3.0 * atr_val), 2)
+            elif signal in ["STRONG SELL", "SELL"]:
+                stoploss = round(close + (1.5 * atr_val), 2)
+                target = round(close - (3.0 * atr_val), 2)
+    except: pass
+
+    status_52w = "Mid Range"
+    if h52w and l52w:
+        if close >= h52w * 0.97: status_52w = "🟢 Near High"
+        elif close <= l52w * 1.03: status_52w = "🔴 Near Low"
+
+    return [
+        exact_signal_time, symbol.replace('.NS', ''), round(close, 2), target, stoploss, smc_structure, cisd_signal, xgb_prediction, f"{xgb_confidence}%", alert_str, mtf_status, ai_trend, f"{ai_conf}%", f"{rs_score}% ({rs_status})",
+        round(float(df["Support_1"].iloc[-1]), 2), round(float(df["Resistance_1"].iloc[-1]), 2),
+        round(h52w, 2) if h52w else "N/A", round(l52w, 2) if l52w else "N/A", status_52w,
+        round(rsi_val, 2), brk_sig, macd_val, st_dir, vwap_sig, pattern, rvol_str, score, signal
+    ]
+
+def color_code(val):
+    if isinstance(val, str):
+        if any(x in val for x in ["STRONG BUY", "BULLISH", "UP", "ABOVE", "Outperform", "🟢", "BOS 📈", "CHOCH 🐂", "Bullish CISD 🚀", "🔥"]): return 'color: green; font-weight: bold;'
+        if any(x in val for x in ["STRONG SELL", "BEARISH", "DOWN", "BELOW", "Underperform", "🔻", "🚨", "BOS 📉", "CHOCH 🐻", "Bearish CISD 🩸"]): return 'color: red; font-weight: bold;'
+    return ''
+
+# ==========================================
+# 5. UI TABS & RUN EXECUTION
+# ==========================================
+tab1, tab2 = st.tabs(["🚀 V11.10 PRO Master Dashboard", "🔍 Custom Stock Search"])
+
+with tab1:
+    if run_button or auto_refresh:
+        selected_stocks = stocks if sector == "All NSE500" else sector_stocks[sector]
+        nifty_df = get_data("^NSEI", interval, period)
+        nifty_return = ((nifty_df['Close'].iloc[-1] - nifty_df['Close'].iloc[0]) / nifty_df['Close'].iloc[0]) * 100 if not nifty_df.empty else 0
+
+        st.write("⚡ Executing Machine Learning Vectors and Liquidity Sweep Analytics...")
+        high_52w_dict, low_52w_dict, daily_series_dict = {}, {}, {}
+        try:
+            bulk_df = yf.download([f"{s}.NS" for s in selected_stocks], period="1y", interval="1d", progress=False, auto_adjust=True)
+            for s in selected_stocks:
+                t = f"{s}.NS"
+                try:
+                    if isinstance(bulk_df.columns, pd.MultiIndex):
+                        high_52w_dict[s], low_52w_dict[s], daily_series_dict[s] = bulk_df['High'][t].max(), bulk_df['Low'][t].min(), bulk_df['Close'][t].dropna()
+                    else:
+                        high_52w_dict[s], low_52w_dict[s], daily_series_dict[s] = bulk_df['High'].max(), bulk_df['Low'].min(), bulk_df['Close'].dropna()
+                except: pass
+        except: pass
+
+        progress = st.progress(0)
+        results = []
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_stock = {
+                executor.submit(process_stock_thread, sym, interval, period, high_52w_dict.get(sym), low_52w_dict.get(sym), nifty_return, daily_series_dict.get(sym)): sym for sym in selected_stocks
+            }
+            for i, future in enumerate(as_completed(future_to_stock)):
+                res = future.result()
+                if res: results.append(res)
+                progress.progress((i + 1) / len(selected_stocks))
+
+        if results:
+            df_res = pd.DataFrame(
+                results, 
+                columns=["Signal Time", "Stock", "LTP", "Target", "Stoploss", "SMC Structure", "CISD (Early Signal)", "XGB Trend", "XGB Conf", "⚡ Alerts", "MTF Trend", "AI Trend", "Conf %", "RS vs NIFTY", "Support", "Resistance", "52W High", "52W Low", "52W Status", "RSI", "Breakout", "MACD", "Supertrend", "VWAP", "Pattern", "RVOL", "Score", "Signal"]
+            )
+            df_res = df_res.sort_values(by="Score", ascending=False)
+            st.session_state.v11_master_data = df_res
+            
+            buy_count = sum(1 for r in results if r[-1] == 'STRONG BUY')
+            if buy_count > 0: st.toast(f"🔥 V11.10 ACTION ALERT: {buy_count} STRONG BUY Signals Generated!", icon='⚡')
+
+    # DISPLAY BLOCK
+    if not st.session_state.v11_master_data.empty:
+        final_df = st.session_state.v11_master_data
+        
+        st.markdown("### 🏆 Top Institutional Breakouts (V11.10 Master Picks)")
+        top_stocks = final_df[final_df['Signal'] == 'STRONG BUY'].sort_values(by='Score', ascending=False)
+        
+        if not top_stocks.empty:
+            cols = st.columns(4)
+            for i, (index, row) in enumerate(top_stocks.head(4).iterrows()):
+                card_tag = row['CISD (Early Signal)'] if row['CISD (Early Signal)'] != "None" else row['SMC Structure']
+                with cols[i]:
+                    st.metric(label=f"🟢 {row['Stock']} ({card_tag})", value=f"₹{row['LTP']}", delta=f"TGT: ₹{row['Target']}")
+                    st.caption(f"**⏱️ {row['Signal Time']}** | **RVOL:** {row['RVOL']}")
+        else:
+            st.info("ప్రస్తుతం ఎటువంటి Institutional STRONG BUY సిగ్నల్స్ లేవు.")
+            
+        st.markdown("---")
+        
+        ui_df = final_df.copy()
+        ui_df['LTP'] = ui_df['LTP'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
+        ui_df['Target'] = ui_df['Target'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
+        ui_df['Stoploss'] = ui_df['Stoploss'].apply(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
+        
+        # 📥 Excel Download Logic
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            final_df.to_excel(writer, index=False, sheet_name='Master_Report')
+        excel_data = excel_buffer.getvalue()
+        
+        col1, col2 = st.columns([0.85, 0.15])
+        with col2:
+            st.download_button(
+                label="📥 Download Excel",
+                data=excel_data,
+                file_name="NSE_AI_PRO_Master_Report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
+        # UI DataFrame Display (Fixed applymap to map for latest pandas)
+        st.dataframe(ui_df.style.map(color_code), height=600, use_container_width=True)
