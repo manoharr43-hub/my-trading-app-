@@ -357,7 +357,472 @@ def calculate_relative_strength(
         ) * 100
 
         rs_score = round(
-            stock_return
+            stock_return# ==========================================
+# EMA + RSI + MACD
+# ==========================================
+def add_indicators(df):
+
+    if len(df) < 30:
+        return df
+
+    try:
+
+        # EMA
+        df["EMA20"] = df["Close"].ewm(
+            span=20,
+            adjust=False
+        ).mean()
+
+        df["EMA50"] = df["Close"].ewm(
+            span=50,
+            adjust=False
+        ).mean()
+
+        # RSI
+        delta = df["Close"].diff()
+
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+
+        avg_gain = gain.ewm(
+            alpha=1/14,
+            adjust=False
+        ).mean()
+
+        avg_loss = loss.ewm(
+            alpha=1/14,
+            adjust=False
+        ).mean()
+
+        rs = avg_gain / avg_loss
+
+        df["RSI"] = 100 - (
+            100 / (1 + rs)
+        )
+
+        df["RSI"] = df["RSI"].fillna(50)
+
+        # MACD
+        ema12 = df["Close"].ewm(
+            span=12,
+            adjust=False
+        ).mean()
+
+        ema26 = df["Close"].ewm(
+            span=26,
+            adjust=False
+        ).mean()
+
+        df["MACD"] = ema12 - ema26
+
+        df["MACD_SIGNAL"] = (
+            df["MACD"]
+            .ewm(
+                span=9,
+                adjust=False
+            )
+            .mean()
+        )
+
+        # Average Volume
+        df["AVG_VOL"] = (
+            df["Volume"]
+            .rolling(20)
+            .mean()
+        )
+
+        return df
+
+    except:
+        return df
+
+
+# ==========================================
+# VWAP
+# ==========================================
+def add_vwap(df):
+
+    try:
+
+        tp = (
+            df["High"]
+            +
+            df["Low"]
+            +
+            df["Close"]
+        ) / 3
+
+        volume_sum = (
+            df["Volume"]
+            .rolling(20)
+            .sum()
+        )
+
+        volume_sum = volume_sum.replace(
+            0,
+            np.nan
+        )
+
+        df["VWAP"] = (
+
+            (tp * df["Volume"])
+            .rolling(20)
+            .sum()
+
+            /
+
+            volume_sum
+
+        )
+
+        return df
+
+    except:
+        return df
+
+
+# ==========================================
+# ATR
+# ==========================================
+def add_atr(df):
+
+    try:
+
+        hl = (
+            df["High"]
+            -
+            df["Low"]
+        )
+
+        hc = abs(
+            df["High"]
+            -
+            df["Close"].shift(1)
+        )
+
+        lc = abs(
+            df["Low"]
+            -
+            df["Close"].shift(1)
+        )
+
+        tr = pd.concat(
+            [hl, hc, lc],
+            axis=1
+        ).max(axis=1)
+
+        df["ATR"] = (
+            tr
+            .rolling(14)
+            .mean()
+        )
+
+        return df
+
+    except:
+        return df
+
+
+# ==========================================
+# SUPERTREND
+# ==========================================
+def add_supertrend(
+    df,
+    period=10,
+    multiplier=3
+):
+
+    try:
+
+        hl = (
+            df["High"]
+            +
+            df["Low"]
+        ) / 2
+
+        tr = np.maximum(
+            df["High"] - df["Low"],
+            np.maximum(
+                abs(
+                    df["High"]
+                    -
+                    df["Close"].shift(1)
+                ),
+                abs(
+                    df["Low"]
+                    -
+                    df["Close"].shift(1)
+                )
+            )
+        )
+
+        atr = (
+            pd.Series(tr)
+            .rolling(period)
+            .mean()
+        )
+
+        upperband = (
+            hl +
+            multiplier * atr
+        )
+
+        lowerband = (
+            hl -
+            multiplier * atr
+        )
+
+        direction = np.zeros(len(df))
+
+        for i in range(1, len(df)):
+
+            if (
+                df["Close"].iloc[i]
+                >
+                upperband.iloc[i-1]
+            ):
+                direction[i] = 1
+
+            elif (
+                df["Close"].iloc[i]
+                <
+                lowerband.iloc[i-1]
+            ):
+                direction[i] = -1
+
+            else:
+                direction[i] = direction[i-1]
+
+        df["ST_DIRECTION"] = direction
+
+        return df
+
+    except:
+        return df
+
+
+# ==========================================
+# BOS / CHOCH
+# ==========================================
+def detect_structure(df):
+
+    try:
+
+        df["SWING_HIGH"] = (
+            df["High"]
+            .rolling(10)
+            .max()
+            .shift(1)
+        )
+
+        df["SWING_LOW"] = (
+            df["Low"]
+            .rolling(10)
+            .min()
+            .shift(1)
+        )
+
+        last_close = (
+            df["Close"]
+            .iloc[-1]
+        )
+
+        last_high = (
+            df["SWING_HIGH"]
+            .iloc[-1]
+        )
+
+        last_low = (
+            df["SWING_LOW"]
+            .iloc[-1]
+        )
+
+        bullish_trend = (
+            df["EMA20"].iloc[-1]
+            >
+            df["EMA50"].iloc[-1]
+        )
+
+        if last_close > last_high:
+
+            if bullish_trend:
+                return "BOS 📈"
+
+            else:
+                return "CHOCH 🐂"
+
+        elif last_close < last_low:
+
+            if bullish_trend:
+                return "CHOCH 🐻"
+
+            else:
+                return "BOS 📉"
+
+        return "RANGE"
+
+    except:
+        return "RANGE"
+
+
+# ==========================================
+# CISD DETECTION
+# ==========================================
+def detect_cisd(df):
+
+    try:
+
+        prev_high = (
+            df["High"]
+            .shift(1)
+        )
+
+        prev_low = (
+            df["Low"]
+            .shift(1)
+        )
+
+        bullish = (
+
+            (df["Low"] < prev_low)
+
+            &
+
+            (df["Close"] > prev_high)
+
+        )
+
+        bearish = (
+
+            (df["High"] > prev_high)
+
+            &
+
+            (df["Close"] < prev_low)
+
+        )
+
+        if bullish.iloc[-1]:
+            return "Bullish CISD 🚀"
+
+        if bearish.iloc[-1]:
+            return "Bearish CISD 🔻"
+
+        return "None"
+
+    except:
+        return "None"
+
+
+# ==========================================
+# CANDLESTICK PATTERN
+# ==========================================
+def get_pattern(df):
+
+    try:
+
+        if len(df) < 2:
+            return "Normal"
+
+        o1 = df["Open"].iloc[-2]
+        c1 = df["Close"].iloc[-2]
+
+        o2 = df["Open"].iloc[-1]
+        c2 = df["Close"].iloc[-1]
+
+        h2 = df["High"].iloc[-1]
+        l2 = df["Low"].iloc[-1]
+
+        body = abs(c2 - o2)
+
+        rng = max(
+            h2 - l2,
+            0.01
+        )
+
+        if body <= rng * 0.1:
+            return "Doji"
+
+        if (
+            c1 < o1
+            and
+            c2 > o2
+            and
+            o2 < c1
+            and
+            c2 > o1
+        ):
+            return "Bullish Engulfing"
+
+        if (
+            c1 > o1
+            and
+            c2 < o2
+            and
+            o2 > c1
+            and
+            c2 < o1
+        ):
+            return "Bearish Engulfing"
+
+        return "Normal"
+
+    except:
+        return "Normal"
+
+
+# ==========================================
+# AI PROBABILITY ENGINE
+# ==========================================
+def calculate_ai_probability(
+    df,
+    rvol
+):
+
+    try:
+
+        score = 0
+
+        if (
+            df["EMA20"].iloc[-1]
+            >
+            df["EMA50"].iloc[-1]
+        ):
+            score += 20
+
+        if (
+            df["RSI"].iloc[-1]
+            >
+            55
+        ):
+            score += 20
+
+        if (
+            df["MACD"].iloc[-1]
+            >
+            df["MACD_SIGNAL"].iloc[-1]
+        ):
+            score += 20
+
+        if rvol > 1.5:
+            score += 20
+
+        if (
+            df["Close"].iloc[-1]
+            >
+            df["VWAP"].iloc[-1]
+        ):
+            score += 20
+
+        probability = min(
+            score,
+            100
+        )
+
+        return probability
+
+    except:
+        return 0
             -
             nifty_return,
             2
