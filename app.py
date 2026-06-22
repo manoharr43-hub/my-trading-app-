@@ -158,39 +158,48 @@ def train_xgboost_predictor(df):
             df_ml['Hour'] = 0
             df_ml['Minute'] = 0
             
+        # FORCE CLEAN NUMERIC CONVERSION
+        df_ml['Close'] = pd.to_numeric(df_ml['Close'], errors='coerce')
+        df_ml['Volume'] = pd.to_numeric(df_ml['Volume'], errors='coerce')
+        df_ml['RSI'] = pd.to_numeric(df_ml['RSI'], errors='coerce')
+        df_ml['AVG_VOL'] = pd.to_numeric(df_ml['AVG_VOL'], errors='coerce')
+        df_ml['EMA20'] = pd.to_numeric(df_ml['EMA20'], errors='coerce')
+        df_ml['EMA50'] = pd.to_numeric(df_ml['EMA50'], errors='coerce')
+        
         df_ml['Return'] = df_ml['Close'].pct_change()
         df_ml['RSI_Norm'] = df_ml['RSI'] / 100.0
         
-        # Safe division to avoid Infinity
         df_ml['Vol_Ratio'] = np.where(df_ml['AVG_VOL'] > 0, df_ml['Volume'] / df_ml['AVG_VOL'], 1.0)
         df_ml['EMA_Gap'] = np.where(df_ml['EMA50'] > 0, (df_ml['EMA20'] - df_ml['EMA50']) / df_ml['EMA50'], 0.0)
         
         df_ml['Target_Direction'] = np.where(df_ml['Close'].shift(-1) > df_ml['Close'], 1, 0)
         
-        # Replace Infinity with NaN and drop safely
+        # Replace Infinity with NaN
         df_ml.replace([np.inf, -np.inf], np.nan, inplace=True)
         df_ml.dropna(subset=['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute', 'Target_Direction'], inplace=True)
         
         if len(df_ml) < 30: return "Neutral", 0.0
         
         feature_cols = ['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute']
-        X = df_ml[feature_cols].values
-        y = df_ml['Target_Direction'].values
+        
+        # STRICT TYPE CASTING FOR XGBOOST (CRITICAL FIX)
+        X = df_ml[feature_cols].values.astype('float32')
+        y = df_ml['Target_Direction'].values.astype('int32')
         
         if len(np.unique(y[:-1])) < 2: return "Neutral", 0.0
         
-        # CRITICAL FIX: n_jobs=1 prevents thread limits on Streamlit Cloud
         model = XGBClassifier(n_estimators=25, max_depth=4, learning_rate=0.05, eval_metric='logloss', random_state=42, n_jobs=1)
         model.fit(X[:-1], y[:-1])
         
         latest_vector = X[-1].reshape(1, -1)
-        prediction = model.predict(latest_vector)[0]
+        prediction = int(model.predict(latest_vector)[0])
         probabilities = model.predict_proba(latest_vector)[0]
-        confidence = round(probabilities[prediction] * 100, 2)
+        confidence = round(float(probabilities[prediction]) * 100, 2)
         
         return "BULLISH 🚀" if prediction == 1 else "BEARISH 🔻", confidence
     except Exception as e:
-        return "Neutral", 0.0
+        # If any hidden error occurs, it will display the error instead of "Neutral"
+        return f"Err: {str(e)[:8]}", 0.0
 
 def calculate_supertrend(df, period=10, multiplier=3):
     high, low, close = df['High'], df['Low'], df['Close']
