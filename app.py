@@ -150,21 +150,37 @@ def train_xgboost_predictor(df):
     if len(df) < 50: return "Neutral", 0.0
     try:
         df_ml = df.copy()
-        df_ml['Hour'] = df_ml.index.hour
-        df_ml['Minute'] = df_ml.index.minute
+        
+        try:
+            df_ml['Hour'] = df_ml.index.hour
+            df_ml['Minute'] = df_ml.index.minute
+        except:
+            df_ml['Hour'] = 0
+            df_ml['Minute'] = 0
+            
         df_ml['Return'] = df_ml['Close'].pct_change()
         df_ml['RSI_Norm'] = df_ml['RSI'] / 100.0
-        df_ml['Vol_Ratio'] = df_ml['Volume'] / df_ml['AVG_VOL']
-        df_ml['EMA_Gap'] = (df_ml['EMA20'] - df_ml['EMA50']) / df_ml['EMA50']
+        
+        # Safe division to avoid Infinity
+        df_ml['Vol_Ratio'] = np.where(df_ml['AVG_VOL'] > 0, df_ml['Volume'] / df_ml['AVG_VOL'], 1.0)
+        df_ml['EMA_Gap'] = np.where(df_ml['EMA50'] > 0, (df_ml['EMA20'] - df_ml['EMA50']) / df_ml['EMA50'], 0.0)
+        
         df_ml['Target_Direction'] = np.where(df_ml['Close'].shift(-1) > df_ml['Close'], 1, 0)
-        df_ml.dropna(inplace=True)
+        
+        # Replace Infinity with NaN and drop safely
+        df_ml.replace([np.inf, -np.inf], np.nan, inplace=True)
+        df_ml.dropna(subset=['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute', 'Target_Direction'], inplace=True)
         
         if len(df_ml) < 30: return "Neutral", 0.0
+        
         feature_cols = ['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute']
         X = df_ml[feature_cols].values
         y = df_ml['Target_Direction'].values
         
-        model = XGBClassifier(n_estimators=25, max_depth=4, learning_rate=0.05, eval_metric='logloss', random_state=42)
+        if len(np.unique(y[:-1])) < 2: return "Neutral", 0.0
+        
+        # CRITICAL FIX: n_jobs=1 prevents thread limits on Streamlit Cloud
+        model = XGBClassifier(n_estimators=25, max_depth=4, learning_rate=0.05, eval_metric='logloss', random_state=42, n_jobs=1)
         model.fit(X[:-1], y[:-1])
         
         latest_vector = X[-1].reshape(1, -1)
@@ -173,7 +189,7 @@ def train_xgboost_predictor(df):
         confidence = round(probabilities[prediction] * 100, 2)
         
         return "BULLISH 🚀" if prediction == 1 else "BEARISH 🔻", confidence
-    except:
+    except Exception as e:
         return "Neutral", 0.0
 
 def calculate_supertrend(df, period=10, multiplier=3):
@@ -250,7 +266,6 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     close = float(df["Close"].iloc[-1])
     score = 0
     
-    # 🆕 GAP CALCULATION LOGIC
     gap_pct = 0.0
     try:
         if 'd' not in interval and 'wk' not in interval and 'mo' not in interval:
@@ -300,7 +315,6 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     elif rvol_val >= 1.5:
         rvol_str += " 🟢"
         
-    # 🆕 VWAP BOUNCE & LIQUIDITY LOGIC
     try:
         vwap_val = float(df["VWAP"].iloc[-1])
         low_val = float(df["Low"].iloc[-1])
