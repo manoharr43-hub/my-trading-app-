@@ -489,4 +489,58 @@ with tab2:
                     st.write(f"- **VWAP:** {res[23]} | **Supertrend:** {res[22]} | **MACD:** {res[21]} | **RSI:** {res[19]}")
                     st.write(f"- **Score:** {res[26]} | **Signal:** {res[27]} | **Alerts:** {res[9]}")
                 else:
-                    st.error("Stock not found. Please verify spelling.")
+                    st.error("Stock not found. Please verify spelling.")def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, daily_close_series):
+    df = get_data(symbol, interval, period)
+    if df.empty or len(df) < 60: return None
+    df = add_indicators(df, interval)
+    close = float(df["Close"].iloc[-1])
+    score = 0
+    
+    # --- NEWS MOMENTUM & VWAP LOGIC (ఇక్కడ యాడ్ చేశాను) ---
+    rvol_val = 0.0
+    avg_vol = float(df["AVG_VOL"].iloc[-1])
+    current_vol = float(df["Volume"].iloc[-1])
+    if pd.notna(avg_vol) and avg_vol > 0: rvol_val = current_vol / avg_vol
+    
+    alerts = []
+    
+    # 1. News Momentum Logic
+    gap_pct = ((df['Open'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
+    if abs(gap_pct) >= 2.0 and rvol_val >= 2.0:
+        alerts.append("📰 NEWS MOMENTUM 🚀")
+        score += 2
+        
+    # 2. VWAP Logic
+    try:
+        vwap_val = float(df["VWAP"].iloc[-1])
+        low_val = float(df["Low"].iloc[-1])
+        high_val = float(df["High"].iloc[-1])
+        if abs(low_val - vwap_val) / vwap_val <= 0.005 and close > vwap_val and rvol_val >= 1.2:
+            alerts.append("💧 VWAP Bounce")
+            score += 1
+        elif abs(high_val - vwap_val) / vwap_val <= 0.005 and close < vwap_val and rvol_val >= 1.2:
+            alerts.append("🛑 VWAP Rejection")
+            score -= 1
+    except: pass
+    # ----------------------------------------------------
+
+    stock_return = ((close - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+    rs_score = round(stock_return - nifty_return, 2) if nifty_return is not None else 0
+    rs_status = "💪 Outperform" if rs_score > 0 else "📉 Underperform"
+
+    ai_trend, ai_conf = predict_trend_ai(df["Close"])
+    xgb_prediction, xgb_confidence = train_xgboost_predictor(df)
+    smc_structure, cisd_signal, smc_alert, exact_signal_time = calculate_smc_and_cisd(df)
+    
+    # మిగిలిన అలర్ట్స్ యాడ్ చేయడం
+    rsi_val = float(df["RSI"].iloc[-1])
+    if rsi_val > 70: alerts.append("🚨 RSI Overbought")
+    elif rsi_val < 30: alerts.append("⚠️ RSI Oversold")
+    if smc_alert != "Normal": alerts.append(f"🏛️ {smc_structure}")
+    if cisd_signal != "None": alerts.append(f"⚡ {cisd_signal}")
+    
+    # బ్రేక్ అవుట్ లాజిక్... (పాత కోడ్ అలాగే ఉంటుంది)
+    # ... (మిగిలిన ఫంక్షన్ కోడ్ యధాతథంగా ఉంచండి)
+    
+    return [exact_signal_time, symbol.replace('.NS', ''), round(close, 2), target, stoploss, smc_structure, cisd_signal, xgb_prediction, f"{xgb_confidence}%", ", ".join(alerts), mtf_status, ai_trend, f"{ai_conf}%", f"{rs_score}% ({rs_status})", round(float(df["Support_1"].iloc[-1]), 2), round(float(df["Resistance_1"].iloc[-1]), 2), round(h52w, 2) if h52w else "N/A", round(l52w, 2) if l52w else "N/A", status_52w, round(rsi_val, 2), brk_sig, macd_val, st_dir, vwap_sig, pattern, f"{rvol_val:.2f}x", score, signal]
+                
