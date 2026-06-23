@@ -6,7 +6,6 @@ import io, time, base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xgboost import XGBClassifier
 import warnings
-
 warnings.filterwarnings('ignore')
 
 # ==========================================
@@ -28,7 +27,6 @@ with st.sidebar:
     auto_refresh = st.checkbox("🔄 Auto Refresh (Every 3 Mins)")
     interval = st.selectbox("Interval", ["5m","15m","30m","1h","1d"], index=1)
     period = st.selectbox("Period", ["5d","1mo","3mo","6mo","1y"], index=2)
-
     sector_stocks = {
         "Banking":["HDFCBANK","ICICIBANK","SBIN","AXISBANK","KOTAKBANK"],
         "IT":["TCS","INFY","WIPRO","HCLTECH","TECHM"],
@@ -65,7 +63,6 @@ def get_data(symbol, interval, period):
         return df
     except: return pd.DataFrame()
 
-# --- Indicators ---
 def add_indicators(df, interval):
     if len(df)<60: return df
     df["EMA20"]=df["Close"].ewm(span=20).mean()
@@ -75,7 +72,7 @@ def add_indicators(df, interval):
     df["MACD_Line"]=df["Close"].ewm(span=12).mean()-df["Close"].ewm(span=26).mean()
     df["Signal_Line"]=df["MACD_Line"].ewm(span=9).mean()
     tp=(df['High']+df['Low']+df['Close'])/3
-    if 'd' not in interval: 
+    if 'd' not in interval:
         df['Date']=df.index.date
         df['VWAP']=(df['Volume']*tp).groupby(df['Date']).cumsum()/df['Volume'].groupby(df['Date']).cumsum()
     else:
@@ -84,7 +81,6 @@ def add_indicators(df, interval):
     df['ATR']=(df[['High','Low','Close']].max(axis=1)-df[['High','Low','Close']].min(axis=1)).rolling(14).mean()
     return df
 
-# --- XGB Predictor ---
 def train_xgboost_predictor(df):
     if len(df)<50: return "Neutral",0.0
     try:
@@ -114,31 +110,28 @@ def train_xgboost_predictor(df):
 # ==========================================
 # 4. PROCESSOR
 # ==========================================
-def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, daily_close_series):
+def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return):
     df=get_data(symbol,interval,period)
     if df.empty or len(df)<60: return None
     df=add_indicators(df,interval)
     close=float(df["Close"].iloc[-1])
     score=0
 
-    # GAP %
     gap_pct=((df['Open'].iloc[-1]-df['Close'].iloc[-2])/df['Close'].iloc[-2])*100 if len(df)>=2 else 0
     gap_str=f"{gap_pct:.2f}%"
     if gap_pct>=0.5: gap_str+=" 🟢 Up"
     elif gap_pct<=-0.5: gap_str+=" 🔴 Down"
 
-    # Relative Strength
     stock_return=((close-df['Close'].iloc[0])/df['Close'].iloc[0])*100
-    rs_score=round(stock_return-nifty_return,2) if nifty_return is not None else 0
+    rs_score=round(stock_return-nifty_return,2)
     rs_status="💪 Outperform" if rs_score>0 else "📉 Underperform"
 
-    # AI + XGB
-    ai_trend,ai_conf=("Neutral",0)
     xgb_prediction,xgb_confidence=train_xgboost_predictor(df)
-
-    # Alerts
-    alerts=[]
     rvol_val=float(df["Volume"].iloc[-1])/float(df["AVG_VOL"].iloc[-1]) if df["AVG_VOL"].iloc[-1]>0 else 0
     rvol_str=f"{rvol_val:.2f}x"
+    alerts=[]
     if rvol_val>=3.0: alerts.append("🔥🔥 Massive RVOL")
-    elif rvol_val>=2.0: alerts
+    elif rvol_val>=2.0: alerts.append("🔥 High RVOL")
+
+    vwap_sig="ABOVE" if close>float(df["VWAP"].iloc[-1]) else "BELOW"
+    macd_val="B
