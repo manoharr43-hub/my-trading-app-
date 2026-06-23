@@ -85,4 +85,54 @@ def train_xgboost_predictor(df):
     if len(df)<50: return "Neutral",0.0
     try:
         df_ml=df.copy()
-        df_ml['Hour']=df_ml.index.hour if hasattr(df_ml.index,'hour') else
+        df_ml['Hour']=df_ml.index.hour if hasattr(df_ml.index,'hour') else 0
+        df_ml['Minute']=df_ml.index.minute if hasattr(df_ml.index,'minute') else 0
+        for col in ['Close','Volume','RSI','AVG_VOL','EMA20','EMA50']:
+            df_ml[col]=pd.to_numeric(df_ml[col],errors='coerce')
+        df_ml['Return']=df_ml['Close'].pct_change()
+        df_ml['RSI_Norm']=df_ml['RSI']/100.0
+        df_ml['Vol_Ratio']=np.where(df_ml['AVG_VOL']>0,df_ml['Volume']/df_ml['AVG_VOL'],1.0)
+        df_ml['EMA_Gap']=np.where(df_ml['EMA50']>0,(df_ml['EMA20']-df_ml['EMA50'])/df_ml['EMA50'],0.0)
+        df_ml['Target_Direction']=np.where(df_ml['Close'].shift(-1)>df_ml['Close'],1,0)
+        df_ml.replace([np.inf,-np.inf],np.nan,inplace=True)
+        df_ml.dropna(inplace=True)
+        if len(df_ml)<30: return "Neutral",0.0
+        X=df_ml[['Return','RSI_Norm','Vol_Ratio','EMA_Gap','Hour','Minute']].values.astype('float32')
+        y=df_ml['Target_Direction'].values.astype('int32')
+        if len(np.unique(y[:-1]))<2: return "SIDEWAYS ➖",50.0
+        model=XGBClassifier(n_estimators=30,max_depth=4,learning_rate=0.05,eval_metric='logloss',random_state=42,n_jobs=1)
+        model.fit(X[:-1],y[:-1])
+        pred=int(model.predict(X[-1].reshape(1,-1))[0])
+        conf=round(float(model.predict_proba(X[-1].reshape(1,-1))[0][pred])*100,2)
+        return "BULLISH 🚀" if pred==1 else "BEARISH 🔻",conf
+    except Exception as e: 
+        return f"Err:{str(e)[:8]}",0.0
+
+# ==========================================
+# 4. PROCESSOR
+# ==========================================
+def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return):
+    df=get_data(symbol,interval,period)
+    if df.empty or len(df)<60: return None
+    df=add_indicators(df,interval)
+    close=float(df["Close"].iloc[-1])
+    score=0
+
+    gap_pct=((df['Open'].iloc[-1]-df['Close'].iloc[-2])/df['Close'].iloc[-2])*100 if len(df)>=2 else 0
+    gap_str=f"{gap_pct:.2f}%"
+    if gap_pct>=0.5: gap_str+=" 🟢 Up"
+    elif gap_pct<=-0.5: gap_str+=" 🔴 Down"
+
+    stock_return=((close-df['Close'].iloc[0])/df['Close'].iloc[0])*100
+    rs_score=round(stock_return-nifty_return,2)
+    rs_status="💪 Outperform" if rs_score>0 else "📉 Underperform"
+
+    xgb_prediction,xgb_confidence=train_xgboost_predictor(df)
+    rvol_val=float(df["Volume"].iloc[-1])/float(df["AVG_VOL"].iloc[-1]) if df["AVG_VOL"].iloc[-1]>0 else 0
+    rvol_str=f"{rvol_val:.2f}x"
+    alerts=[]
+    if rvol_val>=3.0: alerts.append("🔥🔥 Massive RVOL")
+    elif rvol_val>=2.0: alerts.append("🔥 High RVOL")
+
+    vwap_sig="ABOVE" if close>float(df["VWAP"].iloc[-1]) else "BELOW"
+    macd_val="BULLISH" if df["MACD_Line"].iloc[-1]>df["Signal_Line"].iloc[-
