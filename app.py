@@ -85,14 +85,4 @@ def train_xgboost_predictor(df):
     if len(df)<50: return "Neutral",0.0
     try:
         df_ml=df.copy()
-        df_ml['Hour']=df_ml.index.hour if hasattr(df_ml.index,'hour') else 0
-        df_ml['Minute']=df_ml.index.minute if hasattr(df_ml.index,'minute') else 0
-        for col in ['Close','Volume','RSI','AVG_VOL','EMA20','EMA50']:
-            df_ml[col]=pd.to_numeric(df_ml[col],errors='coerce')
-        df_ml['Return']=df_ml['Close'].pct_change()
-        df_ml['RSI_Norm']=df_ml['RSI']/100.0
-        df_ml['Vol_Ratio']=np.where(df_ml['AVG_VOL']>0,df_ml['Volume']/df_ml['AVG_VOL'],1.0)
-        df_ml['EMA_Gap']=np.where(df_ml['EMA50']>0,(df_ml['EMA20']-df_ml['EMA50'])/df_ml['EMA50'],0.0)
-        df_ml['Target_Direction']=np.where(df_ml['Close'].shift(-1)>df_ml['Close'],1,0)
-        df_ml.replace([np.inf,-np.inf],np.nan,inplace=True)
-        df_ml.dropna(inplace=True)
+        df_ml['Hour']=df_ml.index.hour if hasattr(df_ml.index,'hour') else
