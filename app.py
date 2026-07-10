@@ -289,32 +289,42 @@ def train_xgboost_predictor(df):
 
         df_ml['Return'] = df_ml['Close'].pct_change()
         df_ml['RSI_Norm'] = df_ml['RSI'] / 100.0
-
         df_ml['Vol_Ratio'] = np.where(df_ml['AVG_VOL'] > 0, df_ml['Volume'] / df_ml['AVG_VOL'], 1.0)
         df_ml['EMA_Gap'] = np.where(df_ml['EMA50'] > 0, (df_ml['EMA20'] - df_ml['EMA50']) / df_ml['EMA50'], 0.0)
 
-        df_ml['Target_Direction'] = np.where(df_ml['Close'].shift(-1) > df_ml['Close'], 1, 0)
-
         df_ml.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df_ml.dropna(subset=['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute', 'Target_Direction'],
-                      inplace=True)
-
-        if len(df_ml) < 30:
-            return "Neutral", 0.0
 
         feature_cols = ['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute']
 
-        X = df_ml[feature_cols].values.astype('float32')
-        y = df_ml['Target_Direction'].values.astype('int32')
+        # Keep only rows where the FEATURES are valid. Do NOT drop on Target yet —
+        # dropping on Target here would silently discard the most recent (live) bar,
+        # which is exactly the bar we need to predict FROM. That off-by-one was the
+        # bug causing XGB to score an already-resolved past bar instead of the live one.
+        df_feat = df_ml.dropna(subset=feature_cols).copy()
+        if len(df_feat) < 31:
+            return "Neutral", 0.0
 
-        if len(np.unique(y[:-1])) < 2:
+        # Target is only knowable for historical bars (needs the NEXT close).
+        df_feat['Target_Direction'] = np.where(df_feat['Close'].shift(-1) > df_feat['Close'], 1, 0)
+
+        # The true live/latest bar has an unknown future -> use it ONLY for prediction.
+        live_row = df_feat.iloc[[-1]]
+        train_df = df_feat.iloc[:-1]  # every other row has a resolved, valid target
+
+        if len(train_df) < 30:
+            return "Neutral", 0.0
+
+        X_train = train_df[feature_cols].values.astype('float32')
+        y_train = train_df['Target_Direction'].values.astype('int32')
+
+        if len(np.unique(y_train)) < 2:
             return "SIDEWAYS ➖", 50.0
 
         model = XGBClassifier(n_estimators=25, max_depth=4, learning_rate=0.05, eval_metric='logloss',
                                random_state=42, n_jobs=1)
-        model.fit(X[:-1], y[:-1])
+        model.fit(X_train, y_train)
 
-        latest_vector = X[-1].reshape(1, -1)
+        latest_vector = live_row[feature_cols].values.astype('float32')
         prediction = int(model.predict(latest_vector)[0])
         probabilities = model.predict_proba(latest_vector)[0]
         confidence = round(float(probabilities[prediction]) * 100, 2)
