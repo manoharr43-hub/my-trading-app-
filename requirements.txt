@@ -1,15 +1,11 @@
 streamlit
-fyers-apiv3
-pandas>=2.1.0
-numpy
-requests
 yfinance
+pandas
+numpy
+pytz
+requests
 plotly
-matplotlib
+xlsxwriter
 xgboost
+scikit-learn
 openpyxl
-feedparser
-streamlit-autorefresh
-
-# NSE Backup
-nsepython
