@@ -48,7 +48,7 @@ with st.sidebar:
         "Energy": ["RELIANCE", "ONGC", "BPCL", "NTPC"],
         "Auto": ["TATAMOTORS", "M&M", "EICHERMOT", "HEROMOTOCO"],
         "FMCG": ["ITC", "HINDUNILVR", "BRITANNIA", "DABUR"],
-        # NEW: F&O (Futures & Options) eligible stock folder
+        # F&O (Futures & Options) eligible stock folder
         "F&O Stocks": [
             "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK",
             "KOTAKBANK", "LT", "ITC", "BAJFINANCE", "BAJAJFINSV", "MARUTI",
@@ -182,17 +182,17 @@ def calculate_smc_and_cisd(df):
 
 
 # ==========================================
-# NEW: ORDER BLOCK (SMC) DETECTION
+# ORDER BLOCK (SMC) DETECTION — now also returns the OB candle's signal time
 # ==========================================
 def calculate_order_block(df):
     """
     Finds the most recent Order Block:
     - Bullish OB: last bearish (down) candle before price breaks structure upward.
     - Bearish OB: last bullish (up) candle before price breaks structure downward.
-    Returns (ob_type, ob_zone_string)
+    Returns (ob_type, ob_zone_string, ob_time_string)
     """
     if len(df) < 15:
-        return "None", "N/A"
+        return "None", "N/A", "N/A"
     try:
         d = df.copy()
         d['Bull_Candle'] = d['Close'] > d['Open']
@@ -218,7 +218,7 @@ def calculate_order_block(df):
             last_break_idx, is_bull = break_down_idx[-1], False
 
         if last_break_idx is None:
-            return "None", "N/A"
+            return "None", "N/A", "N/A"
 
         pos = d.index.get_loc(last_break_idx)
         window = d.iloc[max(0, pos - 15):pos]
@@ -227,30 +227,33 @@ def calculate_order_block(df):
             bear_candles = window[window['Bear_Candle']]
             if not bear_candles.empty:
                 last_ob = bear_candles.iloc[-1]
-                return "Bullish OB 🟢", f"{round(last_ob['Low'], 2)} - {round(last_ob['High'], 2)}"
+                ob_time = last_ob.name.strftime("%d-%b %I:%M %p")
+                return "Bullish OB 🟢", f"{round(last_ob['Low'], 2)} - {round(last_ob['High'], 2)}", ob_time
         else:
             bull_candles = window[window['Bull_Candle']]
             if not bull_candles.empty:
                 last_ob = bull_candles.iloc[-1]
-                return "Bearish OB 🔴", f"{round(last_ob['Low'], 2)} - {round(last_ob['High'], 2)}"
+                ob_time = last_ob.name.strftime("%d-%b %I:%M %p")
+                return "Bearish OB 🔴", f"{round(last_ob['Low'], 2)} - {round(last_ob['High'], 2)}", ob_time
 
-        return "None", "N/A"
+        return "None", "N/A", "N/A"
     except Exception:
-        return "None", "N/A"
+        return "None", "N/A", "N/A"
 
 
 # ==========================================
-# NEW: FAIR VALUE GAP (FVG) DETECTION
+# FAIR VALUE GAP (FVG) DETECTION — now also returns the confirming candle's time
 # ==========================================
 def calculate_fvg(df):
     """
     Detects the most recent 3-candle Fair Value Gap (imbalance):
     - Bullish FVG: candle[i-1].High < candle[i+1].Low
     - Bearish FVG: candle[i-1].Low  > candle[i+1].High
-    Returns (fvg_type, fvg_zone_string)
+    The "signal time" is the timestamp of candle[i+1] — the candle that confirms/closes the gap.
+    Returns (fvg_type, fvg_zone_string, fvg_time_string)
     """
     if len(df) < 5:
-        return "None", "N/A"
+        return "None", "N/A", "N/A"
     try:
         d = df.copy()
         n = len(d)
@@ -258,16 +261,30 @@ def calculate_fvg(df):
         for i in range(n - 2, lookback_start - 1, -1):
             c1_high, c1_low = d['High'].iloc[i - 1], d['Low'].iloc[i - 1]
             c3_high, c3_low = d['High'].iloc[i + 1], d['Low'].iloc[i + 1]
+            fvg_time = d.index[i + 1].strftime("%d-%b %I:%M %p")
             if c1_high < c3_low:
-                return "Bullish FVG 🟢", f"{round(c1_high, 2)} - {round(c3_low, 2)}"
+                return "Bullish FVG 🟢", f"{round(c1_high, 2)} - {round(c3_low, 2)}", fvg_time
             elif c1_low > c3_high:
-                return "Bearish FVG 🔴", f"{round(c3_high, 2)} - {round(c1_low, 2)}"
-        return "None", "N/A"
+                return "Bearish FVG 🔴", f"{round(c3_high, 2)} - {round(c1_low, 2)}", fvg_time
+        return "None", "N/A", "N/A"
     except Exception:
-        return "None", "N/A"
+        return "None", "N/A", "N/A"
 
 
 def train_xgboost_predictor(df):
+    """
+    FIXED VERSION:
+    Previously, Target_Direction was computed AFTER dropna() on feature columns.
+    That meant shift(-1) could pair a row with the next *surviving* row instead of
+    the true next chronological candle whenever any rows were dropped in the middle
+    of the series -- silently corrupting the label the model trained on and making
+    the AI Trend / Confidence output unreliable.
+
+    Fix: compute Target_Direction on the FULL chronological series first (so
+    shift(-1) always looks at the real next candle), THEN drop NaNs for training.
+    The live (latest) row is kept aside purely for prediction and is explicitly
+    excluded from training, since its true future outcome doesn't exist yet.
+    """
     if len(df) < 50:
         return "Neutral", 0.0
     try:
@@ -294,22 +311,25 @@ def train_xgboost_predictor(df):
 
         df_ml.replace([np.inf, -np.inf], np.nan, inplace=True)
 
+        # Compute Target BEFORE any dropna, on the full chronological index,
+        # so shift(-1) always refers to the true next candle.
+        df_ml['Target_Direction'] = np.where(df_ml['Close'].shift(-1) > df_ml['Close'], 1, 0)
+
         feature_cols = ['Return', 'RSI_Norm', 'Vol_Ratio', 'EMA_Gap', 'Hour', 'Minute']
 
-        # Keep only rows where the FEATURES are valid. Do NOT drop on Target yet —
-        # dropping on Target here would silently discard the most recent (live) bar,
-        # which is exactly the bar we need to predict FROM. That off-by-one was the
-        # bug causing XGB to score an already-resolved past bar instead of the live one.
-        df_feat = df_ml.dropna(subset=feature_cols).copy()
-        if len(df_feat) < 31:
+        # Rows with valid features (this includes the live/latest bar).
+        valid_features_df = df_ml.dropna(subset=feature_cols)
+        if valid_features_df.empty:
             return "Neutral", 0.0
 
-        # Target is only knowable for historical bars (needs the NEXT close).
-        df_feat['Target_Direction'] = np.where(df_feat['Close'].shift(-1) > df_feat['Close'], 1, 0)
+        # Live row = latest bar with valid features -> used ONLY for prediction (its
+        # true future close doesn't exist yet, so it must never be trained on).
+        live_row = valid_features_df.iloc[[-1]]
 
-        # The true live/latest bar has an unknown future -> use it ONLY for prediction.
-        live_row = df_feat.iloc[[-1]]
-        train_df = df_feat.iloc[:-1]  # every other row has a resolved, valid target
+        # Training set: valid features AND a resolved (non-NaN) target, explicitly
+        # excluding the live row itself.
+        train_df = df_ml.dropna(subset=feature_cols + ['Target_Direction'])
+        train_df = train_df.loc[train_df.index != live_row.index[0]]
 
         if len(train_df) < 30:
             return "Neutral", 0.0
@@ -452,9 +472,9 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     xgb_prediction, xgb_confidence = train_xgboost_predictor(df)
     smc_structure, cisd_signal, smc_alert, exact_signal_time = calculate_smc_and_cisd(df)
 
-    # NEW: Order Block + FVG
-    ob_type, ob_zone = calculate_order_block(df)
-    fvg_type, fvg_zone = calculate_fvg(df)
+    # Order Block + FVG (each now returns its own signal time)
+    ob_type, ob_zone, ob_time = calculate_order_block(df)
+    fvg_type, fvg_zone, fvg_time = calculate_fvg(df)
 
     mtf_status = "Not Aligned"
     if daily_close_series is not None and len(daily_close_series) >= 50:
@@ -508,11 +528,11 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
     if smc_alert != "Normal":
         alerts.append(f"🏛️ {smc_structure}")
     if cisd_signal != "None":
-        alerts.append(f"⚡ {cisd_signal}")
+        alerts.append(f"⚡ {cisd_signal} @ {exact_signal_time}")
     if ob_type != "None":
-        alerts.append(f"📦 {ob_type}")
+        alerts.append(f"📦 {ob_type} @ {ob_time}")
     if fvg_type != "None":
-        alerts.append(f"🕳️ {fvg_type}")
+        alerts.append(f"🕳️ {fvg_type} @ {fvg_time}")
 
     breakout_high = df["High"].rolling(20).max().shift(1).iloc[-1]
     breakout_low = df["Low"].rolling(20).min().shift(1).iloc[-1]
@@ -592,7 +612,7 @@ def process_stock_thread(symbol, interval, period, h52w, l52w, nifty_return, dai
 
     return [
         exact_signal_time, symbol.replace('.NS', ''), round(close, 2), gap_str, target, stoploss,
-        smc_structure, cisd_signal, ob_type, ob_zone, fvg_type, fvg_zone,
+        smc_structure, cisd_signal, ob_type, ob_zone, ob_time, fvg_type, fvg_zone, fvg_time,
         xgb_prediction, f"{xgb_confidence}%", alert_str, mtf_status, ai_trend, f"{ai_conf}%",
         f"{rs_score}% ({rs_status})",
         round(float(df["Support_1"].iloc[-1]), 2), round(float(df["Resistance_1"].iloc[-1]), 2),
@@ -616,6 +636,15 @@ def color_code(val):
 # 5. UI TABS & RUN EXECUTION
 # ==========================================
 tab1, tab2 = st.tabs(["🚀 V12 PRO Master Dashboard", "🔍 Custom Stock Search"])
+
+MASTER_COLUMNS = [
+    "Signal Time", "Stock", "LTP", "Gap %", "Target", "Stoploss", "SMC Structure",
+    "CISD (Early Signal)", "Order Block", "OB Zone", "OB Signal Time",
+    "FVG", "FVG Zone", "FVG Signal Time",
+    "XGB Trend", "XGB Conf", "⚡ Alerts", "MTF Trend", "AI Trend", "Conf %",
+    "RS vs NIFTY", "Support", "Resistance", "52W High", "52W Low", "52W Status",
+    "RSI", "Breakout", "MACD", "Supertrend", "VWAP", "Pattern", "RVOL", "Score", "Signal"
+]
 
 with tab1:
     if run_button or auto_refresh:
@@ -662,14 +691,7 @@ with tab1:
                 progress.progress((i + 1) / len(selected_stocks))
 
         if results:
-            df_res = pd.DataFrame(
-                results,
-                columns=["Signal Time", "Stock", "LTP", "Gap %", "Target", "Stoploss", "SMC Structure",
-                         "CISD (Early Signal)", "Order Block", "OB Zone", "FVG", "FVG Zone",
-                         "XGB Trend", "XGB Conf", "⚡ Alerts", "MTF Trend", "AI Trend", "Conf %",
-                         "RS vs NIFTY", "Support", "Resistance", "52W High", "52W Low", "52W Status",
-                         "RSI", "Breakout", "MACD", "Supertrend", "VWAP", "Pattern", "RVOL", "Score", "Signal"]
-            )
+            df_res = pd.DataFrame(results, columns=MASTER_COLUMNS)
             df_res = df_res.sort_values(by="Score", ascending=False)
             st.session_state.v12_master_data = df_res
 
@@ -692,7 +714,8 @@ with tab1:
                     st.metric(label=f"🟢 {row['Stock']} ({card_tag})", value=f"₹{row['LTP']}",
                               delta=f"TGT: ₹{row['Target']}")
                     st.caption(f"**⏱️ {row['Signal Time']}** | **RVOL:** {row['RVOL']}")
-                    st.caption(f"**📦 OB:** {row['Order Block']} ({row['OB Zone']}) | **🕳️ FVG:** {row['FVG']} ({row['FVG Zone']})")
+                    st.caption(f"**📦 OB:** {row['Order Block']} ({row['OB Zone']}) @ {row['OB Signal Time']}")
+                    st.caption(f"**🕳️ FVG:** {row['FVG']} ({row['FVG Zone']}) @ {row['FVG Signal Time']}")
 
             st.markdown("### 📈 Top Stock Visual Chart")
             top_symbol = top_stocks.iloc[0]['Stock']
@@ -757,11 +780,5 @@ with tab2:
                 if res is None:
                     st.error(f"No data found for {custom_symbol}. Check the symbol and try again.")
                 else:
-                    cols_single = ["Signal Time", "Stock", "LTP", "Gap %", "Target", "Stoploss", "SMC Structure",
-                                   "CISD (Early Signal)", "Order Block", "OB Zone", "FVG", "FVG Zone",
-                                   "XGB Trend", "XGB Conf", "⚡ Alerts", "MTF Trend", "AI Trend", "Conf %",
-                                   "RS vs NIFTY", "Support", "Resistance", "52W High", "52W Low", "52W Status",
-                                   "RSI", "Breakout", "MACD", "Supertrend", "VWAP", "Pattern", "RVOL", "Score",
-                                   "Signal"]
-                    single_df = pd.DataFrame([res], columns=cols_single)
+                    single_df = pd.DataFrame([res], columns=MASTER_COLUMNS)
                     st.dataframe(single_df.style.map(color_code), use_container_width=True)
