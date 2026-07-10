@@ -1,7 +1,15 @@
-streamlit>=1.32
-yfinance>=0.2.40
-pandas>=2.0
-numpy>=1.24
-xgboost>=2.0
-openpyxl>=3.1
-requests>=2.31
+streamlit
+fyers-apiv3
+pandas>=2.1.0
+numpy
+requests
+yfinance
+plotly
+matplotlib
+xgboost
+openpyxl
+feedparser
+streamlit-autorefresh
+
+# NSE Backup
+nsepython
